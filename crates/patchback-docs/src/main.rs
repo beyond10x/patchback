@@ -555,7 +555,8 @@ mod tests {
     fn local_paths_and_planning_ids_are_found() {
         let dir = scratch("private");
         fs::write(dir.join("clean.md"), "# Clean\n\nRun `patchback fit`.\n").unwrap();
-        fs::write(dir.join("leak.md"), "# Leak\n\nSee /home/someone/x.\n\nepic:x\n").unwrap();
+        let leak = concat!("# Leak\n\nSee /", "home/someone/x.\n\nepic:x\n");
+        fs::write(dir.join("leak.md"), leak).unwrap();
         let found = private_strings(&[dir.join("clean.md"), dir.join("leak.md")]).unwrap();
         assert_eq!(found.len(), 2);
         assert!(found[0].ends_with("leak.md:3: /home/"));
