@@ -1,0 +1,28 @@
+# epic:patch-studio, module catalogue view. A catalogue lists each module kind once, so the view
+# shows one card per kind.
+type: ess-scenario/1
+domain: patchback.studio
+scenario: studio-module-catalogue-duplicate-kind
+summary: A catalogue that lists the LowpassFilter kind twice is refused and nothing is published.
+
+timeline:
+  - at: 2026-10-22T13:00:00Z
+    command: patchback.studio.PublishCatalogue
+    actor: patchback.studio.Studio
+    input:
+      catalogue_id: 5a0d0000-0000-4000-8000-000000000002
+      topology_id: 5a0d0000-0000-4000-8000-000000000101
+      modules:
+        - kind: LowpassFilter
+          ports:
+            - {name: in, direction: Input, rate: Audio, meaning: driven signal}
+            - {name: out, direction: Output, rate: Audio, meaning: filtered signal}
+          parameters: []
+        - kind: LowpassFilter
+          ports:
+            - {name: in, direction: Input, rate: Audio, meaning: driven signal}
+          parameters: []
+    outcome: duplicate-kind
+    error:
+      name: patchback.studio.DuplicateModuleKind
+    no_events: [patchback.studio.CataloguePublished]

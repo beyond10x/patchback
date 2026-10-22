@@ -1,0 +1,115 @@
+# epic:patch-studio, fit evolution view, replay. A fit run's evaluations are replayed in order:
+# the first valid candidate is retained, a lower loss improves it, a higher one does not, an
+# invalid candidate carries no loss (DESIGN.md 9.2 steps 3 and 5). The best loss never rises.
+# The trace is closed with the run's end and lists as Closed.
+type: ess-scenario/1
+domain: patchback.studio
+scenario: studio-fit-replay-replayed
+summary: Four evaluations of a completed fit run are replayed in order and the closed trace lists with its end.
+
+timeline:
+  - at: 2026-10-22T13:20:00Z
+    command: patchback.studio.OpenTrace
+    actor: patchback.studio.Studio
+    input:
+      trace_id: 5a0d0000-0000-4000-8000-000000000401
+      fit_run_id: 5a0d0000-0000-4000-8000-000000000501
+      source: Replay
+      topology_id: 5a0d0000-0000-4000-8000-000000000101
+      parameter_paths: [attack, cutoff]
+    outcome: opened
+
+  - at: 2026-10-22T13:20:01Z
+    command: patchback.studio.AppendFrame
+    actor: patchback.studio.Studio
+    input:
+      frame_id: 5a0d0000-0000-4000-8000-000000000601
+      trace_id: 5a0d0000-0000-4000-8000-000000000401
+      sequence: 0
+      evaluation: 1
+      outcome: FirstRetained
+      topology_id: 5a0d0000-0000-4000-8000-000000000101
+      patch_id: 5a0d0000-0000-4000-8000-000000000701
+      total_loss: 0.645
+      components: {log_spectral: 0.8, envelope: 0.6, transient: 0.4, band_energy: 0.5}
+      best_loss: 0.645
+      parameters:
+        - {path: attack, normalized_value: 0.5}
+        - {path: cutoff, normalized_value: 0.5}
+    outcome: appended
+
+  - at: 2026-10-22T13:20:02Z
+    command: patchback.studio.AppendFrame
+    actor: patchback.studio.Studio
+    input:
+      frame_id: 5a0d0000-0000-4000-8000-000000000602
+      trace_id: 5a0d0000-0000-4000-8000-000000000401
+      sequence: 1
+      evaluation: 2
+      outcome: Improved
+      topology_id: 5a0d0000-0000-4000-8000-000000000101
+      patch_id: 5a0d0000-0000-4000-8000-000000000702
+      total_loss: 0.43
+      components: {log_spectral: 0.5, envelope: 0.4, transient: 0.3, band_energy: 0.3}
+      best_loss: 0.43
+      parameters:
+        - {path: attack, normalized_value: 0.25}
+        - {path: cutoff, normalized_value: 0.5}
+    outcome: appended
+
+  - at: 2026-10-22T13:20:03Z
+    command: patchback.studio.AppendFrame
+    actor: patchback.studio.Studio
+    input:
+      frame_id: 5a0d0000-0000-4000-8000-000000000603
+      trace_id: 5a0d0000-0000-4000-8000-000000000401
+      sequence: 2
+      evaluation: 3
+      outcome: NotImproved
+      topology_id: 5a0d0000-0000-4000-8000-000000000101
+      patch_id: 5a0d0000-0000-4000-8000-000000000703
+      total_loss: 0.745
+      components: {log_spectral: 0.9, envelope: 0.7, transient: 0.5, band_energy: 0.6}
+      best_loss: 0.43
+      parameters:
+        - {path: attack, normalized_value: 0.25}
+        - {path: cutoff, normalized_value: 0.75}
+    outcome: appended
+
+  - at: 2026-10-22T13:20:04Z
+    command: patchback.studio.AppendFrame
+    actor: patchback.studio.Studio
+    input:
+      frame_id: 5a0d0000-0000-4000-8000-000000000604
+      trace_id: 5a0d0000-0000-4000-8000-000000000401
+      sequence: 3
+      evaluation: 4
+      outcome: Rejected
+      topology_id: 5a0d0000-0000-4000-8000-000000000101
+      best_loss: 0.43
+      parameters:
+        - {path: attack, normalized_value: 0.25}
+        - {path: cutoff, normalized_value: 0.25}
+    outcome: appended
+
+  - at: 2026-10-22T13:20:05Z
+    command: patchback.studio.CloseTrace
+    actor: patchback.studio.Studio
+    input:
+      trace_id: 5a0d0000-0000-4000-8000-000000000401
+      ended: Completed
+    outcome: closed
+
+assert:
+  - view: patchback.studio.Traces
+    contains:
+      trace_id: 5a0d0000-0000-4000-8000-000000000401
+      state: Closed
+      source: Replay
+      ended: Completed
+  - view: patchback.studio.TraceFrames
+    contains:
+      frame_id: 5a0d0000-0000-4000-8000-000000000604
+      sequence: 3
+      outcome: Rejected
+      best_loss: 0.43

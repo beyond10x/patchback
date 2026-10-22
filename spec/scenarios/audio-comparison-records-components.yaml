@@ -1,0 +1,75 @@
+# DESIGN.md 9.1: four loss components, a weighted sum, and "The loss code must log its component
+# values for every candidate." The component values are measured by the loss code (generated);
+# the weights used are recorded with the comparison. The weights are illustrative: DESIGN.md 9.1
+# sets none (UNMAPPED in spec/domains/fit.yaml, LossWeights).
+type: ess-scenario/1
+domain: patchback.fit
+scenario: audio-comparison-records-components
+summary: Comparing a candidate rendering with a reference records a Comparison carrying the weights used, and AudioCompared names both clips and the weights; a clip never imported is refused.
+
+arrange:
+  - instance: reference
+    entity: patchback.audio.AudioClip
+  - instance: candidate
+    entity: patchback.audio.AudioClip
+  - instance: comparison
+    entity: patchback.fit.Comparison
+
+timeline:
+  - at: 2026-10-22T00:00:01Z
+    command: patchback.audio.ImportWav
+    actor: patchback.audio.Operator
+    input:
+      path: reference.wav
+      origin: PatchbackSynthesized
+      sample_rate_hz: 48000
+      channel_count: 1
+      format_tag: 3
+      bits_per_sample: 32
+      frame_count: 48000
+    outcome: imported
+    capture: {instance: reference, event: patchback.audio.ClipImported, field: audio_clip_id}
+
+  - at: 2026-10-22T00:00:02Z
+    command: patchback.audio.ImportWav
+    actor: patchback.audio.Operator
+    input:
+      path: candidate.wav
+      origin: PatchbackSynthesized
+      sample_rate_hz: 48000
+      channel_count: 1
+      format_tag: 3
+      bits_per_sample: 32
+      frame_count: 48000
+    outcome: imported
+    capture: {instance: candidate, event: patchback.audio.ClipImported, field: audio_clip_id}
+
+  - at: 2026-10-22T11:00:00Z
+    command: patchback.fit.CompareAudio
+    actor: patchback.fit.Operator
+    input:
+      reference_clip_id: {$instance: reference}
+      candidate_clip_id: {$instance: candidate}
+      weights: {log_spectral: 0.4, envelope: 0.3, transient: 0.2, band_energy: 0.1}
+    outcome: compared
+    events:
+      - event: patchback.fit.AudioCompared
+        payload:
+          reference_clip_id: {$instance: reference}
+          candidate_clip_id: {$instance: candidate}
+          weights: {log_spectral: 0.4, envelope: 0.3, transient: 0.2, band_energy: 0.1}
+    capture: {instance: comparison, event: patchback.fit.AudioCompared, field: comparison_id}
+
+  - at: 2026-10-22T11:00:01Z
+    command: patchback.fit.CompareAudio
+    actor: patchback.fit.Operator
+    input:
+      reference_clip_id: {$instance: reference}
+      candidate_clip_id: 1c4a2e90-0000-4000-8000-000000000099
+      weights: {log_spectral: 0.4, envelope: 0.3, transient: 0.2, band_energy: 0.1}
+    outcome: unknown-candidate
+    error:
+      name: patchback.fit.ClipNotFound
+      fields:
+        audio_clip_id: 1c4a2e90-0000-4000-8000-000000000099
+    no_events: [patchback.fit.AudioCompared]

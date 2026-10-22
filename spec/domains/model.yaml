@@ -1,0 +1,1204 @@
+domain: patchback.model
+
+summary: >-
+  The ModelSpec bridge (DESIGN.md § 1.1, § 8): the pinned ModelSpec release, the checked `.mspec`
+  source, `modelspec train` runs as subprocesses, the version-locked weight export and the native
+  two-layer predictor that reads it.
+
+types:
+  - name: patchback.model.ModelSpecPinId
+    kind: newtype
+    of: Uuid
+
+  - name: patchback.model.ModelSourceId
+    kind: newtype
+    of: Uuid
+
+  - name: patchback.model.TrainingRunId
+    kind: newtype
+    of: Uuid
+
+  - name: patchback.model.WeightArtifactId
+    kind: newtype
+    of: Uuid
+
+  - name: patchback.model.ModelSpecVersion
+    kind: newtype
+    of: String
+    naming:
+      summary: The tested ModelSpec release the project pins (§ 3).
+
+  - name: patchback.model.GitCommit
+    kind: newtype
+    of: String
+    naming:
+      summary: The ModelSpec commit the pinned release was built from (§ 3, "version/commit").
+
+  # UNMAPPED: § 8.2 step 3 says "checksummed" and names no checksum algorithm. Open question.
+  - name: patchback.model.WeightChecksum
+    kind: newtype
+    of: String
+    naming:
+      summary: Checksum of the internal little-endian f32 weight artifact (§ 8.2 step 3).
+
+  # § 1.1: `modelspec train --backend cpu`; Vulkan/SPIR-V "is on the roadmap and must not be
+  # treated as working today".
+  - name: patchback.model.Backend
+    kind: enum
+    variants: [Cpu, Vulkan]
+    naming:
+      summary: The `--backend` of `modelspec train`.
+
+entities:
+  - name: patchback.model.ModelSpecPin
+    naming:
+      summary: >-
+        The ModelSpec release and commit the project is pinned to (§ 3), with what its
+        documentation lists as shipped (§ 1.1). GpuEquivalent once CPU/GPU equivalence is recorded
+        on it (ADR-010).
+    identity:
+      name: model_spec_pin_id
+      type: patchback.model.ModelSpecPinId
+    fields:
+      - name: version
+        type: patchback.model.ModelSpecVersion
+      - name: commit
+        type: patchback.model.GitCommit
+      - name: vulkan_backend_shipped
+        type: Boolean
+        summary: The pinned release's documentation lists the Vulkan training backend as shipped (§ 1.1).
+    # UNMAPPED: § 3 says "pinned to a tested version/commit" and does not say which test qualifies
+    # a release (the § 15 check that the pinned binary accepts the § 8.1 model and the § 7.2 data,
+    # or an upstream regression suite). The pin is recorded as given. Open question.
+    lifecycle:
+      initial: Pinned
+      states: [Pinned, GpuEquivalent]
+      terminal: [GpuEquivalent]
+      transitions:
+        - name: record_gpu_equivalence
+          from: [Pinned]
+          to: GpuEquivalent
+
+  - name: patchback.model.ModelSource
+    naming:
+      summary: >-
+        `models/patch_regressor.mspec` (§ 8.1): the M0 PatchRegressor source, recorded Checked or
+        Rejected by `modelspec check` with the pinned binary.
+    identity:
+      name: model_source_id
+      type: patchback.model.ModelSourceId
+    fields:
+      - name: path
+        type: String
+      - name: model_name
+        type: String
+        summary: The model the source declares (`PatchRegressor`, § 8.1).
+      - name: batch_size
+        type: Integer
+        summary: The leading (minibatch) dimension of the declared input, 16 in § 8.1.
+      - name: model_spec_pin_id
+        type: patchback.model.ModelSpecPinId
+        summary: The pin whose binary checks and trains this source.
+    relations:
+      - name: model_spec_pin
+        kind: references
+        target: patchback.model.ModelSpecPin
+        cardinality: one
+        via: model_spec_pin_id
+    lifecycle:
+      initial: Unchecked
+      states: [Unchecked, Checked, Rejected]
+      terminal: [Checked, Rejected]
+      transitions:
+        - name: check
+          from: [Unchecked]
+          to: Checked
+        - name: reject
+          from: [Unchecked]
+          to: Rejected
+
+  - name: patchback.model.TrainingRun
+    naming:
+      summary: >-
+        One `modelspec train <source> --backend <b> --data <dir> [--eval <dir>]` subprocess run
+        from Rust (§ 8.1, § 8.2 step 1); Completed or Failed by its exit status.
+    identity:
+      name: training_run_id
+      type: patchback.model.TrainingRunId
+    fields:
+      - name: model_source_id
+        type: Optional<patchback.model.ModelSourceId>
+      - name: model_spec_pin_id
+        type: patchback.model.ModelSpecPinId
+      - name: backend
+        type: patchback.model.Backend
+      - name: data_split_id
+        type: Optional<patchback.dataset.DatasetSplitId>
+      - name: eval_split_id
+        type: Optional<patchback.dataset.DatasetSplitId>
+      - name: exit_status
+        type: Optional<Integer>
+    relations:
+      - name: model_source
+        kind: references
+        target: patchback.model.ModelSource
+        cardinality: one
+        via: model_source_id
+      - name: model_spec_pin
+        kind: references
+        target: patchback.model.ModelSpecPin
+        cardinality: one
+        via: model_spec_pin_id
+      - name: data_split
+        kind: references
+        target: patchback.dataset.DatasetSplit
+        cardinality: one
+        via: data_split_id
+      - name: eval_split
+        kind: references
+        target: patchback.dataset.DatasetSplit
+        cardinality: one
+        via: eval_split_id
+    # UNMAPPED: § 8.1 passes `--data data/train --eval data/val` and does not say whether training
+    # on a validation or test split, or evaluating on the train split, is refused. No role guard is
+    # modelled. Open question.
+    lifecycle:
+      initial: Planned
+      states: [Planned, ModelBound, Running, Completed, Failed]
+      terminal: [Completed, Failed]
+      transitions:
+        - name: bind_model
+          from: [Planned]
+          to: ModelBound
+        - name: start
+          from: [ModelBound]
+          to: Running
+        - name: complete
+          from: [Running]
+          to: Completed
+        - name: fail
+          from: [Running]
+          to: Failed
+
+  - name: patchback.model.WeightArtifact
+    naming:
+      summary: >-
+        The internal, checksummed, versioned little-endian f32 artifact holding PatchRegressor.w1
+        [32, 64] and .w2 [64, 8] exported from a completed run (§ 8.2 step 3), with the model and
+        feature-contract versions it was trained for.
+    identity:
+      name: weight_artifact_id
+      type: patchback.model.WeightArtifactId
+    fields:
+      - name: training_run_id
+        type: patchback.model.TrainingRunId
+      - name: model_spec_pin_id
+        type: patchback.model.ModelSpecPinId
+      - name: feature_contract_id
+        type: patchback.analysis.FeatureContractId
+      - name: checksum
+        type: patchback.model.WeightChecksum
+      - name: clamped_predictions
+        type: Integer
+        summary: >-
+          How many predictions from this artifact had an output outside [0, 1] that was clamped
+          (§ 8.1, "evaluate how often that happens").
+    # UNMAPPED: § 8.2 step 3 says the artifact carries "the model and feature-spec version" and does
+    # not say whether the feature contract is copied from the training data's dataset or given at
+    # export; ESS 0.67.0 cannot read it two references away (run → split → dataset). Here it is
+    # given at export and not checked against the dataset. Open question.
+    relations:
+      - name: training_run
+        kind: references
+        target: patchback.model.TrainingRun
+        cardinality: one
+        via: training_run_id
+      - name: model_spec_pin
+        kind: references
+        target: patchback.model.ModelSpecPin
+        cardinality: one
+        via: model_spec_pin_id
+      - name: feature_contract
+        kind: references
+        target: patchback.analysis.FeatureContract
+        cardinality: one
+        via: feature_contract_id
+    lifecycle:
+      initial: Exported
+      states: [Exported]
+      terminal: [Exported]
+
+actors:
+  - name: patchback.model.Operator
+    naming:
+      display: Operator
+      summary: The person or CI job running the `patchback` CLI and its ModelSpec adapter (§ 8, § 11).
+    may:
+      - patchback.model.PinModelSpec
+      - patchback.model.RecordGpuEquivalence
+      - patchback.model.RegisterModelSource
+      - patchback.model.CheckModelSource
+      - patchback.model.PlanTrainingRun
+      - patchback.model.BindModelSource
+      - patchback.model.StartTrainingRun
+      - patchback.model.FinishTrainingRun
+      - patchback.model.ExportWeights
+      - patchback.model.Predict
+
+errors:
+  - name: patchback.model.UnknownPin
+    summary: No ModelSpec pin carries this identity.
+    fields:
+      - name: model_spec_pin_id
+        type: patchback.model.ModelSpecPinId
+
+  - name: patchback.model.UnknownModelSource
+    summary: No model source carries this identity.
+    fields:
+      - name: model_source_id
+        type: patchback.model.ModelSourceId
+
+  - name: patchback.model.UnknownTrainingRun
+    summary: No training run carries this identity.
+    fields:
+      - name: training_run_id
+        type: patchback.model.TrainingRunId
+
+  - name: patchback.model.UnknownWeightArtifact
+    summary: No weight artifact carries this identity.
+    fields:
+      - name: weight_artifact_id
+        type: patchback.model.WeightArtifactId
+
+  - name: patchback.model.UnknownDataSplit
+    summary: No dataset split carries the identity given as `--data` or `--eval`.
+    fields:
+      - name: dataset_split_id
+        type: patchback.dataset.DatasetSplitId
+
+  - name: patchback.model.BackendNotShipped
+    summary: >-
+      The pinned ModelSpec release does not list the Vulkan backend as shipped, so no GPU work is
+      assumed to run (§ 1.1, ADR-010).
+    fields:
+      - name: model_spec_pin_id
+        type: patchback.model.ModelSpecPinId
+      - name: backend
+        type: patchback.model.Backend
+
+  - name: patchback.model.GpuEquivalenceNotRecorded
+    summary: >-
+      GPU training waits for recorded CPU/GPU equivalence on the pinned release (ADR-010,
+      § 13 Milestone E).
+    fields:
+      - name: model_spec_pin_id
+        type: patchback.model.ModelSpecPinId
+
+  - name: patchback.model.GpuNotEquivalent
+    summary: The CPU/GPU equivalence tests did not pass, so nothing was recorded (ADR-010).
+    fields:
+      - name: model_spec_pin_id
+        type: patchback.model.ModelSpecPinId
+
+  - name: patchback.model.GpuEquivalenceAlreadyRecorded
+    summary: Equivalence is already recorded on this pin, so nothing changed.
+    fields:
+      - name: state
+        type: patchback.model.ModelSpecPin.State
+
+  - name: patchback.model.ModelSourceAlreadyChecked
+    summary: The source already carries a check result, so nothing changed.
+    fields:
+      - name: state
+        type: patchback.model.ModelSource.State
+
+  - name: patchback.model.ModelNotChecked
+    summary: >-
+      `modelspec train` runs only a source `modelspec check` accepted with the pinned binary
+      (§ 8.1, "Validate it with the pinned ModelSpec binary before implementation work proceeds").
+    fields:
+      - name: model_source_id
+        type: patchback.model.ModelSourceId
+      - name: state
+        type: patchback.model.ModelSource.State
+
+  - name: patchback.model.PinMismatch
+    summary: The source was checked under another ModelSpec pin than the one this run uses.
+    fields:
+      - name: model_source_id
+        type: patchback.model.ModelSourceId
+      - name: model_spec_pin_id
+        type: patchback.model.ModelSpecPinId
+
+  - name: patchback.model.DataNotWritten
+    summary: The `--data` or `--eval` split's dense data is not written and verified (§ 7.2).
+    fields:
+      - name: dataset_split_id
+        type: patchback.dataset.DatasetSplitId
+      - name: state
+        type: patchback.dataset.DatasetSplit.State
+
+  - name: patchback.model.EvalNotWritten
+    summary: The `--eval` split is unknown or its dense data is not written and verified (§ 7.2).
+    fields:
+      - name: eval_split_id
+        type: Optional<patchback.dataset.DatasetSplitId>
+
+  - name: patchback.model.EvalCountNotBatchMultiple
+    summary: >-
+      The `--eval` split's sample count is not a multiple of the model source's batch size (§ 7.2).
+    fields:
+      - name: eval_split_id
+        type: Optional<patchback.dataset.DatasetSplitId>
+      - name: training_run_id
+        type: patchback.model.TrainingRunId
+
+  - name: patchback.model.TrainingRunPastPlanning
+    summary: The run already has its model source bound, so nothing changed.
+    fields:
+      - name: state
+        type: patchback.model.TrainingRun.State
+
+  - name: patchback.model.TrainingRunNotReady
+    summary: Only a run with a bound model source and not yet started can start.
+    fields:
+      - name: state
+        type: patchback.model.TrainingRun.State
+
+  - name: patchback.model.TrainingRunFinished
+    summary: Only a Running run takes an exit status, so nothing changed.
+    fields:
+      - name: state
+        type: patchback.model.TrainingRun.State
+
+  - name: patchback.model.TrainingNotCompleted
+    summary: >-
+      Weights are exported only from a run that exited with status 0 (§ 8.2 step 2); a run still
+      Running or Failed is refused.
+    fields:
+      - name: training_run_id
+        type: patchback.model.TrainingRunId
+      - name: state
+        type: patchback.model.TrainingRun.State
+
+  - name: patchback.model.UnrecognizedTrainingOutput
+    summary: >-
+      The training output holds something other than the documented `param @PatchRegressor.w1`
+      and `.w2` blocks of the pinned version; it is rejected, never approximated (§ 8.2 steps 2–3).
+    fields:
+      - name: training_run_id
+        type: patchback.model.TrainingRunId
+
+  - name: patchback.model.UnrecognizedParameter
+    summary: A parameter block names another parameter than `@PatchRegressor.w1` / `.w2` (§ 8.2 step 2).
+    fields:
+      - name: w1_name
+        type: String
+      - name: w2_name
+        type: String
+
+  - name: patchback.model.WrongWeightShape
+    summary: w1 must be [32, 64] and w2 [64, 8] (§ 8.1, § 12.1).
+    fields:
+      - name: w1_rows
+        type: Integer
+      - name: w1_columns
+        type: Integer
+      - name: w2_rows
+        type: Integer
+      - name: w2_columns
+        type: Integer
+
+  - name: patchback.model.WrongElementCount
+    summary: w1 holds exactly 2,048 values and w2 exactly 512 (§ 8.2 step 2).
+    fields:
+      - name: w1_elements
+        type: Integer
+      - name: w2_elements
+        type: Integer
+
+  - name: patchback.model.NonFiniteWeight
+    summary: A weight value is NaN or Infinity (§ 8.2 step 2).
+    fields:
+      - name: training_run_id
+        type: patchback.model.TrainingRunId
+
+  - name: patchback.model.FeatureContractMismatch
+    summary: >-
+      The feature vector was computed under another feature-contract version than the one the
+      artifact was trained for (§ 6.3, § 8.2 step 3).
+    fields:
+      - name: weight_artifact_id
+        type: patchback.model.WeightArtifactId
+      - name: feature_contract_id
+        type: patchback.analysis.FeatureContractId
+
+  - name: patchback.model.WrongFeatureCount
+    summary: A `features/1` vector holds exactly 32 values (§ 6.3).
+    fields:
+      - name: count
+        type: Integer
+
+  - name: patchback.model.NonFiniteFeature
+    summary: A feature value is NaN or Infinity (§ 12.3, "Reject … non-finite features").
+    fields:
+      - name: weight_artifact_id
+        type: patchback.model.WeightArtifactId
+
+  - name: patchback.model.CorruptWeightArtifact
+    summary: The artifact's bytes do not match its checksum (§ 8.2 step 3, § 12.3 "Reject corrupt models").
+    fields:
+      - name: weight_artifact_id
+        type: patchback.model.WeightArtifactId
+
+commands:
+  - name: patchback.model.PinModelSpec
+    naming:
+      wire: pin-model-spec
+      display: Pin ModelSpec
+      summary: Record the tested ModelSpec release and commit, and whether it lists Vulkan as shipped.
+    input:
+      - name: version
+        type: patchback.model.ModelSpecVersion
+      - name: commit
+        type: patchback.model.GitCommit
+      - name: vulkan_backend_shipped
+        type: Boolean
+    outcomes:
+      - name: pinned
+        creates: patchback.model.ModelSpecPin
+        instance: model_spec_pin_id
+        sets:
+          version: input.version
+          commit: input.commit
+          vulkan_backend_shipped: input.vulkan_backend_shipped
+        emits: [patchback.model.ModelSpecPinned]
+        payload:
+          patchback.model.ModelSpecPinned:
+            model_spec_pin_id: {generated: true}
+            version: input.version
+            commit: input.commit
+        summary: The pin is recorded; nothing it does not list as shipped is assumed.
+
+  - name: patchback.model.RecordGpuEquivalence
+    naming:
+      wire: record-gpu-equivalence
+      display: Record CPU/GPU equivalence
+      summary: >-
+        Record that the pinned release's Vulkan backend passed the CPU/GPU equivalence tests
+        (ADR-010, § 13 Milestone E).
+    input:
+      - name: model_spec_pin_id
+        type: patchback.model.ModelSpecPinId
+      - name: equivalent
+        type: Boolean
+    outcomes:
+      - name: not-equivalent
+        when: equivalent == false
+        error: patchback.model.GpuNotEquivalent
+        payload:
+          patchback.model.GpuNotEquivalent:
+            model_spec_pin_id: input.model_spec_pin_id
+      - name: unknown-pin
+        unknown_instance: true
+        error: patchback.model.UnknownPin
+        payload:
+          patchback.model.UnknownPin:
+            model_spec_pin_id: input.model_spec_pin_id
+      - name: backend-not-shipped
+        when_subject:
+          predicate: vulkan_backend_shipped == false
+        error: patchback.model.BackendNotShipped
+        payload:
+          patchback.model.BackendNotShipped:
+            model_spec_pin_id: input.model_spec_pin_id
+            backend: Vulkan
+      - name: recorded
+        moves: patchback.model.ModelSpecPin.record_gpu_equivalence
+        instance: model_spec_pin_id
+        emits: [patchback.model.GpuEquivalenceRecorded]
+        payload:
+          patchback.model.GpuEquivalenceRecorded:
+            model_spec_pin_id: input.model_spec_pin_id
+        summary: GPU training may now use the Vulkan backend of this pin.
+      - name: wrong-state
+        wrong_state: true
+        error: patchback.model.GpuEquivalenceAlreadyRecorded
+        payload:
+          patchback.model.GpuEquivalenceAlreadyRecorded:
+            state: {subject: state}
+
+  - name: patchback.model.RegisterModelSource
+    naming:
+      wire: register-model-source
+      display: Register a model source
+      summary: Register `models/patch_regressor.mspec` against the pin whose binary checks it.
+    input:
+      - name: path
+        type: String
+      - name: model_name
+        type: String
+      - name: batch_size
+        type: Integer
+        example: 16
+      - name: model_spec_pin_id
+        type: patchback.model.ModelSpecPinId
+    outcomes:
+      - name: unknown-pin
+        when_related:
+          via: input.model_spec_pin_id
+          exists: false
+        error: patchback.model.UnknownPin
+        payload:
+          patchback.model.UnknownPin:
+            model_spec_pin_id: input.model_spec_pin_id
+      - name: registered
+        creates: patchback.model.ModelSource
+        instance: model_source_id
+        sets:
+          path: input.path
+          model_name: input.model_name
+          batch_size: input.batch_size
+          model_spec_pin_id: input.model_spec_pin_id
+        emits: [patchback.model.ModelSourceRegistered]
+        payload:
+          patchback.model.ModelSourceRegistered:
+            model_source_id: {generated: true}
+            path: input.path
+        summary: The source is registered and not yet checked.
+
+  - name: patchback.model.CheckModelSource
+    naming:
+      wire: check-model-source
+      display: Check the model source
+      summary: >-
+        Run `modelspec check <source>` with the pinned binary (§ 8.1) and record the result:
+        Checked on exit status 0, Rejected otherwise.
+    input:
+      - name: model_source_id
+        type: patchback.model.ModelSourceId
+    outcomes:
+      - name: unknown-source
+        unknown_instance: true
+        error: patchback.model.UnknownModelSource
+        payload:
+          patchback.model.UnknownModelSource:
+            model_source_id: input.model_source_id
+      - name: rejected
+        external: "`modelspec check` exits with a non-zero status"
+        moves: patchback.model.ModelSource.reject
+        instance: model_source_id
+        emits: [patchback.model.ModelSourceRejected]
+        payload:
+          patchback.model.ModelSourceRejected:
+            model_source_id: input.model_source_id
+        summary: The refusal is recorded; the source cannot be trained.
+      - name: checked
+        moves: patchback.model.ModelSource.check
+        instance: model_source_id
+        emits: [patchback.model.ModelSourceChecked]
+        payload:
+          patchback.model.ModelSourceChecked:
+            model_source_id: input.model_source_id
+        summary: The pinned binary accepts the source; it may be trained.
+      - name: wrong-state
+        wrong_state: true
+        error: patchback.model.ModelSourceAlreadyChecked
+        payload:
+          patchback.model.ModelSourceAlreadyChecked:
+            state: {subject: state}
+
+  # The `patchback` training command performs its preflight in three steps before it spawns
+  # `modelspec train`: the backend against the pin, the model source, then the data. ESS 0.67.0
+  # arranges one kind of related row per command, so each step is its own command on the run.
+  - name: patchback.model.PlanTrainingRun
+    naming:
+      wire: plan-training-run
+      display: Plan a training run
+      summary: >-
+        Choose the `--backend` for a run under the pinned ModelSpec release; Vulkan is refused
+        until the pin lists it as shipped and CPU/GPU equivalence is recorded (§ 1.1, ADR-010).
+    input:
+      - name: model_spec_pin_id
+        type: patchback.model.ModelSpecPinId
+      - name: backend
+        type: patchback.model.Backend
+        example: Cpu
+    outcomes:
+      - name: unknown-pin
+        when_related:
+          via: input.model_spec_pin_id
+          exists: false
+        error: patchback.model.UnknownPin
+        payload:
+          patchback.model.UnknownPin:
+            model_spec_pin_id: input.model_spec_pin_id
+      - name: backend-not-shipped
+        when: backend == Vulkan
+        when_related:
+          via: input.model_spec_pin_id
+          predicate: vulkan_backend_shipped == false
+        error: patchback.model.BackendNotShipped
+        payload:
+          patchback.model.BackendNotShipped:
+            model_spec_pin_id: input.model_spec_pin_id
+            backend: input.backend
+      - name: gpu-equivalence-not-recorded
+        when: backend == Vulkan
+        when_related:
+          via: input.model_spec_pin_id
+          predicate: state == Pinned
+        error: patchback.model.GpuEquivalenceNotRecorded
+        payload:
+          patchback.model.GpuEquivalenceNotRecorded:
+            model_spec_pin_id: input.model_spec_pin_id
+      - name: planned
+        creates: patchback.model.TrainingRun
+        instance: training_run_id
+        sets:
+          model_spec_pin_id: input.model_spec_pin_id
+          backend: input.backend
+          model_source_id: {cleared: true}
+          data_split_id: {cleared: true}
+          eval_split_id: {cleared: true}
+          exit_status: {cleared: true}
+        emits: [patchback.model.TrainingRunPlanned]
+        payload:
+          patchback.model.TrainingRunPlanned:
+            training_run_id: {generated: true}
+            model_spec_pin_id: input.model_spec_pin_id
+            backend: input.backend
+        summary: The run is planned on a backend the pin supports.
+
+  - name: patchback.model.BindModelSource
+    naming:
+      wire: bind-model-source
+      display: Bind the model source
+      summary: Name the `.mspec` source the run trains; only a source `modelspec check` accepted (§ 8.1).
+    input:
+      - name: training_run_id
+        type: patchback.model.TrainingRunId
+      - name: model_source_id
+        type: patchback.model.ModelSourceId
+    outcomes:
+      - name: unknown-run
+        unknown_instance: true
+        error: patchback.model.UnknownTrainingRun
+        payload:
+          patchback.model.UnknownTrainingRun:
+            training_run_id: input.training_run_id
+      - name: unknown-source
+        when_related:
+          via: input.model_source_id
+          exists: false
+        error: patchback.model.UnknownModelSource
+        payload:
+          patchback.model.UnknownModelSource:
+            model_source_id: input.model_source_id
+      - name: model-not-checked
+        when_related:
+          via: input.model_source_id
+          predicate: state != Checked
+        error: patchback.model.ModelNotChecked
+        payload:
+          patchback.model.ModelNotChecked:
+            model_source_id: input.model_source_id
+            state: {related: {via: input.model_source_id, field: state}}
+      # Gap (ESS 0.67.0): a related row's field cannot be compared with a subject field, so a
+      # source checked under another pin than the run's is not refused here (PinMismatch is an
+      # external decision).
+      - name: pin-mismatch
+        external: the source was checked under another ModelSpec pin than the run's
+        error: patchback.model.PinMismatch
+        payload:
+          patchback.model.PinMismatch:
+            model_source_id: input.model_source_id
+            model_spec_pin_id: {related: {via: input.model_source_id, field: model_spec_pin_id}}
+      - name: bound
+        moves: patchback.model.TrainingRun.bind_model
+        instance: training_run_id
+        sets:
+          model_source_id: input.model_source_id
+        emits: [patchback.model.ModelSourceBound]
+        payload:
+          patchback.model.ModelSourceBound:
+            training_run_id: input.training_run_id
+            model_source_id: input.model_source_id
+        summary: The run trains this checked source.
+      - name: wrong-state
+        wrong_state: true
+        error: patchback.model.TrainingRunPastPlanning
+        payload:
+          patchback.model.TrainingRunPastPlanning:
+            state: {subject: state}
+
+  - name: patchback.model.StartTrainingRun
+    naming:
+      wire: start-training-run
+      display: Start a training run
+      summary: >-
+        Start `modelspec train <source> --backend <b> --data <dir> [--eval <dir>]` as a subprocess
+        through `std::process::Command` (§ 8.1, § 8.2 step 1), on written dense data only.
+    input:
+      - name: training_run_id
+        type: patchback.model.TrainingRunId
+      - name: data_split_id
+        type: patchback.dataset.DatasetSplitId
+      - name: eval_split_id
+        type: Optional<patchback.dataset.DatasetSplitId>
+    outcomes:
+      - name: unknown-run
+        unknown_instance: true
+        error: patchback.model.UnknownTrainingRun
+        payload:
+          patchback.model.UnknownTrainingRun:
+            training_run_id: input.training_run_id
+      - name: unknown-data
+        when_related:
+          via: input.data_split_id
+          exists: false
+        error: patchback.model.UnknownDataSplit
+        payload:
+          patchback.model.UnknownDataSplit:
+            dataset_split_id: input.data_split_id
+      - name: data-not-written
+        when_related:
+          via: input.data_split_id
+          predicate: state != Written
+        error: patchback.model.DataNotWritten
+        payload:
+          patchback.model.DataNotWritten:
+            dataset_split_id: input.data_split_id
+            state: {related: {via: input.data_split_id, field: state}}
+      # Gap (ESS 0.67.0): one related row per command, and no modulo, so the `--eval` split's
+      # state and the multiple-of-batch-size rule (§ 7.2) are external decisions here.
+      - name: eval-not-written
+        external: "`--eval` names an unknown split or one whose dense data is not written"
+        error: patchback.model.EvalNotWritten
+        payload:
+          patchback.model.EvalNotWritten:
+            eval_split_id: input.eval_split_id
+      - name: eval-count-not-batch-multiple
+        external: "`--eval` names a split whose sample count is not a multiple of the source's batch_size"
+        error: patchback.model.EvalCountNotBatchMultiple
+        payload:
+          patchback.model.EvalCountNotBatchMultiple:
+            eval_split_id: input.eval_split_id
+            training_run_id: input.training_run_id
+      - name: started
+        moves: patchback.model.TrainingRun.start
+        instance: training_run_id
+        sets:
+          data_split_id: input.data_split_id
+          eval_split_id: input.eval_split_id
+        emits: [patchback.model.TrainingRunStarted]
+        payload:
+          patchback.model.TrainingRunStarted:
+            training_run_id: input.training_run_id
+            data_split_id: input.data_split_id
+        summary: The subprocess is running.
+      - name: wrong-state
+        wrong_state: true
+        error: patchback.model.TrainingRunNotReady
+        payload:
+          patchback.model.TrainingRunNotReady:
+            state: {subject: state}
+
+  - name: patchback.model.FinishTrainingRun
+    naming:
+      wire: finish-training-run
+      display: Finish a training run
+      summary: Record the subprocess exit status; 0 completes the run, any other status fails it.
+    input:
+      - name: training_run_id
+        type: patchback.model.TrainingRunId
+      - name: exit_status
+        type: Integer
+        example: 0
+    outcomes:
+      - name: unknown-run
+        unknown_instance: true
+        error: patchback.model.UnknownTrainingRun
+        payload:
+          patchback.model.UnknownTrainingRun:
+            training_run_id: input.training_run_id
+      - name: failed
+        when: exit_status != 0
+        moves: patchback.model.TrainingRun.fail
+        instance: training_run_id
+        sets:
+          exit_status: input.exit_status
+        emits: [patchback.model.TrainingRunFailed]
+        payload:
+          patchback.model.TrainingRunFailed:
+            training_run_id: input.training_run_id
+            exit_status: input.exit_status
+        summary: The run failed; no weights may be exported from it.
+      - name: completed
+        moves: patchback.model.TrainingRun.complete
+        instance: training_run_id
+        sets:
+          exit_status: input.exit_status
+        emits: [patchback.model.TrainingRunCompleted]
+        payload:
+          patchback.model.TrainingRunCompleted:
+            training_run_id: input.training_run_id
+        summary: The run exited with status 0; its output may be exported.
+      - name: wrong-state
+        wrong_state: true
+        error: patchback.model.TrainingRunFinished
+        payload:
+          patchback.model.TrainingRunFinished:
+            state: {subject: state}
+
+  - name: patchback.model.ExportWeights
+    naming:
+      wire: export-weights
+      display: Export weights
+      summary: >-
+        Read the `param @PatchRegressor.w1` and `.w2` output of a completed run of the pinned
+        version, validate names, shapes, element counts and finiteness, and write the checksummed
+        artifact (§ 8.2 steps 2–3).
+    input:
+      - name: training_run_id
+        type: patchback.model.TrainingRunId
+      - name: feature_contract_id
+        type: patchback.analysis.FeatureContractId
+      - name: w1_name
+        type: String
+        example: "@PatchRegressor.w1"
+      - name: w1_rows
+        type: Integer
+        example: 32
+      - name: w1_columns
+        type: Integer
+        example: 64
+      - name: w1_elements
+        type: Integer
+        example: 2048
+      - name: w2_name
+        type: String
+        example: "@PatchRegressor.w2"
+      - name: w2_rows
+        type: Integer
+        example: 64
+      - name: w2_columns
+        type: Integer
+        example: 8
+      - name: w2_elements
+        type: Integer
+        example: 512
+    outcomes:
+      - name: wrong-shape
+        when:
+          any:
+            - w1_rows != 32
+            - w1_columns != 64
+            - w2_rows != 64
+            - w2_columns != 8
+        error: patchback.model.WrongWeightShape
+        payload:
+          patchback.model.WrongWeightShape:
+            w1_rows: input.w1_rows
+            w1_columns: input.w1_columns
+            w2_rows: input.w2_rows
+            w2_columns: input.w2_columns
+      - name: wrong-element-count
+        when:
+          any:
+            - w1_elements != 2048
+            - w2_elements != 512
+        error: patchback.model.WrongElementCount
+        payload:
+          patchback.model.WrongElementCount:
+            w1_elements: input.w1_elements
+            w2_elements: input.w2_elements
+      - name: unknown-run
+        when_related:
+          via: input.training_run_id
+          exists: false
+        error: patchback.model.UnknownTrainingRun
+        payload:
+          patchback.model.UnknownTrainingRun:
+            training_run_id: input.training_run_id
+      - name: run-not-completed
+        when_related:
+          via: input.training_run_id
+          predicate: state != Completed
+        error: patchback.model.TrainingNotCompleted
+        payload:
+          patchback.model.TrainingNotCompleted:
+            training_run_id: input.training_run_id
+            state: {related: {via: input.training_run_id, field: state}}
+      # Gap (ESS 0.67.0): an input `when` comparing a String with a literal has no witness on a
+      # command that also reads a related row (ESS-SYNTH-003), so the name check is external here.
+      # The decidable rule: w1_name == "@PatchRegressor.w1" and w2_name == "@PatchRegressor.w2".
+      - name: unrecognized-parameter
+        external: a parameter block names something other than `@PatchRegressor.w1` or `@PatchRegressor.w2`
+        error: patchback.model.UnrecognizedParameter
+        payload:
+          patchback.model.UnrecognizedParameter:
+            w1_name: input.w1_name
+            w2_name: input.w2_name
+      - name: unrecognized-output
+        external: >-
+          the run's output holds a line that is not part of a recognized `param @PatchRegressor.w1`
+          or `.w2` block of the pinned version
+        error: patchback.model.UnrecognizedTrainingOutput
+        payload:
+          patchback.model.UnrecognizedTrainingOutput:
+            training_run_id: input.training_run_id
+      - name: non-finite-weight
+        external: a w1 or w2 value is NaN or Infinity
+        error: patchback.model.NonFiniteWeight
+        payload:
+          patchback.model.NonFiniteWeight:
+            training_run_id: input.training_run_id
+      - name: exported
+        creates: patchback.model.WeightArtifact
+        instance: weight_artifact_id
+        sets:
+          training_run_id: input.training_run_id
+          model_spec_pin_id: {related: {via: input.training_run_id, field: model_spec_pin_id}}
+          feature_contract_id: input.feature_contract_id
+          checksum: {generated: true}
+          clamped_predictions: 0
+        emits: [patchback.model.WeightsExported]
+        payload:
+          patchback.model.WeightsExported:
+            weight_artifact_id: {generated: true}
+            training_run_id: input.training_run_id
+            feature_contract_id: input.feature_contract_id
+        summary: The artifact is written with its checksum, model and feature-contract versions.
+
+  - name: patchback.model.Predict
+    naming:
+      wire: predict
+      display: Predict parameters
+      summary: >-
+        Run the native two dense layers and ReLU of a weight artifact on one `features/1` vector
+        (§ 8.2 step 4); outputs outside [0, 1] are clamped, counted and warned about (§ 8.1).
+    input:
+      - name: weight_artifact_id
+        type: patchback.model.WeightArtifactId
+      - name: feature_contract_id
+        type: patchback.analysis.FeatureContractId
+      # Gap (ESS 0.67.0): finite Binary64 is not admitted by the conformance suite and codecs, so the
+      # command carries the vector's length, and finiteness and the clamp are external decisions.
+      - name: feature_count
+        type: Integer
+        example: 32
+    outcomes:
+      - name: wrong-feature-count
+        when: feature_count != 32
+        error: patchback.model.WrongFeatureCount
+        payload:
+          patchback.model.WrongFeatureCount:
+            count: input.feature_count
+      - name: unknown-artifact
+        unknown_instance: true
+        error: patchback.model.UnknownWeightArtifact
+        payload:
+          patchback.model.UnknownWeightArtifact:
+            weight_artifact_id: input.weight_artifact_id
+      - name: feature-contract-mismatch
+        when_subject:
+          predicate: feature_contract_id != input.feature_contract_id
+        error: patchback.model.FeatureContractMismatch
+        payload:
+          patchback.model.FeatureContractMismatch:
+            weight_artifact_id: input.weight_artifact_id
+            feature_contract_id: input.feature_contract_id
+      - name: corrupt-artifact
+        external: the artifact's bytes do not match its checksum
+        error: patchback.model.CorruptWeightArtifact
+        payload:
+          patchback.model.CorruptWeightArtifact:
+            weight_artifact_id: input.weight_artifact_id
+      - name: non-finite-feature
+        external: a feature value is NaN or Infinity
+        error: patchback.model.NonFiniteFeature
+        payload:
+          patchback.model.NonFiniteFeature:
+            weight_artifact_id: input.weight_artifact_id
+      - name: predicted-clamped
+        external: one or more of the eight outputs fall outside [0, 1]
+        updates: patchback.model.WeightArtifact
+        instance: weight_artifact_id
+        sets:
+          clamped_predictions: {increment: 1}
+        emits: [patchback.model.PredictionClamped]
+        payload:
+          patchback.model.PredictionClamped:
+            weight_artifact_id: input.weight_artifact_id
+        summary: The outputs are clamped to [0, 1], the clamp is counted and a warning is emitted.
+      - name: predicted
+        preserves: patchback.model.WeightArtifact
+        instance: weight_artifact_id
+        summary: All eight outputs are in [0, 1] and returned unchanged.
+
+events:
+  - name: patchback.model.ModelSpecPinned
+    fields:
+      - name: model_spec_pin_id
+        type: patchback.model.ModelSpecPinId
+      - name: version
+        type: patchback.model.ModelSpecVersion
+      - name: commit
+        type: patchback.model.GitCommit
+
+  - name: patchback.model.GpuEquivalenceRecorded
+    fields:
+      - name: model_spec_pin_id
+        type: patchback.model.ModelSpecPinId
+
+  - name: patchback.model.ModelSourceRegistered
+    fields:
+      - name: model_source_id
+        type: patchback.model.ModelSourceId
+      - name: path
+        type: String
+
+  - name: patchback.model.ModelSourceChecked
+    fields:
+      - name: model_source_id
+        type: patchback.model.ModelSourceId
+
+  - name: patchback.model.ModelSourceRejected
+    fields:
+      - name: model_source_id
+        type: patchback.model.ModelSourceId
+
+  - name: patchback.model.TrainingRunPlanned
+    fields:
+      - name: training_run_id
+        type: patchback.model.TrainingRunId
+      - name: model_spec_pin_id
+        type: patchback.model.ModelSpecPinId
+      - name: backend
+        type: patchback.model.Backend
+
+  - name: patchback.model.ModelSourceBound
+    fields:
+      - name: training_run_id
+        type: patchback.model.TrainingRunId
+      - name: model_source_id
+        type: patchback.model.ModelSourceId
+
+  - name: patchback.model.TrainingRunStarted
+    fields:
+      - name: training_run_id
+        type: patchback.model.TrainingRunId
+      - name: data_split_id
+        type: patchback.dataset.DatasetSplitId
+
+  - name: patchback.model.TrainingRunCompleted
+    fields:
+      - name: training_run_id
+        type: patchback.model.TrainingRunId
+
+  - name: patchback.model.TrainingRunFailed
+    fields:
+      - name: training_run_id
+        type: patchback.model.TrainingRunId
+      - name: exit_status
+        type: Integer
+
+  - name: patchback.model.WeightsExported
+    fields:
+      - name: weight_artifact_id
+        type: patchback.model.WeightArtifactId
+      - name: training_run_id
+        type: patchback.model.TrainingRunId
+      - name: feature_contract_id
+        type: patchback.analysis.FeatureContractId
+
+  - name: patchback.model.PredictionClamped
+    fields:
+      - name: weight_artifact_id
+        type: patchback.model.WeightArtifactId
+
+views:
+  - name: patchback.model.ModelSpecPins
+    source: patchback.model.ModelSpecPin
+    consistency: read_your_writes
+    fields:
+      - name: model_spec_pin_id
+        type: patchback.model.ModelSpecPinId
+      - name: state
+        type: patchback.model.ModelSpecPin.State
+      - name: version
+        type: patchback.model.ModelSpecVersion
+      - name: commit
+        type: patchback.model.GitCommit
+      - name: vulkan_backend_shipped
+        type: Boolean
+    naming:
+      wire: model-spec-pins
+      display: ModelSpec pins
+
+  - name: patchback.model.ModelSources
+    source: patchback.model.ModelSource
+    consistency: read_your_writes
+    fields:
+      - name: model_source_id
+        type: patchback.model.ModelSourceId
+      - name: state
+        type: patchback.model.ModelSource.State
+      - name: path
+        type: String
+      - name: model_name
+        type: String
+      - name: batch_size
+        type: Integer
+      - name: model_spec_pin_id
+        type: patchback.model.ModelSpecPinId
+    naming:
+      wire: model-sources
+      display: Model sources
+
+  - name: patchback.model.TrainingRuns
+    source: patchback.model.TrainingRun
+    consistency: read_your_writes
+    fields:
+      - name: training_run_id
+        type: patchback.model.TrainingRunId
+      - name: state
+        type: patchback.model.TrainingRun.State
+      - name: model_source_id
+        type: Optional<patchback.model.ModelSourceId>
+      - name: model_spec_pin_id
+        type: patchback.model.ModelSpecPinId
+      - name: backend
+        type: patchback.model.Backend
+      - name: data_split_id
+        type: Optional<patchback.dataset.DatasetSplitId>
+      - name: eval_split_id
+        type: Optional<patchback.dataset.DatasetSplitId>
+      - name: exit_status
+        type: Optional<Integer>
+    naming:
+      wire: training-runs
+      display: Training runs
+
+  - name: patchback.model.WeightArtifacts
+    source: patchback.model.WeightArtifact
+    consistency: read_your_writes
+    fields:
+      - name: weight_artifact_id
+        type: patchback.model.WeightArtifactId
+      - name: state
+        type: patchback.model.WeightArtifact.State
+      - name: training_run_id
+        type: patchback.model.TrainingRunId
+      - name: model_spec_pin_id
+        type: patchback.model.ModelSpecPinId
+      - name: feature_contract_id
+        type: patchback.analysis.FeatureContractId
+      - name: checksum
+        type: patchback.model.WeightChecksum
+      - name: clamped_predictions
+        type: Integer
+    naming:
+      wire: weight-artifacts
+      display: Weight artifacts

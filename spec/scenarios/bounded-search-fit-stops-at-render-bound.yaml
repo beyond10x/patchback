@@ -1,0 +1,162 @@
+# DESIGN.md 9.2 step 4: "Stop when improvement falls below a threshold or the evaluation budget is
+# exhausted"; 12.3: "Cap render evaluations and wall time". A run with a render bound of 2 refuses
+# the third evaluation, completes with the stop reason recorded, and refuses work once Completed.
+type: ess-scenario/1
+domain: patchback.fit
+scenario: bounded-search-fit-stops-at-render-bound
+summary: A run bounded to two renders refuses a third, stops with RenderBudgetExhausted and then refuses further work.
+
+arrange:
+  - instance: reference
+    entity: patchback.audio.AudioClip
+  - instance: run
+    entity: patchback.fit.FitRun
+
+timeline:
+  - at: 2026-10-22T00:00:01Z
+    command: patchback.patch.DeclareTopology
+    actor: patchback.patch.Operator
+    input:
+      topology_id: 0b6e7d1a-0000-4000-8000-000000000103
+      name: subtractive-mono/1
+      parameters: []
+    outcome: declared
+
+  - at: 2026-10-22T00:00:02Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 0b6e7d1a-0000-4000-8000-0000000001f1
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 0b6e7d1a-0000-4000-8000-000000000103
+      nodes:
+        - {id: 2, kind: SawOscillator, parameters: []}
+      edges: []
+    outcome: loaded
+
+  - at: 2026-10-22T00:00:03Z
+    command: patchback.score.LoadNoteSequence
+    actor: patchback.score.Operator
+    input:
+      note_sequence_id: 0b6e7d1a-0000-4000-8000-000000000102
+      format_version: 1
+      sample_rate_hz: 48000
+      patch_id: 0b6e7d1a-0000-4000-8000-0000000001f1
+      notes:
+        - {start_sample: 0, end_sample: 24000, midi_note: 45, velocity: 0.8}
+    outcome: loaded
+
+  - at: 2026-10-22T00:00:04Z
+    command: patchback.audio.ImportWav
+    actor: patchback.audio.Operator
+    input:
+      path: reference.wav
+      origin: PatchbackSynthesized
+      sample_rate_hz: 48000
+      channel_count: 1
+      format_tag: 3
+      bits_per_sample: 32
+      frame_count: 48000
+    outcome: imported
+    capture: {instance: reference, event: patchback.audio.ClipImported, field: audio_clip_id}
+
+  - at: 2026-10-22T10:10:00Z
+    command: patchback.fit.StartFit
+    actor: patchback.fit.Operator
+    input:
+      reference_clip_id: {$instance: reference}
+      note_sequence_id: 0b6e7d1a-0000-4000-8000-000000000102
+      note_source: Known
+      scope: SingleNote
+      topology_id: 0b6e7d1a-0000-4000-8000-000000000103
+      seed: 7
+      max_renders: 2
+      max_wall_time_ms: 600000
+      max_restarts: 1
+      improvement_threshold: 0.001
+    outcome: started
+    capture: {instance: run, event: patchback.fit.FitStarted, field: fit_run_id}
+
+  - at: 2026-10-22T10:10:01Z
+    command: patchback.fit.EvaluateCandidate
+    actor: patchback.fit.Optimizer
+    input:
+      fit_run_id: {$instance: run}
+      patch_id: 0b6e7d1a-0000-4000-8000-000000000110
+      render_id: 0b6e7d1a-0000-4000-8000-000000000120
+      components: {log_spectral: 0.8, envelope: 0.6, transient: 0.4, band_energy: 0.5}
+      total_loss: 0.645
+    outcome: first-retained
+
+  - at: 2026-10-22T10:10:02Z
+    command: patchback.fit.EvaluateCandidate
+    actor: patchback.fit.Optimizer
+    input:
+      fit_run_id: {$instance: run}
+      patch_id: 0b6e7d1a-0000-4000-8000-000000000111
+      render_id: 0b6e7d1a-0000-4000-8000-000000000121
+      components: {log_spectral: 0.9, envelope: 0.6, transient: 0.4, band_energy: 0.5}
+      total_loss: 0.685
+    outcome: not-improved
+
+  - at: 2026-10-22T10:10:03Z
+    command: patchback.fit.EvaluateCandidate
+    actor: patchback.fit.Optimizer
+    input:
+      fit_run_id: {$instance: run}
+      patch_id: 0b6e7d1a-0000-4000-8000-000000000112
+      render_id: 0b6e7d1a-0000-4000-8000-000000000122
+      components: {log_spectral: 0.5, envelope: 0.4, transient: 0.3, band_energy: 0.3}
+      total_loss: 0.43
+    outcome: budget-exhausted
+    error:
+      name: patchback.fit.RenderBudgetExhausted
+
+  - at: 2026-10-22T10:10:04Z
+    command: patchback.fit.RejectCandidate
+    actor: patchback.fit.Optimizer
+    input:
+      fit_run_id: {$instance: run}
+      patch_id: 0b6e7d1a-0000-4000-8000-000000000114
+    outcome: budget-exhausted
+    error:
+      name: patchback.fit.RenderBudgetExhausted
+
+  - at: 2026-10-22T10:10:05Z
+    command: patchback.fit.CompleteFit
+    actor: patchback.fit.Optimizer
+    input:
+      fit_run_id: {$instance: run}
+      stop_reason: RenderBudgetExhausted
+      wall_time_ms: 5000
+    outcome: completed
+    events:
+      - event: patchback.fit.FitCompleted
+        payload:
+          stop_reason: RenderBudgetExhausted
+          evaluations: 2
+          wall_time_ms: 5000
+
+  - at: 2026-10-22T10:10:06Z
+    command: patchback.fit.EvaluateCandidate
+    actor: patchback.fit.Optimizer
+    input:
+      fit_run_id: {$instance: run}
+      patch_id: 0b6e7d1a-0000-4000-8000-000000000113
+      render_id: 0b6e7d1a-0000-4000-8000-000000000123
+      components: {log_spectral: 0.5, envelope: 0.4, transient: 0.3, band_energy: 0.3}
+      total_loss: 0.43
+    outcome: not-running
+    error:
+      name: patchback.fit.FitNotRunning
+
+  - at: 2026-10-22T10:10:07Z
+    command: patchback.fit.RejectCandidate
+    actor: patchback.fit.Optimizer
+    input:
+      fit_run_id: {$instance: run}
+      patch_id: 0b6e7d1a-0000-4000-8000-000000000115
+    outcome: not-running
+    error:
+      name: patchback.fit.FitNotRunning

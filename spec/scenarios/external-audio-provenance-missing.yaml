@@ -1,0 +1,22 @@
+# DESIGN.md 12.3 and AGENTS.md: an external recording without recorded provenance is refused.
+type: ess-scenario/1
+domain: patchback.audio
+scenario: external-audio-provenance-missing
+summary: An external recording with a licence but no provenance is refused with ProvenanceMissing and no clip is created.
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.audio.ImportWav
+    actor: patchback.audio.Operator
+    input:
+      path: tests/fixtures/unknown-source.wav
+      origin: ExternalRecording
+      licence: CC-BY-4.0
+      sample_rate_hz: 48000
+      channel_count: 1
+      format_tag: 1
+      bits_per_sample: 16
+      frame_count: 72000
+    outcome: provenance-missing
+    error:
+      name: patchback.audio.ProvenanceMissing

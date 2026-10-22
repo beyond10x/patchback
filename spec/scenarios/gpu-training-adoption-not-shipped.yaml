@@ -1,0 +1,42 @@
+# DESIGN.md 1.1: Vulkan/SPIR-V "is on the roadmap and must not be treated as working today";
+# ADR-010: CPU only until the pinned ModelSpec lists the Vulkan backend as shipped. Under such a
+# pin, neither CPU/GPU equivalence can be recorded nor a Vulkan run planned.
+type: ess-scenario/1
+domain: patchback.model
+scenario: gpu-training-adoption-not-shipped
+summary: Under a pin that does not list Vulkan as shipped, recording equivalence and planning a Vulkan run are both refused with BackendNotShipped.
+
+arrange:
+  - instance: pin
+    entity: patchback.model.ModelSpecPin
+
+timeline:
+  - at: 2026-10-22T13:00:00Z
+    command: patchback.model.PinModelSpec
+    actor: patchback.model.Operator
+    input:
+      version: pinned-release
+      commit: 0123456789abcdef0123456789abcdef01234567
+      vulkan_backend_shipped: false
+    outcome: pinned
+    capture: {instance: pin, event: patchback.model.ModelSpecPinned, field: model_spec_pin_id}
+
+  - at: 2026-10-22T13:00:01Z
+    command: patchback.model.RecordGpuEquivalence
+    actor: patchback.model.Operator
+    input:
+      model_spec_pin_id: {$instance: pin}
+      equivalent: true
+    outcome: backend-not-shipped
+    error:
+      name: patchback.model.BackendNotShipped
+
+  - at: 2026-10-22T13:00:02Z
+    command: patchback.model.PlanTrainingRun
+    actor: patchback.model.Operator
+    input:
+      model_spec_pin_id: {$instance: pin}
+      backend: Vulkan
+    outcome: backend-not-shipped
+    error:
+      name: patchback.model.BackendNotShipped

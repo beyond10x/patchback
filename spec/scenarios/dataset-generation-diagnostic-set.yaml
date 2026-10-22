@@ -1,0 +1,76 @@
+# DESIGN.md 7.1: "Keep a separate diagnostic set for silence, noise, and clipping." The diagnostic
+# set is its own entity under the dataset, so its examples never enter a train/validation/test split.
+type: ess-scenario/1
+domain: patchback.dataset
+scenario: dataset-generation-diagnostic-set
+summary: A dataset's separate diagnostic set takes silence, noise and clipping examples; a diagnostic set for an unknown dataset is refused.
+
+arrange:
+  - instance: dataset
+    entity: patchback.dataset.Dataset
+  - instance: diagnostics
+    entity: patchback.dataset.DiagnosticSet
+  - instance: silence
+    entity: patchback.dataset.DiagnosticExample
+  - instance: noise
+    entity: patchback.dataset.DiagnosticExample
+  - instance: clipping
+    entity: patchback.dataset.DiagnosticExample
+
+timeline:
+  - at: 2026-10-22T10:20:00Z
+    command: patchback.dataset.GenerateDataset
+    actor: patchback.dataset.Operator
+    input:
+      seed: 42
+      prng_algorithm: std-only-generator
+      batch_size: 16
+      feature_contract_id: 5a000000-0000-4000-8000-000000000001
+      topology_id: 5a000000-0000-4000-8000-000000000002
+      out_dir: data/
+    outcome: generated
+    capture: {instance: dataset, event: patchback.dataset.DatasetGenerated, field: dataset_id}
+
+  - at: 2026-10-22T10:20:01Z
+    command: patchback.dataset.OpenDiagnosticSet
+    actor: patchback.dataset.Operator
+    input:
+      dataset_id: {$instance: dataset}
+    outcome: opened
+    capture: {instance: diagnostics, event: patchback.dataset.DiagnosticSetOpened, field: diagnostic_set_id}
+
+  - at: 2026-10-22T10:20:02Z
+    command: patchback.dataset.AddDiagnosticExample
+    actor: patchback.dataset.Operator
+    input:
+      diagnostic_set_id: {$instance: diagnostics}
+      kind: Silence
+    outcome: added
+    capture: {instance: silence, event: patchback.dataset.DiagnosticExampleAdded, field: diagnostic_example_id}
+
+  - at: 2026-10-22T10:20:03Z
+    command: patchback.dataset.AddDiagnosticExample
+    actor: patchback.dataset.Operator
+    input:
+      diagnostic_set_id: {$instance: diagnostics}
+      kind: Noise
+    outcome: added
+    capture: {instance: noise, event: patchback.dataset.DiagnosticExampleAdded, field: diagnostic_example_id}
+
+  - at: 2026-10-22T10:20:04Z
+    command: patchback.dataset.AddDiagnosticExample
+    actor: patchback.dataset.Operator
+    input:
+      diagnostic_set_id: {$instance: diagnostics}
+      kind: Clipping
+    outcome: added
+    capture: {instance: clipping, event: patchback.dataset.DiagnosticExampleAdded, field: diagnostic_example_id}
+
+  - at: 2026-10-22T10:20:05Z
+    command: patchback.dataset.OpenDiagnosticSet
+    actor: patchback.dataset.Operator
+    input:
+      dataset_id: 5a000000-0000-4000-8000-0000000000fe
+    outcome: unknown-dataset
+    error:
+      name: patchback.dataset.UnknownDataset

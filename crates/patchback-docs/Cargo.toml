@@ -1,0 +1,11 @@
+[package]
+name = "patchback-docs"
+description = "Generates and checks the derived pages of the Patchback documentation site."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+clap.workspace = true
+serde_json.workspace = true

@@ -1,0 +1,72 @@
+# DESIGN.md section 5.2: "clamp p to [0,1]"; section 8.1: "clamp with an explicit warning".
+# A value inside [0,1] is set as given; one outside is clamped and the warning event carries both.
+# The physical value stored is the contract's mapping of the applied p (numeric obligation).
+type: ess-scenario/1
+domain: patchback.patch
+scenario: parameter-contracts-clamp
+summary: A normalized value inside [0,1] is set as given; 1.4 and -0.2 are clamped to 1 and 0 with a warning.
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.patch.DeclareTopology
+    actor: patchback.patch.Operator
+    input:
+      topology_id: 7f0c0000-0000-4000-8000-000000000003
+      name: subtractive-mono/1
+      parameters:
+        - {path: filter_cutoff, index: 4, unit: Hertz, mapping: Exponential, physical_at_zero: 40, physical_at_one: 16000, default_normalized: 0.5, clamp: ClampToUnitInterval}
+    outcome: declared
+
+  - at: 2026-10-22T09:00:01Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000103
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 7f0c0000-0000-4000-8000-000000000003
+      nodes:
+        - {id: 4, kind: LowpassFilter, parameters: [{name: cutoff, value: 1200}]}
+      edges: []
+    outcome: loaded
+
+  - at: 2026-10-22T09:00:02Z
+    command: patchback.patch.SetParameter
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000103
+      path: filter_cutoff
+      normalized_value: 0.25
+    outcome: set
+    events:
+      - event: patchback.patch.ParameterSet
+        payload:
+          normalized_value: 0.25
+
+  - at: 2026-10-22T09:00:03Z
+    command: patchback.patch.SetParameter
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000103
+      path: filter_cutoff
+      normalized_value: 1.4
+    outcome: clamped
+    events:
+      - event: patchback.patch.ParameterClamped
+        payload:
+          submitted: 1.4
+          applied: 1
+
+  - at: 2026-10-22T09:00:04Z
+    command: patchback.patch.SetParameter
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000103
+      path: filter_cutoff
+      normalized_value: -0.2
+    outcome: clamped
+    events:
+      - event: patchback.patch.ParameterClamped
+        payload:
+          submitted: -0.2
+          applied: 0

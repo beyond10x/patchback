@@ -1,0 +1,94 @@
+# DESIGN.md 6.3: features are defined by a frozen contract before dataset generation; "If a
+# feature cannot be computed reliably, fail with a structured diagnostic; do not silently
+# fabricate an estimate"; 12.3: "Reject ... non-finite features".
+type: ess-scenario/1
+domain: patchback.analysis
+scenario: feature-contract-extract
+summary: Extraction under a draft contract is refused; under the published contract it succeeds, and an uncomputable or non-finite feature is refused.
+
+arrange:
+  - instance: analysis
+    entity: patchback.analysis.Analysis
+  - instance: contract
+    entity: patchback.analysis.FeatureContract
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.analysis.AnalyzeAudio
+    actor: patchback.analysis.Operator
+    input:
+      audio_clip_id: 0a1b2c3d-0000-4000-8000-000000000011
+      out_dir: analysis/
+      sample_rate_hz: 48000
+      frame_count: 48000
+      fft_lengths: [512, 2048, 8192]
+      hop_length: 512
+      window: Hann
+    outcome: analyzed
+    capture: {instance: analysis, event: patchback.analysis.AudioAnalyzed, field: analysis_id}
+
+  - at: 2026-10-22T09:00:01Z
+    command: patchback.analysis.DefineFeatureContract
+    actor: patchback.analysis.Operator
+    input:
+      version: features/1
+      value_count: 32
+      band_count: 8
+      band_windows: [Attack, Body, Release]
+      scalar_features:
+        - Rms
+        - Peak
+        - SpectralCentroid
+        - Rolloff
+        - SpectralFlatness
+        - ZeroCrossingRate
+        - AttackEnvelopeSlope
+        - NormalizedMidiPitch
+      fft_lengths: [512, 2048, 8192]
+    outcome: defined
+    capture: {instance: contract, event: patchback.analysis.FeatureContractDefined, field: feature_contract_id}
+
+  - at: 2026-10-22T09:00:02Z
+    command: patchback.analysis.ExtractFeatures
+    actor: patchback.analysis.Operator
+    input:
+      analysis_id: {$instance: analysis}
+      feature_contract_id: {$instance: contract}
+    outcome: contract-draft
+    error:
+      name: patchback.analysis.FeatureContractNotPublished
+
+  - at: 2026-10-22T09:00:03Z
+    command: patchback.analysis.PublishFeatureContract
+    actor: patchback.analysis.Operator
+    input:
+      feature_contract_id: {$instance: contract}
+    outcome: published
+
+  - at: 2026-10-22T09:00:04Z
+    command: patchback.analysis.ExtractFeatures
+    actor: patchback.analysis.Operator
+    input:
+      analysis_id: {$instance: analysis}
+      feature_contract_id: {$instance: contract}
+    outcome: extracted
+
+  - at: 2026-10-22T09:00:05Z
+    command: patchback.analysis.ExtractFeatures
+    actor: patchback.analysis.Operator
+    input:
+      analysis_id: {$instance: analysis}
+      feature_contract_id: {$instance: contract}
+    outcome: not-computable
+    error:
+      name: patchback.analysis.FeatureNotComputable
+
+  - at: 2026-10-22T09:00:06Z
+    command: patchback.analysis.ExtractFeatures
+    actor: patchback.analysis.Operator
+    input:
+      analysis_id: {$instance: analysis}
+      feature_contract_id: {$instance: contract}
+    outcome: non-finite
+    error:
+      name: patchback.analysis.NonFiniteFeature

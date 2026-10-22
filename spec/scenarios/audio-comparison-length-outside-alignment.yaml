@@ -1,0 +1,53 @@
+# DESIGN.md 9.1: "Time alignment and note matching must be performed before computing these
+# losses." The tolerance alignment absorbs is not settled (UNMAPPED in fit.yaml, CompareAudio),
+# so the refusal is external.
+type: ess-scenario/1
+domain: patchback.fit
+scenario: audio-comparison-length-outside-alignment
+summary: A comparison whose clip lengths differ beyond the alignment rule is refused with LengthOutsideAlignment and no Comparison is recorded.
+
+arrange:
+  - instance: reference
+    entity: patchback.audio.AudioClip
+  - instance: candidate
+    entity: patchback.audio.AudioClip
+
+timeline:
+  - at: 2026-10-22T00:00:01Z
+    command: patchback.audio.ImportWav
+    actor: patchback.audio.Operator
+    input:
+      path: reference.wav
+      origin: PatchbackSynthesized
+      sample_rate_hz: 48000
+      channel_count: 1
+      format_tag: 3
+      bits_per_sample: 32
+      frame_count: 48000
+    outcome: imported
+    capture: {instance: reference, event: patchback.audio.ClipImported, field: audio_clip_id}
+
+  - at: 2026-10-22T00:00:02Z
+    command: patchback.audio.ImportWav
+    actor: patchback.audio.Operator
+    input:
+      path: candidate.wav
+      origin: PatchbackSynthesized
+      sample_rate_hz: 48000
+      channel_count: 1
+      format_tag: 3
+      bits_per_sample: 32
+      frame_count: 48000
+    outcome: imported
+    capture: {instance: candidate, event: patchback.audio.ClipImported, field: audio_clip_id}
+
+  - at: 2026-10-22T11:00:00Z
+    command: patchback.fit.CompareAudio
+    actor: patchback.fit.Operator
+    input:
+      reference_clip_id: {$instance: reference}
+      candidate_clip_id: {$instance: candidate}
+      weights: {log_spectral: 0.4, envelope: 0.3, transient: 0.2, band_energy: 0.1}
+    outcome: length-outside-alignment
+    error:
+      name: patchback.fit.LengthOutsideAlignment

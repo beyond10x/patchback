@@ -1,0 +1,61 @@
+# DESIGN.md section 5.4: feedback is allowed only through an explicit Delay node of at least one
+# sample. A Drive -> Delay(1 sample) -> Drive loop validates once the Delay family is admitted.
+# The validator's cycle search (external) finds no zero-delay cycle here.
+type: ess-scenario/1
+domain: patchback.patch
+scenario: delayed-feedback-accepted
+summary: A feedback loop through a one-sample Delay node validates and compiles.
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.patch.DeclareTopology
+    actor: patchback.patch.Operator
+    input:
+      topology_id: 7f0c0000-0000-4000-8000-000000000041
+      name: subtractive-mono/1
+      parameters: []
+    outcome: declared
+
+  - at: 2026-10-22T09:00:01Z
+    command: patchback.patch.AdmitModuleFamily
+    actor: patchback.patch.Operator
+    input:
+      topology_id: 7f0c0000-0000-4000-8000-000000000041
+      family: Delay
+    outcome: delay
+
+  - at: 2026-10-22T09:00:02Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000141
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 7f0c0000-0000-4000-8000-000000000041
+      nodes:
+        - {id: 3, kind: Drive, parameters: []}
+        - {id: 10, kind: Delay, parameters: [{name: delay_samples, value: 1}]}
+      edges:
+        - {from_node: 3, from_port: out, from_rate: Audio, to_node: 10, to_port: in, to_rate: Audio}
+        - {from_node: 10, from_port: out, from_rate: Audio, to_node: 3, to_port: in, to_rate: Audio}
+    outcome: loaded
+
+  - at: 2026-10-22T09:00:03Z
+    command: patchback.patch.ValidatePatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000141
+    outcome: validated
+
+  - at: 2026-10-22T09:00:04Z
+    command: patchback.patch.CompilePatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000141
+    outcome: compiled
+
+assert:
+  - view: patchback.patch.Patches
+    contains:
+      patch_id: 7f0c0000-0000-4000-8000-000000000141
+      state: Compiled

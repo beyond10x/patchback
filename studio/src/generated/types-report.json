@@ -1,0 +1,1142 @@
+{
+  "format": "ess-types-report/3",
+  "source_digest": "6d0c266ecaa72621021d98b39451bb0d9aeebaae328221b102774f55b596d2fd",
+  "input": {
+    "kind": "model",
+    "system": "patchback",
+    "specification_version": "v1",
+    "contract_digest": "slice-sha256/2:d87f692ef19bf356b05951f6debde7fe8a7d7352a1bf2f4a5e21142cf6ba3560",
+    "projection_digest": "2a7c0d438b1e1cac22b5cc730981dc567ff8da1582cf1013256ead823f97db87"
+  },
+  "generator_version": "0.67.0",
+  "target": "typescript",
+  "configuration": {
+    "language": "typescript"
+  },
+  "roots": [
+    "patchback.studio.CataloguePublished",
+    "patchback.studio.FrameAppended",
+    "patchback.studio.GraphDrawn",
+    "patchback.studio.ResultComposed",
+    "patchback.studio.TraceClosedEvent",
+    "patchback.studio.TraceOpened"
+  ],
+  "declarations": {
+    "patchback.audio.AudioClipId": "AudioClipId",
+    "patchback.audio.RenderId": "RenderId",
+    "patchback.fit.FitRunId": "FitRunId",
+    "patchback.fit.LossComponents": "LossComponents",
+    "patchback.patch.ClampPolicy": "ClampPolicy",
+    "patchback.patch.ModuleFamily": "ModuleFamily",
+    "patchback.patch.NodeKind": "NodeKind",
+    "patchback.patch.ParameterContract": "ParameterContract",
+    "patchback.patch.ParameterMapping": "ParameterMapping",
+    "patchback.patch.ParameterPath": "ParameterPath",
+    "patchback.patch.ParameterUnit": "ParameterUnit",
+    "patchback.patch.PatchId": "PatchId",
+    "patchback.patch.PortName": "PortName",
+    "patchback.patch.PortRate": "PortRate",
+    "patchback.patch.TopologyId": "TopologyId",
+    "patchback.studio.CatalogueId": "CatalogueId",
+    "patchback.studio.CataloguePublished": "CataloguePublished",
+    "patchback.studio.FrameAppended": "FrameAppended",
+    "patchback.studio.FrameOutcome": "FrameOutcome",
+    "patchback.studio.GraphDrawn": "GraphDrawn",
+    "patchback.studio.GraphEdge": "GraphEdge",
+    "patchback.studio.GraphNode": "GraphNode",
+    "patchback.studio.GraphViewId": "GraphViewId",
+    "patchback.studio.ModuleSpec": "ModuleSpec",
+    "patchback.studio.ParameterSample": "ParameterSample",
+    "patchback.studio.PortDirection": "PortDirection",
+    "patchback.studio.PortSpec": "PortSpec",
+    "patchback.studio.ResultComposed": "ResultComposed",
+    "patchback.studio.ResultViewId": "ResultViewId",
+    "patchback.studio.SpectrumSource": "SpectrumSource",
+    "patchback.studio.SpectrumSpec": "SpectrumSpec",
+    "patchback.studio.TraceClosedEvent": "TraceClosedEvent",
+    "patchback.studio.TraceEnd": "TraceEnd",
+    "patchback.studio.TraceFrameId": "TraceFrameId",
+    "patchback.studio.TraceId": "TraceId",
+    "patchback.studio.TraceOpened": "TraceOpened",
+    "patchback.studio.TraceSource": "TraceSource"
+  },
+  "annotations": [
+    {
+      "pointer": "/$defs/patchback.audio.AudioClipId/format",
+      "rule": "format",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.audio.AudioClipId/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.audio.AudioClipId/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.audio.AudioClipId/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.audio.RenderId/format",
+      "rule": "format",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.audio.RenderId/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.audio.RenderId/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.audio.RenderId/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.fit.FitRunId/format",
+      "rule": "format",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.fit.FitRunId/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.fit.FitRunId/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.fit.FitRunId/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.fit.LossComponents/description",
+      "rule": "description",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.fit.LossComponents/properties/band_energy/format",
+      "rule": "format",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.fit.LossComponents/properties/envelope/format",
+      "rule": "format",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.fit.LossComponents/properties/log_spectral/format",
+      "rule": "format",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.fit.LossComponents/properties/transient/format",
+      "rule": "format",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.fit.LossComponents/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.fit.LossComponents/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.fit.LossComponents/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ClampPolicy/description",
+      "rule": "description",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ClampPolicy/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ClampPolicy/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ClampPolicy/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ModuleFamily/description",
+      "rule": "description",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ModuleFamily/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ModuleFamily/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ModuleFamily/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.NodeKind/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.NodeKind/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.NodeKind/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ParameterContract/description",
+      "rule": "description",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ParameterContract/properties/default_normalized/format",
+      "rule": "format",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ParameterContract/properties/index/description",
+      "rule": "description",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ParameterContract/properties/physical_at_one/description",
+      "rule": "description",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ParameterContract/properties/physical_at_one/format",
+      "rule": "format",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ParameterContract/properties/physical_at_zero/description",
+      "rule": "description",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ParameterContract/properties/physical_at_zero/format",
+      "rule": "format",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ParameterContract/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ParameterContract/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ParameterContract/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ParameterMapping/description",
+      "rule": "description",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ParameterMapping/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ParameterMapping/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ParameterMapping/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ParameterPath/description",
+      "rule": "description",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ParameterPath/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ParameterPath/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ParameterPath/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ParameterUnit/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ParameterUnit/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ParameterUnit/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.PatchId/format",
+      "rule": "format",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.PatchId/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.PatchId/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.PatchId/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.PortName/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.PortName/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.PortName/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.PortRate/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.PortRate/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.PortRate/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.TopologyId/format",
+      "rule": "format",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.TopologyId/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.TopologyId/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.TopologyId/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.CatalogueId/format",
+      "rule": "format",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.CatalogueId/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.CatalogueId/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.CatalogueId/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.CataloguePublished/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.CataloguePublished/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.CataloguePublished/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.FrameAppended/properties/best_loss/format",
+      "rule": "format",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.FrameAppended/properties/total_loss/format",
+      "rule": "format",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.FrameAppended/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.FrameAppended/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.FrameAppended/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.FrameOutcome/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.FrameOutcome/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.FrameOutcome/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.GraphDrawn/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.GraphDrawn/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.GraphDrawn/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.GraphEdge/description",
+      "rule": "description",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.GraphEdge/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.GraphEdge/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.GraphEdge/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.GraphNode/description",
+      "rule": "description",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.GraphNode/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.GraphNode/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.GraphNode/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.GraphViewId/format",
+      "rule": "format",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.GraphViewId/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.GraphViewId/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.GraphViewId/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.ModuleSpec/description",
+      "rule": "description",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.ModuleSpec/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.ModuleSpec/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.ModuleSpec/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.ParameterSample/description",
+      "rule": "description",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.ParameterSample/properties/normalized_value/format",
+      "rule": "format",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.ParameterSample/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.ParameterSample/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.ParameterSample/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.PortDirection/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.PortDirection/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.PortDirection/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.PortSpec/description",
+      "rule": "description",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.PortSpec/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.PortSpec/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.PortSpec/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.ResultComposed/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.ResultComposed/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.ResultComposed/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.ResultViewId/format",
+      "rule": "format",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.ResultViewId/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.ResultViewId/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.ResultViewId/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.SpectrumSource/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.SpectrumSource/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.SpectrumSource/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.SpectrumSpec/description",
+      "rule": "description",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.SpectrumSpec/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.SpectrumSpec/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.SpectrumSpec/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.TraceClosedEvent/description",
+      "rule": "description",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.TraceClosedEvent/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.TraceClosedEvent/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.TraceClosedEvent/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.TraceEnd/description",
+      "rule": "description",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.TraceEnd/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.TraceEnd/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.TraceEnd/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.TraceFrameId/format",
+      "rule": "format",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.TraceFrameId/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.TraceFrameId/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.TraceFrameId/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.TraceId/format",
+      "rule": "format",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.TraceId/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.TraceId/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.TraceId/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.TraceOpened/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.TraceOpened/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.TraceOpened/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.TraceSource/description",
+      "rule": "description",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.TraceSource/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.TraceSource/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.TraceSource/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    }
+  ],
+  "obligations": [
+    {
+      "pointer": "/",
+      "rule": "typescript_compiler_options",
+      "detail": "use strict and exactOptionalPropertyTypes; these declarations do not validate runtime JSON"
+    },
+    {
+      "pointer": "/$defs/patchback.audio.AudioClipId",
+      "rule": "typescript_nominal_identity",
+      "detail": "structural TypeScript aliases do not enforce distinct model newtype identities"
+    },
+    {
+      "pointer": "/$defs/patchback.audio.AudioClipId/pattern",
+      "rule": "pattern",
+      "detail": "validate this constraint against the source schema at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.audio.RenderId",
+      "rule": "typescript_nominal_identity",
+      "detail": "structural TypeScript aliases do not enforce distinct model newtype identities"
+    },
+    {
+      "pointer": "/$defs/patchback.audio.RenderId/pattern",
+      "rule": "pattern",
+      "detail": "validate this constraint against the source schema at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.fit.FitRunId",
+      "rule": "typescript_nominal_identity",
+      "detail": "structural TypeScript aliases do not enforce distinct model newtype identities"
+    },
+    {
+      "pointer": "/$defs/patchback.fit.FitRunId/pattern",
+      "rule": "pattern",
+      "detail": "validate this constraint against the source schema at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.fit.LossComponents",
+      "rule": "closed_object",
+      "detail": "TypeScript structural assignability does not enforce exact object keys; validate additionalProperties at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.fit.LossComponents/properties/band_energy/pattern",
+      "rule": "pattern",
+      "detail": "validate this constraint against the source schema at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.fit.LossComponents/properties/envelope/pattern",
+      "rule": "pattern",
+      "detail": "validate this constraint against the source schema at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.fit.LossComponents/properties/log_spectral/pattern",
+      "rule": "pattern",
+      "detail": "validate this constraint against the source schema at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.fit.LossComponents/properties/transient/pattern",
+      "rule": "pattern",
+      "detail": "validate this constraint against the source schema at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ParameterContract",
+      "rule": "closed_object",
+      "detail": "TypeScript structural assignability does not enforce exact object keys; validate additionalProperties at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ParameterContract/properties/default_normalized/pattern",
+      "rule": "pattern",
+      "detail": "validate this constraint against the source schema at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ParameterContract/properties/index",
+      "rule": "integer",
+      "detail": "TypeScript number does not enforce integrality"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ParameterContract/properties/index",
+      "rule": "json_number_precision",
+      "detail": "TypeScript number cannot retain arbitrary JSON numeric precision; validate representability before decoding"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ParameterContract/properties/physical_at_one/pattern",
+      "rule": "pattern",
+      "detail": "validate this constraint against the source schema at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ParameterContract/properties/physical_at_zero/pattern",
+      "rule": "pattern",
+      "detail": "validate this constraint against the source schema at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.ParameterPath",
+      "rule": "typescript_nominal_identity",
+      "detail": "structural TypeScript aliases do not enforce distinct model newtype identities"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.PatchId",
+      "rule": "typescript_nominal_identity",
+      "detail": "structural TypeScript aliases do not enforce distinct model newtype identities"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.PatchId/pattern",
+      "rule": "pattern",
+      "detail": "validate this constraint against the source schema at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.PortName",
+      "rule": "typescript_nominal_identity",
+      "detail": "structural TypeScript aliases do not enforce distinct model newtype identities"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.TopologyId",
+      "rule": "typescript_nominal_identity",
+      "detail": "structural TypeScript aliases do not enforce distinct model newtype identities"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.TopologyId/pattern",
+      "rule": "pattern",
+      "detail": "validate this constraint against the source schema at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.CatalogueId",
+      "rule": "typescript_nominal_identity",
+      "detail": "structural TypeScript aliases do not enforce distinct model newtype identities"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.CatalogueId/pattern",
+      "rule": "pattern",
+      "detail": "validate this constraint against the source schema at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.CataloguePublished",
+      "rule": "closed_object",
+      "detail": "TypeScript structural assignability does not enforce exact object keys; validate additionalProperties at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.FrameAppended",
+      "rule": "closed_object",
+      "detail": "TypeScript structural assignability does not enforce exact object keys; validate additionalProperties at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.FrameAppended/properties/best_loss/pattern",
+      "rule": "pattern",
+      "detail": "validate this constraint against the source schema at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.FrameAppended/properties/evaluation",
+      "rule": "integer",
+      "detail": "TypeScript number does not enforce integrality"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.FrameAppended/properties/evaluation",
+      "rule": "json_number_precision",
+      "detail": "TypeScript number cannot retain arbitrary JSON numeric precision; validate representability before decoding"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.FrameAppended/properties/sequence",
+      "rule": "integer",
+      "detail": "TypeScript number does not enforce integrality"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.FrameAppended/properties/sequence",
+      "rule": "json_number_precision",
+      "detail": "TypeScript number cannot retain arbitrary JSON numeric precision; validate representability before decoding"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.FrameAppended/properties/total_loss/pattern",
+      "rule": "pattern",
+      "detail": "validate this constraint against the source schema at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.GraphDrawn",
+      "rule": "closed_object",
+      "detail": "TypeScript structural assignability does not enforce exact object keys; validate additionalProperties at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.GraphEdge",
+      "rule": "closed_object",
+      "detail": "TypeScript structural assignability does not enforce exact object keys; validate additionalProperties at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.GraphEdge/properties/from_node",
+      "rule": "integer",
+      "detail": "TypeScript number does not enforce integrality"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.GraphEdge/properties/from_node",
+      "rule": "json_number_precision",
+      "detail": "TypeScript number cannot retain arbitrary JSON numeric precision; validate representability before decoding"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.GraphEdge/properties/to_node",
+      "rule": "integer",
+      "detail": "TypeScript number does not enforce integrality"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.GraphEdge/properties/to_node",
+      "rule": "json_number_precision",
+      "detail": "TypeScript number cannot retain arbitrary JSON numeric precision; validate representability before decoding"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.GraphNode",
+      "rule": "closed_object",
+      "detail": "TypeScript structural assignability does not enforce exact object keys; validate additionalProperties at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.GraphNode/properties/node_id",
+      "rule": "integer",
+      "detail": "TypeScript number does not enforce integrality"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.GraphNode/properties/node_id",
+      "rule": "json_number_precision",
+      "detail": "TypeScript number cannot retain arbitrary JSON numeric precision; validate representability before decoding"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.GraphNode/properties/node_id/minimum",
+      "rule": "minimum",
+      "detail": "validate this constraint against the source schema at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.GraphNode/properties/rank",
+      "rule": "integer",
+      "detail": "TypeScript number does not enforce integrality"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.GraphNode/properties/rank",
+      "rule": "json_number_precision",
+      "detail": "TypeScript number cannot retain arbitrary JSON numeric precision; validate representability before decoding"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.GraphNode/properties/rank/minimum",
+      "rule": "minimum",
+      "detail": "validate this constraint against the source schema at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.GraphNode/x-ess-invariants",
+      "rule": "model_invariants",
+      "detail": "enforce the retained model invariant statements; structural codecs do not evaluate predicates"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.GraphViewId",
+      "rule": "typescript_nominal_identity",
+      "detail": "structural TypeScript aliases do not enforce distinct model newtype identities"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.GraphViewId/pattern",
+      "rule": "pattern",
+      "detail": "validate this constraint against the source schema at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.ModuleSpec",
+      "rule": "closed_object",
+      "detail": "TypeScript structural assignability does not enforce exact object keys; validate additionalProperties at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.ParameterSample",
+      "rule": "closed_object",
+      "detail": "TypeScript structural assignability does not enforce exact object keys; validate additionalProperties at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.ParameterSample/properties/normalized_value/pattern",
+      "rule": "pattern",
+      "detail": "validate this constraint against the source schema at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.PortSpec",
+      "rule": "closed_object",
+      "detail": "TypeScript structural assignability does not enforce exact object keys; validate additionalProperties at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.ResultComposed",
+      "rule": "closed_object",
+      "detail": "TypeScript structural assignability does not enforce exact object keys; validate additionalProperties at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.ResultViewId",
+      "rule": "typescript_nominal_identity",
+      "detail": "structural TypeScript aliases do not enforce distinct model newtype identities"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.ResultViewId/pattern",
+      "rule": "pattern",
+      "detail": "validate this constraint against the source schema at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.SpectrumSpec",
+      "rule": "closed_object",
+      "detail": "TypeScript structural assignability does not enforce exact object keys; validate additionalProperties at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.SpectrumSpec/properties/fft_size",
+      "rule": "integer",
+      "detail": "TypeScript number does not enforce integrality"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.SpectrumSpec/properties/fft_size",
+      "rule": "json_number_precision",
+      "detail": "TypeScript number cannot retain arbitrary JSON numeric precision; validate representability before decoding"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.TraceClosedEvent",
+      "rule": "closed_object",
+      "detail": "TypeScript structural assignability does not enforce exact object keys; validate additionalProperties at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.TraceFrameId",
+      "rule": "typescript_nominal_identity",
+      "detail": "structural TypeScript aliases do not enforce distinct model newtype identities"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.TraceFrameId/pattern",
+      "rule": "pattern",
+      "detail": "validate this constraint against the source schema at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.TraceId",
+      "rule": "typescript_nominal_identity",
+      "detail": "structural TypeScript aliases do not enforce distinct model newtype identities"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.TraceId/pattern",
+      "rule": "pattern",
+      "detail": "validate this constraint against the source schema at runtime"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.TraceOpened",
+      "rule": "closed_object",
+      "detail": "TypeScript structural assignability does not enforce exact object keys; validate additionalProperties at runtime"
+    }
+  ]
+}

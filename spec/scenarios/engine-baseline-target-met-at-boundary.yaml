@@ -1,0 +1,39 @@
+# DESIGN.md 12.2: matching "reduces median audio loss by at least 20%". A reduction of exactly
+# 20% therefore records Met; the boundary is inclusive.
+type: ess-scenario/1
+domain: patchback.fit
+scenario: engine-baseline-target-met-at-boundary
+summary: An engine baseline whose median loss falls by exactly 20% completes with target verdict Met.
+
+arrange:
+  - instance: bench
+    entity: patchback.fit.Benchmark
+
+timeline:
+  - at: 2026-10-22T13:00:00Z
+    command: patchback.fit.StartBenchmark
+    actor: patchback.fit.Operator
+    input:
+      kind: EngineBaseline
+      holdout_split_id: 3e9a4c20-0000-4000-8000-000000000001
+      seed: 1234
+      example_count: 200
+    outcome: started
+    capture: {instance: bench, event: patchback.fit.BenchmarkStarted, field: benchmark_id}
+
+  - at: 2026-10-22T13:30:00Z
+    command: patchback.fit.RecordBaselineResult
+    actor: patchback.fit.Operator
+    input:
+      benchmark_id: {$instance: bench}
+      default_median_loss: 0.8
+      default_search_median_loss: 0.64
+      median_loss_reduction_percent: 20
+      default_search_median_evaluations: 1400
+      wall_time_ms: 1800000
+      listening_examples: [listen/example-01.wav]
+    outcome: target-met
+    events:
+      - event: patchback.fit.BenchmarkCompleted
+        payload:
+          target_verdict: Met

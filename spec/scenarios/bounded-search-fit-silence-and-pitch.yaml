@@ -1,0 +1,112 @@
+# DESIGN.md 12.1 Analysis: "silence, extreme pitch"; 6.2 pitch confidence; the brief: "silence and
+# pitch ambiguity are typed outcomes". The detectors live in patchback.analysis, so both refusals
+# are external to this domain; no run starts and nothing is guessed.
+type: ess-scenario/1
+domain: patchback.fit
+scenario: bounded-search-fit-silence-and-pitch
+summary: A fit of a silent reference is refused with ReferenceSilent and a fit of a pitch-ambiguous reference with PitchAmbiguous; no run starts.
+
+arrange:
+  - instance: silent-reference
+    entity: patchback.audio.AudioClip
+  - instance: ambiguous-reference
+    entity: patchback.audio.AudioClip
+
+timeline:
+  - at: 2026-10-22T00:00:01Z
+    command: patchback.patch.DeclareTopology
+    actor: patchback.patch.Operator
+    input:
+      topology_id: 0b6e7d1a-0000-4000-8000-000000000203
+      name: subtractive-mono/1
+      parameters: []
+    outcome: declared
+
+  - at: 2026-10-22T00:00:02Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 0b6e7d1a-0000-4000-8000-0000000002f1
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 0b6e7d1a-0000-4000-8000-000000000203
+      nodes:
+        - {id: 2, kind: SawOscillator, parameters: []}
+      edges: []
+    outcome: loaded
+
+  - at: 2026-10-22T00:00:03Z
+    command: patchback.score.LoadNoteSequence
+    actor: patchback.score.Operator
+    input:
+      note_sequence_id: 0b6e7d1a-0000-4000-8000-000000000202
+      format_version: 1
+      sample_rate_hz: 48000
+      patch_id: 0b6e7d1a-0000-4000-8000-0000000002f1
+      notes:
+        - {start_sample: 0, end_sample: 24000, midi_note: 45, velocity: 0.8}
+    outcome: loaded
+
+  - at: 2026-10-22T00:00:04Z
+    command: patchback.audio.ImportWav
+    actor: patchback.audio.Operator
+    input:
+      path: silent-reference.wav
+      origin: PatchbackSynthesized
+      sample_rate_hz: 48000
+      channel_count: 1
+      format_tag: 3
+      bits_per_sample: 32
+      frame_count: 48000
+    outcome: imported
+    capture: {instance: silent-reference, event: patchback.audio.ClipImported, field: audio_clip_id}
+
+  - at: 2026-10-22T00:00:05Z
+    command: patchback.audio.ImportWav
+    actor: patchback.audio.Operator
+    input:
+      path: ambiguous-reference.wav
+      origin: PatchbackSynthesized
+      sample_rate_hz: 48000
+      channel_count: 1
+      format_tag: 3
+      bits_per_sample: 32
+      frame_count: 48000
+    outcome: imported
+    capture: {instance: ambiguous-reference, event: patchback.audio.ClipImported, field: audio_clip_id}
+
+  - at: 2026-10-22T10:20:00Z
+    command: patchback.fit.StartFit
+    actor: patchback.fit.Operator
+    input:
+      reference_clip_id: {$instance: silent-reference}
+      note_sequence_id: 0b6e7d1a-0000-4000-8000-000000000202
+      note_source: Known
+      scope: SingleNote
+      topology_id: 0b6e7d1a-0000-4000-8000-000000000203
+      seed: 42
+      max_renders: 2000
+      max_wall_time_ms: 600000
+      max_restarts: 4
+      improvement_threshold: 0.001
+    outcome: silent-reference
+    error:
+      name: patchback.fit.ReferenceSilent
+
+  - at: 2026-10-22T10:20:01Z
+    command: patchback.fit.StartFit
+    actor: patchback.fit.Operator
+    input:
+      reference_clip_id: {$instance: ambiguous-reference}
+      note_sequence_id: 0b6e7d1a-0000-4000-8000-000000000202
+      note_source: Known
+      scope: SingleNote
+      topology_id: 0b6e7d1a-0000-4000-8000-000000000203
+      seed: 42
+      max_renders: 2000
+      max_wall_time_ms: 600000
+      max_restarts: 4
+      improvement_threshold: 0.001
+    outcome: pitch-ambiguous
+    error:
+      name: patchback.fit.PitchAmbiguous

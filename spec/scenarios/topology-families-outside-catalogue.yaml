@@ -1,0 +1,80 @@
+# DESIGN.md section 5.4: a kind outside the topology catalogue is refused. Each family's kinds
+# are refused while the family is not admitted (Square/Sine oscillators, highpass/bandpass
+# filters, Delay); admitting a family to an unknown topology is refused.
+type: ess-scenario/1
+domain: patchback.patch
+scenario: topology-families-outside-catalogue
+summary: Square, highpass and Delay nodes are refused on a topology that has not admitted their families, and admission needs a known topology.
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.patch.DeclareTopology
+    actor: patchback.patch.Operator
+    input:
+      topology_id: 7f0c0000-0000-4000-8000-000000000032
+      name: subtractive-mono/1
+      parameters: []
+    outcome: declared
+
+  - at: 2026-10-22T09:00:01Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000133
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 7f0c0000-0000-4000-8000-000000000032
+      nodes:
+        - {id: 2, kind: SquareOscillator, parameters: []}
+      edges: []
+    outcome: square-sine-outside-catalogue
+    error:
+      name: patchback.patch.KindOutsideCatalogue
+      fields:
+        kind_family: SquareSine
+
+  - at: 2026-10-22T09:00:02Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000133
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 7f0c0000-0000-4000-8000-000000000032
+      nodes:
+        - {id: 4, kind: HighpassFilter, parameters: []}
+      edges: []
+    outcome: highpass-bandpass-outside-catalogue
+    error:
+      name: patchback.patch.KindOutsideCatalogue
+      fields:
+        kind_family: HighpassBandpass
+
+  - at: 2026-10-22T09:00:03Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000133
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 7f0c0000-0000-4000-8000-000000000032
+      nodes:
+        - {id: 10, kind: Delay, parameters: [{name: delay_samples, value: 64}]}
+      edges: []
+    outcome: delay-outside-catalogue
+    error:
+      name: patchback.patch.KindOutsideCatalogue
+      fields:
+        kind_family: Delay
+    no_events: [patchback.patch.PatchLoaded]
+
+  - at: 2026-10-22T09:00:04Z
+    command: patchback.patch.AdmitModuleFamily
+    actor: patchback.patch.Operator
+    input:
+      topology_id: 7f0c0000-0000-4000-8000-000000000097
+      family: SquareSine
+    outcome: no-such-topology
+    error:
+      name: patchback.patch.TopologyNotFound
+    no_events: [patchback.patch.ModuleFamilyAdmitted]

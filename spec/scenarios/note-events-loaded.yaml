@@ -1,0 +1,87 @@
+# DESIGN.md sections 10 and 11: a .events file of sample-timed monophonic notes for one patch.
+# Timing is in samples at the patch's sample rate, so a sequence written for another rate, or for
+# a patch that does not exist, is refused. A note may start on the sample the previous one ends.
+type: ess-scenario/1
+domain: patchback.score
+scenario: note-events-loaded
+summary: A monophonic note sequence at the patch's rate loads; one at another rate or for an unknown patch is refused.
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.patch.DeclareTopology
+    actor: patchback.patch.Operator
+    input:
+      topology_id: 7f0c0000-0000-4000-8000-000000000051
+      name: subtractive-mono/1
+      parameters: []
+    outcome: declared
+
+  - at: 2026-10-22T09:00:01Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000151
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 7f0c0000-0000-4000-8000-000000000051
+      nodes:
+        - {id: 2, kind: SawOscillator, parameters: []}
+      edges: []
+    outcome: loaded
+
+  - at: 2026-10-22T09:00:02Z
+    command: patchback.score.LoadNoteSequence
+    actor: patchback.score.Operator
+    input:
+      note_sequence_id: 7f0c0000-0000-4000-8000-000000000251
+      format_version: 1
+      sample_rate_hz: 48000
+      patch_id: 7f0c0000-0000-4000-8000-000000000151
+      notes:
+        - {start_sample: 0, end_sample: 24000, midi_note: 45, velocity: 0.8}
+        - {start_sample: 24000, end_sample: 48000, midi_note: 52, velocity: 0.6}
+    outcome: loaded
+    events:
+      - event: patchback.score.NoteSequenceLoaded
+        payload:
+          note_sequence_id: 7f0c0000-0000-4000-8000-000000000251
+          patch_id: 7f0c0000-0000-4000-8000-000000000151
+
+  - at: 2026-10-22T09:00:03Z
+    command: patchback.score.LoadNoteSequence
+    actor: patchback.score.Operator
+    input:
+      note_sequence_id: 7f0c0000-0000-4000-8000-000000000252
+      format_version: 1
+      sample_rate_hz: 44100
+      patch_id: 7f0c0000-0000-4000-8000-000000000151
+      notes:
+        - {start_sample: 0, end_sample: 22050, midi_note: 45, velocity: 0.8}
+    outcome: rate-mismatch
+    error:
+      name: patchback.score.SampleRateMismatch
+      fields:
+        sample_rate_hz: 44100
+    no_events: [patchback.score.NoteSequenceLoaded]
+
+  - at: 2026-10-22T09:00:04Z
+    command: patchback.score.LoadNoteSequence
+    actor: patchback.score.Operator
+    input:
+      note_sequence_id: 7f0c0000-0000-4000-8000-000000000252
+      format_version: 1
+      sample_rate_hz: 48000
+      patch_id: 7f0c0000-0000-4000-8000-000000000199
+      notes:
+        - {start_sample: 0, end_sample: 24000, midi_note: 45, velocity: 0.8}
+    outcome: unknown-patch
+    error:
+      name: patchback.score.PatchNotFound
+    no_events: [patchback.score.NoteSequenceLoaded]
+
+assert:
+  - view: patchback.score.NoteSequences
+    contains:
+      note_sequence_id: 7f0c0000-0000-4000-8000-000000000251
+      sample_rate_hz: 48000
+      patch_id: 7f0c0000-0000-4000-8000-000000000151

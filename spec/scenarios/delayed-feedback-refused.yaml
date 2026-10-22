@@ -1,0 +1,106 @@
+# DESIGN.md section 5.4: a Delay shorter than one sample is not a delay; a cycle without a Delay
+# is an illegal zero-delay cycle; the gain around a delayed loop is limited.
+# UNMAPPED: the feedback gain limit and the parameter that carries it are not in DESIGN.md.
+type: ess-scenario/1
+domain: patchback.patch
+scenario: delayed-feedback-refused
+summary: A zero-sample Delay, a loop without a Delay and a loop over the feedback gain limit are refused by validation.
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.patch.DeclareTopology
+    actor: patchback.patch.Operator
+    input:
+      topology_id: 7f0c0000-0000-4000-8000-000000000042
+      name: subtractive-mono/1
+      parameters: []
+    outcome: declared
+
+  - at: 2026-10-22T09:00:01Z
+    command: patchback.patch.AdmitModuleFamily
+    actor: patchback.patch.Operator
+    input:
+      topology_id: 7f0c0000-0000-4000-8000-000000000042
+      family: Delay
+    outcome: delay
+
+  - at: 2026-10-22T09:00:02Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000142
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 7f0c0000-0000-4000-8000-000000000042
+      nodes:
+        - {id: 3, kind: Drive, parameters: []}
+        - {id: 10, kind: Delay, parameters: [{name: delay_samples, value: 0}]}
+      edges:
+        - {from_node: 3, from_port: out, from_rate: Audio, to_node: 10, to_port: in, to_rate: Audio}
+        - {from_node: 10, from_port: out, from_rate: Audio, to_node: 3, to_port: in, to_rate: Audio}
+    outcome: loaded
+
+  - at: 2026-10-22T09:00:03Z
+    command: patchback.patch.ValidatePatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000142
+    outcome: delay-too-short
+    error:
+      name: patchback.patch.DelayTooShort
+      fields:
+        patch_id: 7f0c0000-0000-4000-8000-000000000142
+    no_events: [patchback.patch.PatchValidated]
+
+  - at: 2026-10-22T09:00:04Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000143
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 7f0c0000-0000-4000-8000-000000000042
+      nodes:
+        - {id: 3, kind: Drive, parameters: []}
+        - {id: 4, kind: LowpassFilter, parameters: []}
+        - {id: 10, kind: Delay, parameters: [{name: delay_samples, value: 32}]}
+      edges:
+        - {from_node: 3, from_port: out, from_rate: Audio, to_node: 4, to_port: in, to_rate: Audio}
+        - {from_node: 4, from_port: out, from_rate: Audio, to_node: 3, to_port: in, to_rate: Audio}
+    outcome: loaded
+
+  - at: 2026-10-22T09:00:05Z
+    command: patchback.patch.ValidatePatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000143
+    outcome: zero-delay-cycle
+    error:
+      name: patchback.patch.ZeroDelayCycle
+    no_events: [patchback.patch.PatchValidated]
+
+  - at: 2026-10-22T09:00:06Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000144
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 7f0c0000-0000-4000-8000-000000000042
+      nodes:
+        - {id: 3, kind: Drive, parameters: []}
+        - {id: 10, kind: Delay, parameters: [{name: delay_samples, value: 8}]}
+      edges:
+        - {from_node: 3, from_port: out, from_rate: Audio, to_node: 10, to_port: in, to_rate: Audio}
+        - {from_node: 10, from_port: out, from_rate: Audio, to_node: 3, to_port: in, to_rate: Audio}
+    outcome: loaded
+
+  - at: 2026-10-22T09:00:07Z
+    command: patchback.patch.ValidatePatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000144
+    outcome: feedback-gain-exceeded
+    error:
+      name: patchback.patch.FeedbackGainExceeded
+    no_events: [patchback.patch.PatchValidated]

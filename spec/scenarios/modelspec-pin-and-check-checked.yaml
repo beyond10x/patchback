@@ -1,0 +1,51 @@
+# DESIGN.md 3: ModelSpec is "pinned to a tested version/commit"; 8.1: "Validate it with the pinned
+# ModelSpec binary before implementation work proceeds" (`modelspec check
+# models/patch_regressor.mspec`). The check result is recorded once.
+type: ess-scenario/1
+domain: patchback.model
+scenario: modelspec-pin-and-check-checked
+summary: The pinned binary accepts models/patch_regressor.mspec, which is recorded Checked; a second check is refused.
+
+arrange:
+  - instance: pin
+    entity: patchback.model.ModelSpecPin
+  - instance: source
+    entity: patchback.model.ModelSource
+
+timeline:
+  - at: 2026-10-22T11:00:00Z
+    command: patchback.model.PinModelSpec
+    actor: patchback.model.Operator
+    input:
+      version: pinned-release
+      commit: 0123456789abcdef0123456789abcdef01234567
+      vulkan_backend_shipped: false
+    outcome: pinned
+    capture: {instance: pin, event: patchback.model.ModelSpecPinned, field: model_spec_pin_id}
+
+  - at: 2026-10-22T11:00:01Z
+    command: patchback.model.RegisterModelSource
+    actor: patchback.model.Operator
+    input:
+      path: models/patch_regressor.mspec
+      model_name: PatchRegressor
+      batch_size: 16
+      model_spec_pin_id: {$instance: pin}
+    outcome: registered
+    capture: {instance: source, event: patchback.model.ModelSourceRegistered, field: model_source_id}
+
+  - at: 2026-10-22T11:00:02Z
+    command: patchback.model.CheckModelSource
+    actor: patchback.model.Operator
+    input:
+      model_source_id: {$instance: source}
+    outcome: checked
+
+  - at: 2026-10-22T11:00:03Z
+    command: patchback.model.CheckModelSource
+    actor: patchback.model.Operator
+    input:
+      model_source_id: {$instance: source}
+    outcome: wrong-state
+    error:
+      name: patchback.model.ModelSourceAlreadyChecked

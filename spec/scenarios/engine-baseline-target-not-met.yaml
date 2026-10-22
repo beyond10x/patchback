@@ -1,0 +1,55 @@
+# DESIGN.md 12.2: the 20% reduction is "a go/no-go experiment target, not a guaranteed result".
+# A reduction of 12.5% completes the benchmark with NotMet: a recorded result, not a failure or
+# refusal. A second result for the completed benchmark is refused.
+type: ess-scenario/1
+domain: patchback.fit
+scenario: engine-baseline-target-not-met
+summary: An engine baseline whose median loss falls by 12.5% completes with target verdict NotMet, and a second result for it is refused with BenchmarkStateConflict.
+
+arrange:
+  - instance: bench
+    entity: patchback.fit.Benchmark
+
+timeline:
+  - at: 2026-10-22T13:00:00Z
+    command: patchback.fit.StartBenchmark
+    actor: patchback.fit.Operator
+    input:
+      kind: EngineBaseline
+      holdout_split_id: 3e9a4c20-0000-4000-8000-000000000011
+      seed: 1234
+      example_count: 200
+    outcome: started
+    capture: {instance: bench, event: patchback.fit.BenchmarkStarted, field: benchmark_id}
+
+  - at: 2026-10-22T13:30:00Z
+    command: patchback.fit.RecordBaselineResult
+    actor: patchback.fit.Operator
+    input:
+      benchmark_id: {$instance: bench}
+      default_median_loss: 0.8
+      default_search_median_loss: 0.7
+      median_loss_reduction_percent: 12.5
+      default_search_median_evaluations: 2000
+      wall_time_ms: 2100000
+      listening_examples: [listen/example-01.wav]
+    outcome: target-not-met
+    events:
+      - event: patchback.fit.BenchmarkCompleted
+        payload:
+          target_verdict: NotMet
+
+  - at: 2026-10-22T13:31:00Z
+    command: patchback.fit.RecordBaselineResult
+    actor: patchback.fit.Operator
+    input:
+      benchmark_id: {$instance: bench}
+      default_median_loss: 0.8
+      default_search_median_loss: 0.6
+      median_loss_reduction_percent: 25
+      default_search_median_evaluations: 2000
+      wall_time_ms: 2100000
+      listening_examples: [listen/example-01.wav]
+    outcome: wrong-state
+    error:
+      name: patchback.fit.BenchmarkStateConflict

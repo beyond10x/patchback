@@ -1,0 +1,148 @@
+# DESIGN.md 6.3: "Training-set means/standard deviations are saved as an internal artifact ...
+# Neither test-set statistics nor test audio may affect training normalization"; 7.1: the
+# train/validation/test split. The split's role is read from patchback.dataset.DatasetSplit;
+# a split that does not exist is refused.
+type: ess-scenario/1
+domain: patchback.analysis
+scenario: normalization-stats-train-only
+summary: Statistics are computed from the training split under `features/1`; the validation and test splits and an unknown split are refused.
+
+arrange:
+  - instance: contract
+    entity: patchback.analysis.FeatureContract
+  - instance: stats
+    entity: patchback.analysis.NormalizationStats
+  - instance: dataset
+    entity: patchback.dataset.Dataset
+  - instance: train
+    entity: patchback.dataset.DatasetSplit
+  - instance: validation
+    entity: patchback.dataset.DatasetSplit
+  - instance: test
+    entity: patchback.dataset.DatasetSplit
+
+timeline:
+  - at: 2026-10-22T08:59:50Z
+    command: patchback.dataset.GenerateDataset
+    actor: patchback.dataset.Operator
+    input:
+      seed: 42
+      prng_algorithm: std-only-generator
+      batch_size: 16
+      feature_contract_id: 5a000000-0000-4000-8000-000000000001
+      topology_id: 5a000000-0000-4000-8000-000000000002
+      out_dir: data/
+    outcome: generated
+    capture: {instance: dataset, event: patchback.dataset.DatasetGenerated, field: dataset_id}
+
+  - at: 2026-10-22T08:59:51Z
+    command: patchback.dataset.OpenSplit
+    actor: patchback.dataset.Operator
+    input:
+      dataset_id: {$instance: dataset}
+      role: Train
+      sample_count: 50016
+    outcome: opened
+    capture: {instance: train, event: patchback.dataset.SplitOpened, field: dataset_split_id}
+
+  - at: 2026-10-22T08:59:52Z
+    command: patchback.dataset.OpenSplit
+    actor: patchback.dataset.Operator
+    input:
+      dataset_id: {$instance: dataset}
+      role: Validation
+      sample_count: 4992
+    outcome: opened
+    capture: {instance: validation, event: patchback.dataset.SplitOpened, field: dataset_split_id}
+
+  - at: 2026-10-22T08:59:53Z
+    command: patchback.dataset.OpenSplit
+    actor: patchback.dataset.Operator
+    input:
+      dataset_id: {$instance: dataset}
+      role: Test
+      sample_count: 4992
+    outcome: opened
+    capture: {instance: test, event: patchback.dataset.SplitOpened, field: dataset_split_id}
+
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.analysis.DefineFeatureContract
+    actor: patchback.analysis.Operator
+    input:
+      version: features/1
+      value_count: 32
+      band_count: 8
+      band_windows: [Attack, Body, Release]
+      scalar_features:
+        - Rms
+        - Peak
+        - SpectralCentroid
+        - Rolloff
+        - SpectralFlatness
+        - ZeroCrossingRate
+        - AttackEnvelopeSlope
+        - NormalizedMidiPitch
+      fft_lengths: [512, 2048, 8192]
+    outcome: defined
+    capture: {instance: contract, event: patchback.analysis.FeatureContractDefined, field: feature_contract_id}
+
+  - at: 2026-10-22T09:00:01Z
+    command: patchback.analysis.PublishFeatureContract
+    actor: patchback.analysis.Operator
+    input:
+      feature_contract_id: {$instance: contract}
+    outcome: published
+
+  - at: 2026-10-22T09:00:02Z
+    command: patchback.analysis.ComputeNormalizationStats
+    actor: patchback.analysis.Operator
+    input:
+      feature_contract_id: {$instance: contract}
+      dataset_split_id: {$instance: train}
+      feature_contract_version: features/1
+    outcome: computed
+    capture: {instance: stats, event: patchback.analysis.NormalizationStatsComputed, field: normalization_stats_id}
+
+  - at: 2026-10-22T09:00:03Z
+    command: patchback.analysis.ComputeNormalizationStats
+    actor: patchback.analysis.Operator
+    input:
+      feature_contract_id: {$instance: contract}
+      dataset_split_id: {$instance: validation}
+      feature_contract_version: features/1
+    outcome: not-training-split
+    error:
+      name: patchback.analysis.StatsFromNonTrainingSplit
+      fields:
+        split_role: Validation
+
+  - at: 2026-10-22T09:00:04Z
+    command: patchback.analysis.ComputeNormalizationStats
+    actor: patchback.analysis.Operator
+    input:
+      feature_contract_id: {$instance: contract}
+      dataset_split_id: {$instance: test}
+      feature_contract_version: features/1
+    outcome: not-training-split
+    error:
+      name: patchback.analysis.StatsFromNonTrainingSplit
+      fields:
+        split_role: Test
+
+  - at: 2026-10-22T09:00:05Z
+    command: patchback.analysis.ComputeNormalizationStats
+    actor: patchback.analysis.Operator
+    input:
+      feature_contract_id: {$instance: contract}
+      dataset_split_id: 5d000000-0000-4000-8000-000000000099
+      feature_contract_version: features/1
+    outcome: no-such-split
+    error:
+      name: patchback.analysis.DatasetSplitNotFound
+    no_events: [patchback.analysis.NormalizationStatsComputed]
+
+assert:
+  - view: patchback.analysis.NormalizationStatsSet
+    contains:
+      dataset_split_id: {$instance: train}
+      split_role: Train

@@ -1,0 +1,68 @@
+# DESIGN.md 12.3: "Bound input duration ... FFT length"; 6.2: the FFT is radix-2. Both bound
+# values are UNMAPPED (spec/domains/analysis.yaml, AnalyzeAudio), so the over-bound cases are
+# external and their numbers illustrative.
+type: ess-scenario/1
+domain: patchback.analysis
+scenario: analysis-core-refused-bounds
+summary: A non-positive hop, a non-power-of-two FFT length, an FFT length over the bound and a clip over the duration bound are each refused.
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.analysis.AnalyzeAudio
+    actor: patchback.analysis.Operator
+    input:
+      audio_clip_id: 0a1b2c3d-0000-4000-8000-000000000005
+      out_dir: analysis/
+      sample_rate_hz: 48000
+      frame_count: 48000
+      fft_lengths: [512, 2048, 8192]
+      hop_length: 0
+      window: Hann
+    outcome: invalid-hop
+    error:
+      name: patchback.analysis.InvalidHopLength
+
+  - at: 2026-10-22T09:00:01Z
+    command: patchback.analysis.AnalyzeAudio
+    actor: patchback.analysis.Operator
+    input:
+      audio_clip_id: 0a1b2c3d-0000-4000-8000-000000000005
+      out_dir: analysis/
+      sample_rate_hz: 48000
+      frame_count: 48000
+      fft_lengths: [500]
+      hop_length: 250
+      window: Hann
+    outcome: fft-not-power-of-two
+    error:
+      name: patchback.analysis.FftLengthNotPowerOfTwo
+
+  - at: 2026-10-22T09:00:02Z
+    command: patchback.analysis.AnalyzeAudio
+    actor: patchback.analysis.Operator
+    input:
+      audio_clip_id: 0a1b2c3d-0000-4000-8000-000000000005
+      out_dir: analysis/
+      sample_rate_hz: 48000
+      frame_count: 48000
+      fft_lengths: [1048576]
+      hop_length: 512
+      window: Hann
+    outcome: fft-over-bound
+    error:
+      name: patchback.analysis.FftLengthOverBound
+
+  - at: 2026-10-22T09:00:03Z
+    command: patchback.analysis.AnalyzeAudio
+    actor: patchback.analysis.Operator
+    input:
+      audio_clip_id: 0a1b2c3d-0000-4000-8000-000000000006
+      out_dir: analysis/
+      sample_rate_hz: 48000
+      frame_count: 172800000
+      fft_lengths: [512, 2048, 8192]
+      hop_length: 512
+      window: Hann
+    outcome: duration-over-bound
+    error:
+      name: patchback.analysis.DurationOverBound

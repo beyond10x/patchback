@@ -1,0 +1,1033 @@
+domain: patchback.studio
+
+summary: >-
+  What Patchback Studio, the browser view of Patchback, reads and draws (DESIGN.md section 16): the
+  module catalogue of a topology (each atomic module kind with its ports, rates and parameter
+  contracts), the graph of one patch with its delayed feedback marked, the evolution trace of one
+  fit run (one frame per render evaluation, replayed from a fit run's artifacts or streamed live),
+  and the end-result view of a run (recovered patch beside reference and render spectra). Patch,
+  topology, fit run and render are referenced by identity type only; their rules stay in their own
+  domains (DESIGN.md sections 5, 9, 11, 13 D; ADR-003).
+
+# Dependency policy: DESIGN.md 0.3 ADR-011 and section 16 place the studio (Vue 3, TypeScript,
+# Vite, pnpm, under studio/) outside the section 3 runtime policy as a developer tool the Rust
+# application never depends on; its live server is Rust std only.
+# Trace artifact: DESIGN.md 0.3 section 11 adds results/trace.events, a versioned line-oriented
+# per-evaluation trace written per fit run; a replay reads it, and TraceFrame types its records.
+# UNMAPPED: its exact grammar, and whether a failed run keeps its trace, are open (DESIGN.md
+# section 17, OQ-12).
+
+types:
+  - name: patchback.studio.CatalogueId
+    kind: newtype
+    of: Uuid
+
+  - name: patchback.studio.GraphViewId
+    kind: newtype
+    of: Uuid
+
+  - name: patchback.studio.TraceId
+    kind: newtype
+    of: Uuid
+
+  - name: patchback.studio.TraceFrameId
+    kind: newtype
+    of: Uuid
+
+  - name: patchback.studio.ResultViewId
+    kind: newtype
+    of: Uuid
+
+  - name: patchback.studio.PortDirection
+    kind: enum
+    variants: [Input, Output]
+
+  # DESIGN.md 0.3 section 5.1 lists the ports of the MVP kinds (direction from the section 5.2
+  # diagram). A catalogue publishes whatever ports it is given.
+  # UNMAPPED: the port names and the pitch/env/gain rates are proposals, and the section 5.4
+  # families have no port list yet (DESIGN.md section 17, OQ-3).
+  - name: patchback.studio.PortSpec
+    kind: struct
+    naming:
+      summary: One port of one module kind, with its direction, rate and meaning (DESIGN.md section 5.1).
+    fields:
+      - name: name
+        type: patchback.patch.PortName
+      - name: direction
+        type: patchback.studio.PortDirection
+      - name: rate
+        type: patchback.patch.PortRate
+      - name: meaning
+        type: String
+
+  - name: patchback.studio.ModuleSpec
+    kind: struct
+    naming:
+      summary: >-
+        One atomic module kind as the catalogue view draws it: its ports and the contracts of the
+        parameters it owns (DESIGN.md sections 2 invariant 2, 5.1, 5.2). A kind of the fixed
+        subtractive voice has no family; a kind added by section 5.4 names its family.
+    fields:
+      - name: kind
+        type: patchback.patch.NodeKind
+      - name: family
+        type: Optional<patchback.patch.ModuleFamily>
+      - name: ports
+        type: List<patchback.studio.PortSpec>
+      - name: parameters
+        type: List<patchback.patch.ParameterContract>
+
+  - name: patchback.studio.GraphNode
+    kind: struct
+    naming:
+      summary: >-
+        One node of a drawn patch: the patch's node id and kind, and its rank, the longest path
+        to it from a node with no inputs once every delayed feedback edge is removed. The studio
+        lays nodes out left to right by rank.
+    fields:
+      - name: node_id
+        type: Integer
+      - name: kind
+        type: patchback.patch.NodeKind
+      - name: rank
+        type: Integer
+    invariants:
+      - node_id >= 0
+      - rank >= 0
+
+  - name: patchback.studio.GraphEdge
+    kind: struct
+    naming:
+      summary: >-
+        One drawn edge, coloured by its rate. delayed_feedback marks the edge leaving the Delay
+        node that closes a cycle (DESIGN.md section 5.4: a cycle is admitted only through a Delay
+        node of at least one sample); the studio draws it as a return arc.
+    fields:
+      - name: from_node
+        type: Integer
+      - name: from_port
+        type: patchback.patch.PortName
+      - name: to_node
+        type: Integer
+      - name: to_port
+        type: patchback.patch.PortName
+      - name: rate
+        type: patchback.patch.PortRate
+      - name: delayed_feedback
+        type: Boolean
+
+  - name: patchback.studio.TraceSource
+    kind: enum
+    naming:
+      summary: Where a trace's frames come from; a fit run's artifacts first, a live stream from a Rust server later.
+    variants: [Replay, Live]
+
+  # The four outcomes of patchback.fit.EvaluateCandidate and RejectCandidate (DESIGN.md 9.2 steps
+  # 3 and 5): the first valid candidate is retained, a strictly lower loss replaces it, any other
+  # valid candidate does not, and an invalid candidate is counted and never retained.
+  - name: patchback.studio.FrameOutcome
+    kind: enum
+    variants: [FirstRetained, Improved, NotImproved, Rejected]
+
+  - name: patchback.studio.TraceEnd
+    kind: enum
+    naming:
+      summary: How the fit run a trace follows ended (patchback.fit.FitRun states Completed and Failed).
+    variants: [Completed, Failed]
+
+  - name: patchback.studio.ParameterSample
+    kind: struct
+    naming:
+      summary: The normalized value of one parameter of the evaluated patch (DESIGN.md 5.2, normalized units).
+    fields:
+      - name: path
+        type: patchback.patch.ParameterPath
+      - name: normalized_value
+        type: Decimal
+
+  - name: patchback.studio.SpectrumSource
+    kind: enum
+    variants: [Reference, Render]
+
+  # DESIGN.md 6.3: recommended analysis FFT lengths 512, 2048 and 8192 at 48 kHz, changed only by
+  # versioning the feature contract.
+  - name: patchback.studio.SpectrumSpec
+    kind: struct
+    naming:
+      summary: One log-magnitude spectrum the end-result view draws, of the reference or of the best render.
+    fields:
+      - name: source
+        type: patchback.studio.SpectrumSource
+      - name: fft_size
+        type: Integer
+
+entities:
+  - name: patchback.studio.ModuleCatalogue
+    naming:
+      summary: >-
+        The atomic module kinds a topology admits, each with its ports, rates and parameter
+        contracts, as the catalogue view lists them (DESIGN.md sections 5.1, 5.2, 5.4).
+    identity:
+      name: catalogue_id
+      type: patchback.studio.CatalogueId
+    fields:
+      - name: topology_id
+        type: patchback.patch.TopologyId
+      - name: modules
+        type: List<patchback.studio.ModuleSpec>
+    relations:
+      - name: topology
+        kind: references
+        target: patchback.patch.Topology
+        cardinality: one
+        via: topology_id
+    lifecycle:
+      initial: Published
+      states: [Published]
+      terminal: [Published]
+
+  - name: patchback.studio.GraphView
+    naming:
+      summary: >-
+        The drawing of one patch: its nodes ranked left to right and its edges coloured by rate,
+        delayed feedback marked (DESIGN.md sections 5.1, 5.2, 5.4).
+    identity:
+      name: graph_view_id
+      type: patchback.studio.GraphViewId
+    fields:
+      - name: patch_id
+        type: patchback.patch.PatchId
+      - name: topology_id
+        type: patchback.patch.TopologyId
+      - name: nodes
+        type: List<patchback.studio.GraphNode>
+      - name: edges
+        type: List<patchback.studio.GraphEdge>
+    relations:
+      - name: patch
+        kind: references
+        target: patchback.patch.Patch
+        cardinality: one
+        via: patch_id
+      - name: topology
+        kind: references
+        target: patchback.patch.Topology
+        cardinality: one
+        via: topology_id
+    lifecycle:
+      initial: Drawn
+      states: [Drawn]
+      terminal: [Drawn]
+
+  # UNMAPPED: DESIGN.md 9.2 keeps one topology per fit run, and 13 D selects a topology "by
+  # candidate rendering/ranking" without saying whether a run's evaluations then span several
+  # topologies. A frame carries its topology so the view can mark a change; whether one trace
+  # spans several topologies is not settled. Open question.
+  # UNMAPPED: ADR-003 ends at a "structured graph decoder"; once the graph itself is learned a
+  # frame would need its graph, not only a patch id. Not modelled until that milestone.
+  - name: patchback.studio.EvolutionTrace
+    naming:
+      summary: >-
+        How one fit run's patch evolves: its frames in sequence order, one per render evaluation.
+        Streaming takes frames; Closed has the run's end and takes none. A replay and a live
+        stream are the same frames from two sources.
+    identity:
+      name: trace_id
+      type: patchback.studio.TraceId
+    fields:
+      - name: fit_run_id
+        type: patchback.fit.FitRunId
+      - name: source
+        type: patchback.studio.TraceSource
+      - name: topology_id
+        type: patchback.patch.TopologyId
+        summary: The topology the run starts in.
+      - name: parameter_paths
+        type: List<patchback.patch.ParameterPath>
+        summary: The parameters whose trajectories the trace carries, in display order.
+      - name: ended
+        type: Optional<patchback.studio.TraceEnd>
+    relations:
+      - name: fit_run
+        kind: references
+        target: patchback.fit.FitRun
+        cardinality: one
+        via: fit_run_id
+      - name: topology
+        kind: references
+        target: patchback.patch.Topology
+        cardinality: one
+        via: topology_id
+    lifecycle:
+      initial: Streaming
+      states: [Streaming, Closed]
+      terminal: [Closed]
+      transitions:
+        - name: close
+          from: [Streaming]
+          to: Closed
+
+  - name: patchback.studio.TraceFrame
+    naming:
+      summary: >-
+        One render evaluation of a fit run as the trace holds it: the evaluated candidate's loss
+        and parameters, and the retained best loss after it, which never rises (DESIGN.md 9.2
+        step 3, 12.1 "never worsens retained best candidate").
+    identity:
+      name: frame_id
+      type: patchback.studio.TraceFrameId
+    fields:
+      - name: trace_id
+        type: patchback.studio.TraceId
+      - name: sequence
+        type: Integer
+        summary: Position in the trace from 0; strictly increasing.
+      - name: evaluation
+        type: Integer
+        summary: The fit run's evaluation count after this candidate (patchback.fit.FitRun.evaluations).
+      - name: outcome
+        type: patchback.studio.FrameOutcome
+      - name: topology_id
+        type: patchback.patch.TopologyId
+      - name: patch_id
+        type: Optional<patchback.patch.PatchId>
+      - name: total_loss
+        type: Optional<Decimal>
+        summary: The candidate's weighted loss (DESIGN.md 9.1); absent for a rejected candidate.
+      - name: components
+        type: Optional<patchback.fit.LossComponents>
+      - name: best_loss
+        type: Optional<Decimal>
+        summary: The retained best loss after this frame; absent until a valid candidate is retained.
+      - name: parameters
+        type: List<patchback.studio.ParameterSample>
+    invariants:
+      - sequence >= 0
+      - evaluation >= 1
+    relations:
+      - name: trace
+        kind: references
+        target: patchback.studio.EvolutionTrace
+        cardinality: one
+        via: trace_id
+      - name: topology
+        kind: references
+        target: patchback.patch.Topology
+        cardinality: one
+        via: topology_id
+      - name: patch
+        kind: references
+        target: patchback.patch.Patch
+        cardinality: one
+        via: patch_id
+    lifecycle:
+      initial: Recorded
+      states: [Recorded]
+      terminal: [Recorded]
+
+  # DESIGN.md 0.3 section 16: spectra are computed in Rust by the analysis code and written as
+  # artifacts; the studio only draws them.
+  # UNMAPPED: the spectrum artifact's name and format are open (DESIGN.md section 17, OQ-26).
+  - name: patchback.studio.ResultView
+    naming:
+      summary: >-
+        The end result of one fit run: the recovered patch beside the reference and render
+        spectra (DESIGN.md 11 results/, 12.2 Sound matching). Only a run with a retained patch has one.
+    identity:
+      name: result_view_id
+      type: patchback.studio.ResultViewId
+    fields:
+      - name: fit_run_id
+        type: patchback.fit.FitRunId
+      - name: best_patch_id
+        type: Optional<patchback.patch.PatchId>
+      - name: reference_clip_id
+        type: patchback.audio.AudioClipId
+      - name: best_render_id
+        type: Optional<patchback.audio.RenderId>
+      - name: spectra
+        type: List<patchback.studio.SpectrumSpec>
+    relations:
+      - name: fit_run
+        kind: references
+        target: patchback.fit.FitRun
+        cardinality: one
+        via: fit_run_id
+      - name: best_patch
+        kind: references
+        target: patchback.patch.Patch
+        cardinality: one
+        via: best_patch_id
+      - name: reference
+        kind: references
+        target: patchback.audio.AudioClip
+        cardinality: one
+        via: reference_clip_id
+      - name: best_render
+        kind: references
+        target: patchback.audio.Render
+        cardinality: one
+        via: best_render_id
+    lifecycle:
+      initial: Composed
+      states: [Composed]
+      terminal: [Composed]
+
+actors:
+  - name: patchback.studio.Studio
+    naming:
+      summary: The studio's loader, reading a patch, a catalogue or a fit run's artifacts.
+    may:
+      - patchback.studio.PublishCatalogue
+      - patchback.studio.DrawGraph
+      - patchback.studio.OpenTrace
+      - patchback.studio.AppendFrame
+      - patchback.studio.CloseTrace
+      - patchback.studio.ComposeResultView
+
+  - name: patchback.studio.FitStream
+    naming:
+      summary: The stream of a running fit, the live source of a trace's frames.
+    may:
+      - patchback.studio.OpenTrace
+      - patchback.studio.AppendFrame
+      - patchback.studio.CloseTrace
+
+errors:
+  - name: patchback.studio.DuplicateModuleKind
+    summary: A catalogue lists one module kind twice.
+    fields:
+      - name: catalogue_id
+        type: patchback.studio.CatalogueId
+
+  - name: patchback.studio.DuplicatePortName
+    summary: A module declares two ports with one name.
+    fields:
+      - name: catalogue_id
+        type: patchback.studio.CatalogueId
+
+  - name: patchback.studio.DuplicateGraphNode
+    fields:
+      - name: graph_view_id
+        type: patchback.studio.GraphViewId
+
+  - name: patchback.studio.GraphEndpointMissing
+    summary: An edge names a node the drawing does not hold.
+    fields:
+      - name: graph_view_id
+        type: patchback.studio.GraphViewId
+
+  - name: patchback.studio.FeedbackNotAtDelay
+    summary: An edge marked as delayed feedback does not leave a Delay node (DESIGN.md 5.4).
+    fields:
+      - name: graph_view_id
+        type: patchback.studio.GraphViewId
+
+  - name: patchback.studio.PatchNotDrawable
+    summary: The patch has not passed validation (DESIGN.md invariant 3); the studio draws only validated patches.
+    fields:
+      - name: patch_id
+        type: patchback.patch.PatchId
+
+  - name: patchback.studio.DuplicateParameterPath
+    fields:
+      - name: trace_id
+        type: patchback.studio.TraceId
+
+  - name: patchback.studio.TraceNotFound
+    fields:
+      - name: trace_id
+        type: patchback.studio.TraceId
+
+  - name: patchback.studio.TraceClosed
+    summary: The trace has its run's end and takes no further frame.
+    fields:
+      - name: trace_id
+        type: patchback.studio.TraceId
+
+  - name: patchback.studio.FrameOutOfOrder
+    summary: A frame's sequence is not above every sequence the trace already holds.
+    fields:
+      - name: trace_id
+        type: patchback.studio.TraceId
+      - name: sequence
+        type: Integer
+
+  - name: patchback.studio.BestLossWorsened
+    summary: A frame's retained best loss is above an earlier frame's (DESIGN.md 12.1).
+    fields:
+      - name: trace_id
+        type: patchback.studio.TraceId
+      - name: sequence
+        type: Integer
+
+  - name: patchback.studio.InconsistentFrame
+    summary: >-
+      A frame's outcome disagrees with its losses: a rejected candidate carries a loss, a valid
+      one carries none, or a retained candidate's loss is not the best loss.
+    fields:
+      - name: trace_id
+        type: patchback.studio.TraceId
+      - name: sequence
+        type: Integer
+
+  - name: patchback.studio.TraceStateConflict
+    fields:
+      - name: trace_id
+        type: patchback.studio.TraceId
+      - name: state
+        type: patchback.studio.EvolutionTrace.State
+
+  - name: patchback.studio.NoRetainedPatch
+    summary: The fit run retained no valid patch (DESIGN.md 9.2 step 5), so there is no end result to show.
+    fields:
+      - name: fit_run_id
+        type: patchback.fit.FitRunId
+
+  - name: patchback.studio.UnsupportedSpectrumSize
+    summary: A spectrum's FFT length is not one of the analysis lengths 512, 2048 or 8192 (DESIGN.md 6.3).
+    fields:
+      - name: result_view_id
+        type: patchback.studio.ResultViewId
+
+commands:
+  - name: patchback.studio.PublishCatalogue
+    naming:
+      summary: Publish the module catalogue of a topology for the catalogue view.
+    input:
+      - name: catalogue_id
+        type: patchback.studio.CatalogueId
+      - name: topology_id
+        type: patchback.patch.TopologyId
+      - name: modules
+        type: List<patchback.studio.ModuleSpec>
+    outcomes:
+      - name: duplicate-kind
+        when: {not: {distinct: {in: modules, as: m, by: m.kind}}}
+        error: patchback.studio.DuplicateModuleKind
+        payload:
+          patchback.studio.DuplicateModuleKind:
+            catalogue_id: input.catalogue_id
+      - name: duplicate-port
+        when:
+          exists:
+            in: modules
+            as: m
+            that: {not: {distinct: {in: m.ports, as: p, by: p.name}}}
+        error: patchback.studio.DuplicatePortName
+        payload:
+          patchback.studio.DuplicatePortName:
+            catalogue_id: input.catalogue_id
+      - name: published
+        creates: patchback.studio.ModuleCatalogue
+        instance: catalogue_id
+        sets:
+          topology_id: input.topology_id
+          modules: input.modules
+        emits: [patchback.studio.CataloguePublished]
+        payload:
+          patchback.studio.CataloguePublished:
+            catalogue_id: input.catalogue_id
+            topology_id: input.topology_id
+            modules: input.modules
+
+  - name: patchback.studio.DrawGraph
+    naming:
+      summary: >-
+        Draw one validated patch: nodes ranked left to right, edges coloured by rate, the edge
+        that closes each delayed feedback cycle marked.
+    input:
+      - name: graph_view_id
+        type: patchback.studio.GraphViewId
+      - name: patch_id
+        type: patchback.patch.PatchId
+      - name: topology_id
+        type: patchback.patch.TopologyId
+      - name: nodes
+        type: List<patchback.studio.GraphNode>
+      - name: edges
+        type: List<patchback.studio.GraphEdge>
+    outcomes:
+      - name: duplicate-node
+        when: {not: {distinct: {in: nodes, as: n, by: n.node_id}}}
+        error: patchback.studio.DuplicateGraphNode
+        payload:
+          patchback.studio.DuplicateGraphNode:
+            graph_view_id: input.graph_view_id
+      - name: endpoint-missing
+        when:
+          exists:
+            in: edges
+            as: e
+            that:
+              any:
+                - not: {exists: {in: nodes, as: n, that: n.node_id == e.from_node}}
+                - not: {exists: {in: nodes, as: n, that: n.node_id == e.to_node}}
+        error: patchback.studio.GraphEndpointMissing
+        payload:
+          patchback.studio.GraphEndpointMissing:
+            graph_view_id: input.graph_view_id
+      - name: feedback-not-at-delay
+        when:
+          exists:
+            in: edges
+            as: e
+            that:
+              all:
+                - e.delayed_feedback == true
+                - not:
+                    exists:
+                      in: nodes
+                      as: n
+                      that: {all: [n.node_id == e.from_node, n.kind == Delay]}
+        error: patchback.studio.FeedbackNotAtDelay
+        payload:
+          patchback.studio.FeedbackNotAtDelay:
+            graph_view_id: input.graph_view_id
+      # The patch's lifecycle is patchback.patch's; the studio asks it and draws only a patch in
+      # Validated or Compiled.
+      - name: not-validated
+        external: the patch is not in Validated or Compiled
+        error: patchback.studio.PatchNotDrawable
+        payload:
+          patchback.studio.PatchNotDrawable:
+            patch_id: input.patch_id
+      - name: drawn
+        creates: patchback.studio.GraphView
+        instance: graph_view_id
+        sets:
+          patch_id: input.patch_id
+          topology_id: input.topology_id
+          nodes: input.nodes
+          edges: input.edges
+        emits: [patchback.studio.GraphDrawn]
+        payload:
+          patchback.studio.GraphDrawn:
+            graph_view_id: input.graph_view_id
+            patch_id: input.patch_id
+            topology_id: input.topology_id
+            nodes: input.nodes
+            edges: input.edges
+
+  - name: patchback.studio.OpenTrace
+    naming:
+      summary: Open the evolution trace of one fit run, replayed from its artifacts or streamed live.
+    input:
+      - name: trace_id
+        type: patchback.studio.TraceId
+      - name: fit_run_id
+        type: patchback.fit.FitRunId
+      - name: source
+        type: patchback.studio.TraceSource
+      - name: topology_id
+        type: patchback.patch.TopologyId
+      - name: parameter_paths
+        type: List<patchback.patch.ParameterPath>
+    outcomes:
+      - name: duplicate-path
+        when: {not: {distinct: {in: parameter_paths, as: p}}}
+        error: patchback.studio.DuplicateParameterPath
+        payload:
+          patchback.studio.DuplicateParameterPath:
+            trace_id: input.trace_id
+      - name: opened
+        creates: patchback.studio.EvolutionTrace
+        instance: trace_id
+        sets:
+          fit_run_id: input.fit_run_id
+          source: input.source
+          topology_id: input.topology_id
+          parameter_paths: input.parameter_paths
+        emits: [patchback.studio.TraceOpened]
+        payload:
+          patchback.studio.TraceOpened:
+            trace_id: input.trace_id
+            fit_run_id: input.fit_run_id
+            source: input.source
+            topology_id: input.topology_id
+            parameter_paths: input.parameter_paths
+
+  - name: patchback.studio.AppendFrame
+    naming:
+      summary: >-
+        Append one render evaluation to a streaming trace. Frames arrive in strictly increasing
+        sequence and the retained best loss never rises.
+    input:
+      - name: frame_id
+        type: patchback.studio.TraceFrameId
+      - name: trace_id
+        type: patchback.studio.TraceId
+      - name: sequence
+        type: Integer
+      - name: evaluation
+        type: Integer
+      - name: outcome
+        type: patchback.studio.FrameOutcome
+      - name: topology_id
+        type: patchback.patch.TopologyId
+      - name: patch_id
+        type: Optional<patchback.patch.PatchId>
+      - name: total_loss
+        type: Optional<Decimal>
+      - name: components
+        type: Optional<patchback.fit.LossComponents>
+      - name: best_loss
+        type: Optional<Decimal>
+      - name: parameters
+        type: List<patchback.studio.ParameterSample>
+    outcomes:
+      - name: rejected-with-loss
+        when: {all: [outcome == Rejected, defined(total_loss)]}
+        error: patchback.studio.InconsistentFrame
+        payload:
+          patchback.studio.InconsistentFrame:
+            trace_id: input.trace_id
+            sequence: input.sequence
+      - name: valid-without-loss
+        when: {all: [{outcome: [FirstRetained, Improved, NotImproved]}, not defined(total_loss)]}
+        error: patchback.studio.InconsistentFrame
+        payload:
+          patchback.studio.InconsistentFrame:
+            trace_id: input.trace_id
+            sequence: input.sequence
+      - name: retained-not-best
+        when: {all: [{outcome: [FirstRetained, Improved]}, total_loss != best_loss]}
+        error: patchback.studio.InconsistentFrame
+        payload:
+          patchback.studio.InconsistentFrame:
+            trace_id: input.trace_id
+            sequence: input.sequence
+      - name: unknown-trace
+        when_related:
+          entity: patchback.studio.EvolutionTrace
+          where: trace_id == input.trace_id
+          count: {eq: 0}
+        error: patchback.studio.TraceNotFound
+        payload:
+          patchback.studio.TraceNotFound:
+            trace_id: input.trace_id
+      - name: trace-closed
+        when_related:
+          entity: patchback.studio.EvolutionTrace
+          where: {all: [trace_id == input.trace_id, state == Closed]}
+          count: {gte: 1}
+        error: patchback.studio.TraceClosed
+        payload:
+          patchback.studio.TraceClosed:
+            trace_id: input.trace_id
+      - name: out-of-order
+        when_related:
+          entity: patchback.studio.TraceFrame
+          where: {all: [trace_id == input.trace_id, sequence >= input.sequence]}
+          count: {gte: 1}
+        error: patchback.studio.FrameOutOfOrder
+        payload:
+          patchback.studio.FrameOutOfOrder:
+            trace_id: input.trace_id
+            sequence: input.sequence
+      - name: best-worsened
+        when: defined(best_loss)
+        when_related:
+          entity: patchback.studio.TraceFrame
+          where: {all: [trace_id == input.trace_id, best_loss < input.best_loss]}
+          count: {gte: 1}
+        error: patchback.studio.BestLossWorsened
+        payload:
+          patchback.studio.BestLossWorsened:
+            trace_id: input.trace_id
+            sequence: input.sequence
+      - name: appended
+        creates: patchback.studio.TraceFrame
+        instance: frame_id
+        sets:
+          trace_id: input.trace_id
+          sequence: input.sequence
+          evaluation: input.evaluation
+          outcome: input.outcome
+          topology_id: input.topology_id
+          patch_id: input.patch_id
+          total_loss: input.total_loss
+          components: input.components
+          best_loss: input.best_loss
+          parameters: input.parameters
+        emits: [patchback.studio.FrameAppended]
+        payload:
+          patchback.studio.FrameAppended:
+            frame_id: input.frame_id
+            trace_id: input.trace_id
+            sequence: input.sequence
+            outcome: input.outcome
+            evaluation: input.evaluation
+            topology_id: input.topology_id
+            patch_id: input.patch_id
+            total_loss: input.total_loss
+            components: input.components
+            best_loss: input.best_loss
+            parameters: input.parameters
+
+  - name: patchback.studio.CloseTrace
+    naming:
+      summary: Close a trace with its fit run's end; the trace takes no further frame.
+    input:
+      - name: trace_id
+        type: patchback.studio.TraceId
+      - name: ended
+        type: patchback.studio.TraceEnd
+    outcomes:
+      - name: no-such-trace
+        unknown_instance: true
+        error: patchback.studio.TraceNotFound
+        payload:
+          patchback.studio.TraceNotFound:
+            trace_id: input.trace_id
+      - name: closed
+        moves: patchback.studio.EvolutionTrace.close
+        instance: trace_id
+        sets:
+          ended: input.ended
+        emits: [patchback.studio.TraceClosedEvent]
+        payload:
+          patchback.studio.TraceClosedEvent:
+            trace_id: input.trace_id
+            ended: input.ended
+      - name: already-closed
+        wrong_state: true
+        error: patchback.studio.TraceStateConflict
+        payload:
+          patchback.studio.TraceStateConflict:
+            trace_id: input.trace_id
+            state: {subject: state}
+
+  - name: patchback.studio.ComposeResultView
+    naming:
+      summary: >-
+        Compose the end-result view of a fit run: its retained patch beside the reference and
+        render spectra. A run with no retained patch has no end result.
+    input:
+      - name: result_view_id
+        type: patchback.studio.ResultViewId
+      - name: fit_run_id
+        type: patchback.fit.FitRunId
+      - name: best_patch_id
+        type: Optional<patchback.patch.PatchId>
+      - name: reference_clip_id
+        type: patchback.audio.AudioClipId
+      - name: best_render_id
+        type: Optional<patchback.audio.RenderId>
+      - name: spectra
+        type: List<patchback.studio.SpectrumSpec>
+    outcomes:
+      - name: no-retained-patch
+        when: {any: [not defined(best_patch_id), not defined(best_render_id)]}
+        error: patchback.studio.NoRetainedPatch
+        payload:
+          patchback.studio.NoRetainedPatch:
+            fit_run_id: input.fit_run_id
+      - name: unsupported-size
+        when:
+          exists:
+            in: spectra
+            as: s
+            that: {s.fft_size: {none_of: [512, 2048, 8192]}}
+        error: patchback.studio.UnsupportedSpectrumSize
+        payload:
+          patchback.studio.UnsupportedSpectrumSize:
+            result_view_id: input.result_view_id
+      - name: composed
+        creates: patchback.studio.ResultView
+        instance: result_view_id
+        sets:
+          fit_run_id: input.fit_run_id
+          best_patch_id: input.best_patch_id
+          reference_clip_id: input.reference_clip_id
+          best_render_id: input.best_render_id
+          spectra: input.spectra
+        emits: [patchback.studio.ResultComposed]
+        payload:
+          patchback.studio.ResultComposed:
+            result_view_id: input.result_view_id
+            fit_run_id: input.fit_run_id
+            best_patch_id: input.best_patch_id
+            reference_clip_id: input.reference_clip_id
+            best_render_id: input.best_render_id
+            spectra: input.spectra
+
+# The events are the studio's wire messages and carry what the view draws: a trace is
+# TraceOpened, one FrameAppended per evaluation in sequence order, then TraceClosedEvent, whether
+# replayed from a file or streamed live. `task studio-types` generates their TypeScript types.
+# DESIGN.md 0.3 section 16: live frames travel over Server-Sent Events from a Rust std-only server
+# bound to 127.0.0.1, carrying the records of trace.events.
+# UNMAPPED: the SSE path, event names, Last-Event-ID resume and back-pressure are open (DESIGN.md
+# section 17, OQ-24).
+events:
+  - name: patchback.studio.CataloguePublished
+    fields:
+      - name: catalogue_id
+        type: patchback.studio.CatalogueId
+      - name: topology_id
+        type: patchback.patch.TopologyId
+      - name: modules
+        type: List<patchback.studio.ModuleSpec>
+
+  - name: patchback.studio.GraphDrawn
+    fields:
+      - name: graph_view_id
+        type: patchback.studio.GraphViewId
+      - name: patch_id
+        type: patchback.patch.PatchId
+      - name: topology_id
+        type: patchback.patch.TopologyId
+      - name: nodes
+        type: List<patchback.studio.GraphNode>
+      - name: edges
+        type: List<patchback.studio.GraphEdge>
+
+  - name: patchback.studio.TraceOpened
+    fields:
+      - name: trace_id
+        type: patchback.studio.TraceId
+      - name: fit_run_id
+        type: patchback.fit.FitRunId
+      - name: source
+        type: patchback.studio.TraceSource
+      - name: topology_id
+        type: patchback.patch.TopologyId
+      - name: parameter_paths
+        type: List<patchback.patch.ParameterPath>
+
+  - name: patchback.studio.FrameAppended
+    fields:
+      - name: frame_id
+        type: patchback.studio.TraceFrameId
+      - name: trace_id
+        type: patchback.studio.TraceId
+      - name: sequence
+        type: Integer
+      - name: outcome
+        type: patchback.studio.FrameOutcome
+      - name: evaluation
+        type: Integer
+      - name: topology_id
+        type: patchback.patch.TopologyId
+      - name: patch_id
+        type: Optional<patchback.patch.PatchId>
+      - name: total_loss
+        type: Optional<Decimal>
+      - name: components
+        type: Optional<patchback.fit.LossComponents>
+      - name: best_loss
+        type: Optional<Decimal>
+      - name: parameters
+        type: List<patchback.studio.ParameterSample>
+
+  - name: patchback.studio.TraceClosedEvent
+    naming:
+      summary: A trace was closed with its run's end.
+    fields:
+      - name: trace_id
+        type: patchback.studio.TraceId
+      - name: ended
+        type: patchback.studio.TraceEnd
+
+  - name: patchback.studio.ResultComposed
+    fields:
+      - name: result_view_id
+        type: patchback.studio.ResultViewId
+      - name: fit_run_id
+        type: patchback.fit.FitRunId
+      - name: best_patch_id
+        type: Optional<patchback.patch.PatchId>
+      - name: reference_clip_id
+        type: patchback.audio.AudioClipId
+      - name: best_render_id
+        type: Optional<patchback.audio.RenderId>
+      - name: spectra
+        type: List<patchback.studio.SpectrumSpec>
+
+views:
+  - name: patchback.studio.Catalogues
+    source: patchback.studio.ModuleCatalogue
+    consistency: read_your_writes
+    fields:
+      - name: catalogue_id
+        type: patchback.studio.CatalogueId
+      - name: state
+        type: patchback.studio.ModuleCatalogue.State
+      - name: topology_id
+        type: patchback.patch.TopologyId
+      - name: modules
+        type: List<patchback.studio.ModuleSpec>
+
+  - name: patchback.studio.GraphViews
+    source: patchback.studio.GraphView
+    consistency: read_your_writes
+    fields:
+      - name: graph_view_id
+        type: patchback.studio.GraphViewId
+      - name: state
+        type: patchback.studio.GraphView.State
+      - name: patch_id
+        type: patchback.patch.PatchId
+      - name: nodes
+        type: List<patchback.studio.GraphNode>
+      - name: edges
+        type: List<patchback.studio.GraphEdge>
+
+  - name: patchback.studio.Traces
+    source: patchback.studio.EvolutionTrace
+    consistency: read_your_writes
+    fields:
+      - name: trace_id
+        type: patchback.studio.TraceId
+      - name: state
+        type: patchback.studio.EvolutionTrace.State
+      - name: fit_run_id
+        type: patchback.fit.FitRunId
+      - name: source
+        type: patchback.studio.TraceSource
+      - name: topology_id
+        type: patchback.patch.TopologyId
+      # DESIGN.md section 16, fit evolution view: it draws the parameter trajectories, one per path
+      # in this order.
+      - name: parameter_paths
+        type: List<patchback.patch.ParameterPath>
+      - name: ended
+        type: Optional<patchback.studio.TraceEnd>
+
+  - name: patchback.studio.TraceFrames
+    source: patchback.studio.TraceFrame
+    consistency: read_your_writes
+    fields:
+      - name: frame_id
+        type: patchback.studio.TraceFrameId
+      - name: state
+        type: patchback.studio.TraceFrame.State
+      - name: trace_id
+        type: patchback.studio.TraceId
+      - name: sequence
+        type: Integer
+      - name: evaluation
+        type: Integer
+      - name: outcome
+        type: patchback.studio.FrameOutcome
+      - name: topology_id
+        type: patchback.patch.TopologyId
+      - name: total_loss
+        type: Optional<Decimal>
+      - name: best_loss
+        type: Optional<Decimal>
+
+  - name: patchback.studio.ResultViews
+    source: patchback.studio.ResultView
+    consistency: read_your_writes
+    fields:
+      - name: result_view_id
+        type: patchback.studio.ResultViewId
+      - name: state
+        type: patchback.studio.ResultView.State
+      - name: fit_run_id
+        type: patchback.fit.FitRunId
+      - name: best_patch_id
+        type: Optional<patchback.patch.PatchId>
+      - name: best_render_id
+        type: Optional<patchback.audio.RenderId>

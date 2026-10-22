@@ -1,0 +1,95 @@
+# DESIGN.md 8.1: only a source the pinned `modelspec check` accepted proceeds to training. An
+# unchecked source, a Rejected source and an unknown source are refused at binding.
+type: ess-scenario/1
+domain: patchback.model
+scenario: training-run-refused-unchecked-model
+summary: Binding an unchecked, a rejected or an unknown model source to a planned run is refused.
+
+arrange:
+  - instance: pin
+    entity: patchback.model.ModelSpecPin
+  - instance: unchecked
+    entity: patchback.model.ModelSource
+  - instance: rejected
+    entity: patchback.model.ModelSource
+  - instance: run
+    entity: patchback.model.TrainingRun
+
+timeline:
+  - at: 2026-10-22T12:10:00Z
+    command: patchback.model.PinModelSpec
+    actor: patchback.model.Operator
+    input:
+      version: pinned-release
+      commit: 0123456789abcdef0123456789abcdef01234567
+      vulkan_backend_shipped: false
+    outcome: pinned
+    capture: {instance: pin, event: patchback.model.ModelSpecPinned, field: model_spec_pin_id}
+
+  - at: 2026-10-22T12:10:01Z
+    command: patchback.model.RegisterModelSource
+    actor: patchback.model.Operator
+    input:
+      path: models/patch_regressor.mspec
+      model_name: PatchRegressor
+      batch_size: 16
+      model_spec_pin_id: {$instance: pin}
+    outcome: registered
+    capture: {instance: unchecked, event: patchback.model.ModelSourceRegistered, field: model_source_id}
+
+  - at: 2026-10-22T12:10:02Z
+    command: patchback.model.RegisterModelSource
+    actor: patchback.model.Operator
+    input:
+      path: models/patch_regressor_draft.mspec
+      model_name: PatchRegressor
+      batch_size: 16
+      model_spec_pin_id: {$instance: pin}
+    outcome: registered
+    capture: {instance: rejected, event: patchback.model.ModelSourceRegistered, field: model_source_id}
+
+  - at: 2026-10-22T12:10:03Z
+    command: patchback.model.CheckModelSource
+    actor: patchback.model.Operator
+    input:
+      model_source_id: {$instance: rejected}
+    outcome: rejected
+
+  - at: 2026-10-22T12:10:04Z
+    command: patchback.model.PlanTrainingRun
+    actor: patchback.model.Operator
+    input:
+      model_spec_pin_id: {$instance: pin}
+      backend: Cpu
+    outcome: planned
+    capture: {instance: run, event: patchback.model.TrainingRunPlanned, field: training_run_id}
+
+  - at: 2026-10-22T12:10:05Z
+    command: patchback.model.BindModelSource
+    actor: patchback.model.Operator
+    input:
+      training_run_id: {$instance: run}
+      model_source_id: {$instance: unchecked}
+    outcome: model-not-checked
+    error:
+      name: patchback.model.ModelNotChecked
+
+  - at: 2026-10-22T12:10:06Z
+    command: patchback.model.BindModelSource
+    actor: patchback.model.Operator
+    input:
+      training_run_id: {$instance: run}
+      model_source_id: {$instance: rejected}
+    outcome: model-not-checked
+    error:
+      name: patchback.model.ModelNotChecked
+
+  - at: 2026-10-22T12:10:07Z
+    command: patchback.model.BindModelSource
+    actor: patchback.model.Operator
+    input:
+      training_run_id: {$instance: run}
+      model_source_id: 6d000000-0000-4000-8000-0000000000ff
+    outcome: unknown-source
+    error:
+      name: patchback.model.UnknownModelSource

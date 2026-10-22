@@ -1,0 +1,69 @@
+# DESIGN.md section 11: the .patch format is line-oriented and versioned, and the parser refuses
+# an unknown version; section 10 fixes the analysis rate at 48 kHz, so a patch at any other rate
+# is refused (unsupported rate). A refused file creates no patch.
+type: ess-scenario/1
+domain: patchback.patch
+scenario: patch-file-format-header
+summary: A .patch file with an unknown format version or an unsupported sample rate is refused and no patch is created.
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.patch.DeclareTopology
+    actor: patchback.patch.Operator
+    input:
+      topology_id: 7f0c0000-0000-4000-8000-000000000021
+      name: subtractive-mono/1
+      parameters: []
+    outcome: declared
+
+  - at: 2026-10-22T09:00:01Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000121
+      format_version: 2
+      sample_rate_hz: 48000
+      topology_id: 7f0c0000-0000-4000-8000-000000000021
+      nodes: []
+      edges: []
+    outcome: unknown-version
+    error:
+      name: patchback.patch.UnknownFormatVersion
+      fields:
+        format_version: 2
+    no_events: [patchback.patch.PatchLoaded]
+
+  - at: 2026-10-22T09:00:02Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000121
+      format_version: 1
+      sample_rate_hz: 44100
+      topology_id: 7f0c0000-0000-4000-8000-000000000021
+      nodes: []
+      edges: []
+    outcome: unsupported-rate
+    error:
+      name: patchback.patch.UnsupportedSampleRate
+      fields:
+        sample_rate_hz: 44100
+    no_events: [patchback.patch.PatchLoaded]
+
+  - at: 2026-10-22T09:00:03Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000121
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 7f0c0000-0000-4000-8000-000000000021
+      nodes:
+        - {id: 2, kind: SawOscillator, parameters: []}
+      edges: []
+    outcome: loaded
+    events:
+      - event: patchback.patch.PatchLoaded
+        payload:
+          patch_id: 7f0c0000-0000-4000-8000-000000000121
+          topology_id: 7f0c0000-0000-4000-8000-000000000021

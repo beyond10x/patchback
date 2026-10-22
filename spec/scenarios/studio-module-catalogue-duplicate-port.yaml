@@ -1,0 +1,25 @@
+# epic:patch-studio, module catalogue view. A module's ports are addressed by name (DESIGN.md
+# section 5.1, stable identifiers), so two ports of one module cannot share a name.
+type: ess-scenario/1
+domain: patchback.studio
+scenario: studio-module-catalogue-duplicate-port
+summary: A module that declares two ports named in is refused and nothing is published.
+
+timeline:
+  - at: 2026-10-22T13:00:00Z
+    command: patchback.studio.PublishCatalogue
+    actor: patchback.studio.Studio
+    input:
+      catalogue_id: 5a0d0000-0000-4000-8000-000000000003
+      topology_id: 5a0d0000-0000-4000-8000-000000000101
+      modules:
+        - kind: Vca
+          ports:
+            - {name: in, direction: Input, rate: Audio, meaning: filtered signal}
+            - {name: in, direction: Input, rate: Control, meaning: envelope gain}
+            - {name: out, direction: Output, rate: Audio, meaning: shaped signal}
+          parameters: []
+    outcome: duplicate-port
+    error:
+      name: patchback.studio.DuplicatePortName
+    no_events: [patchback.studio.CataloguePublished]

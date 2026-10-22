@@ -1,0 +1,175 @@
+{
+  "asOf": "2026-10-22",
+  "format": "b10x-status/1",
+  "items": [
+    {
+      "area": "Audio",
+      "detail": "Mono, or stereo downmixed explicitly to mono; PCM16 or IEEE float32 at 48 kHz. Truncated chunks, size overflow, non-finite samples and unsupported formats are refused. Milestone A.",
+      "href": "/docs/reference/files#reference-audio",
+      "label": "WAV input and output without an audio crate",
+      "status": "planned"
+    },
+    {
+      "area": "Patch",
+      "detail": "Identifiers, parameter domains, port rates and cycles are checked, then the graph is compiled into an execution plan. patchback patch validate runs the checks alone. Milestone A.",
+      "href": "/docs/concepts/patch",
+      "label": "A typed patch graph, validated before it runs",
+      "status": "planned"
+    },
+    {
+      "area": "Sound engine",
+      "detail": "One monophonic voice at 48 kHz: anti-aliased saw oscillator, drive, resonant lowpass, ADSR and output gain, driven by note events. Milestone A.",
+      "href": "/docs/concepts/patch#the-fixed-subtractive-voice",
+      "label": "The fixed subtractive voice",
+      "status": "planned"
+    },
+    {
+      "area": "Sound engine",
+      "detail": "patchback render plays a patch with a score into a WAV. Fixed seed, build, input and configuration give the same samples, and the output is never NaN or infinite. Milestone A.",
+      "href": "/docs/guides/render-a-patch",
+      "label": "Deterministic offline rendering",
+      "status": "planned"
+    },
+    {
+      "area": "Analysis",
+      "detail": "patchback analyze: radix-2 FFT, multi-resolution STFT, RMS and peak envelopes, spectral descriptors, onset proposals and pitch estimation that refuses when confidence is low. Milestone A.",
+      "href": "/docs/concepts/listening",
+      "label": "Native FFT, STFT and audio descriptors",
+      "status": "planned"
+    },
+    {
+      "area": "Fit",
+      "detail": "patchback compare: log-spectral, envelope, transient and band-energy terms after time alignment, each term logged for every candidate. Milestone A.",
+      "href": "/docs/concepts/closed-loop#the-comparison",
+      "label": "A multi-resolution audio comparison",
+      "status": "planned"
+    },
+    {
+      "area": "Fit",
+      "detail": "patchback fit: seeded restarts and coordinate search over the normalized parameters within a render budget (--max-renders), keeping the best valid patch. Milestone A.",
+      "href": "/docs/concepts/closed-loop#the-search",
+      "label": "Bounded derivative-free search",
+      "status": "planned"
+    },
+    {
+      "area": "Fit",
+      "detail": "patch.patch, notes.events, reconstructed.wav, report.txt and run.meta in the output directory. Milestone A.",
+      "href": "/docs/reference/files#a-fit-run",
+      "label": "The fit run's five files",
+      "status": "planned"
+    },
+    {
+      "area": "Analysis",
+      "detail": "32 values per note: band energies over attack, body and release, plus eight descriptors. Normalization statistics come from the training split only. Milestone B.",
+      "href": "/docs/concepts/listening#features1",
+      "label": "The frozen feature contract features/1",
+      "status": "planned"
+    },
+    {
+      "area": "Dataset",
+      "detail": "patchback generate-dataset renders seeded random patches and writes row-major little-endian x.f32 and y.f32 files, split by patch identity. Milestone B.",
+      "href": "/docs/guides/train-the-regressor",
+      "label": "A deterministic paired dataset",
+      "status": "planned"
+    },
+    {
+      "area": "Model",
+      "detail": "A fixed-shape two-layer MLP, 32 features to 8 normalized parameters, checked and trained by modelspec on its CPU backend. Milestone B.",
+      "href": "/docs/concepts/regressor",
+      "label": "A parameter regressor trained with ModelSpec",
+      "status": "planned"
+    },
+    {
+      "area": "Model",
+      "detail": "Trained weights are validated, versioned and checksummed, then run by a small Rust matmul and ReLU predictor held to golden tests. Milestone B.",
+      "href": "/docs/concepts/regressor#from-training-to-prediction",
+      "label": "Checked weight export and a native predictor",
+      "status": "planned"
+    },
+    {
+      "area": "Fit",
+      "detail": "The search starts from the regressor's prediction instead of the default patch, benchmarked against the default patch and the raw prediction. Milestone B.",
+      "href": "/docs/concepts/closed-loop#the-search",
+      "label": "A regressor-seeded fit",
+      "status": "planned"
+    },
+    {
+      "area": "Score",
+      "detail": "Onsets, pitches, gate lengths and tails of external audio, each with a confidence; an ambiguous estimate is refused with a diagnostic. Milestone C.",
+      "href": "/docs/concepts/events",
+      "label": "Monophonic note estimation with confidence",
+      "status": "planned"
+    },
+    {
+      "area": "Score",
+      "detail": "One editable patch and its event sequence for an isolated bass or lead phrase. Milestone C.",
+      "href": "/docs/concepts/events",
+      "label": "Short phrases",
+      "status": "planned"
+    },
+    {
+      "area": "Patch",
+      "detail": "Saw, square and sine oscillators, filter families, LFO and delay; the topology is chosen by rendering and ranking candidates, with a simplicity penalty. Milestone D.",
+      "href": "/docs/concepts/patch#beyond-the-fixed-voice",
+      "label": "Candidate topologies",
+      "status": "planned"
+    },
+    {
+      "area": "Patch",
+      "detail": "Time-varying control events, and cycles only through an explicit delay of at least one sample. Milestone D.",
+      "href": "/docs/concepts/patch#beyond-the-fixed-voice",
+      "label": "Control automation and delayed feedback",
+      "status": "planned"
+    },
+    {
+      "area": "Scope",
+      "detail": "Several monophonic or polyphonic stems, drum and effect modules, repeated-pattern analysis and arrangement events. Milestone E.",
+      "href": "/docs/concepts/events#longer-music",
+      "label": "Stems, drums and arrangement",
+      "status": "planned"
+    },
+    {
+      "area": "Model",
+      "detail": "Supported training moves to ModelSpec's GPU backend once it ships and passes CPU/GPU equivalence tests. Milestone E.",
+      "href": "/docs/concepts/regressor",
+      "label": "GPU training through ModelSpec",
+      "status": "planned"
+    },
+    {
+      "area": "Studio",
+      "detail": "One card per module kind with its ports (direction, rate, meaning) and parameter contracts (index, path, mapping, physical range, default). The prototype renders illustrative fixture data. Patch studio.",
+      "href": "/docs/concepts/studio#module-catalogue",
+      "label": "Module catalogue view",
+      "status": "planned"
+    },
+    {
+      "area": "Studio",
+      "detail": "A validated patch drawn as nodes by rank and edges coloured by port rate, with delayed feedback routed as a z⁻¹ return path through a Delay node. Patch studio.",
+      "href": "/docs/concepts/studio#patch-graph",
+      "label": "Patch graph view",
+      "status": "planned"
+    },
+    {
+      "area": "Studio",
+      "detail": "A finished fit run replayed evaluation by evaluation: loss curve, retained or candidate patch, parameter trajectories and topology changes. Replays a fixture trace until a fit run writes one. Patch studio.",
+      "href": "/docs/concepts/studio#fit-replay",
+      "label": "Fit evolution replay",
+      "status": "planned"
+    },
+    {
+      "area": "Studio",
+      "detail": "The same view following a running fit, frames streamed over server-sent events from a std-only Rust server on 127.0.0.1. Patch studio.",
+      "href": "/docs/concepts/studio#live-fit",
+      "label": "Fit evolution live",
+      "status": "planned"
+    },
+    {
+      "area": "Studio",
+      "detail": "The retained patch, its parameters against the reference, and reference and render spectra at an FFT length of 512, 2048 or 8192. Patch studio.",
+      "href": "/docs/concepts/studio#end-result",
+      "label": "End result view",
+      "status": "planned"
+    }
+  ],
+  "source": "generated by patchback-docs from its capability list, checked against main and the planning store"
+}

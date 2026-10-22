@@ -1,0 +1,25 @@
+# DESIGN.md 10: estimated notes carry uncertainty, and the report states it. A fit from an
+# estimated note sequence with no confidence would hide that uncertainty, so it is refused.
+type: ess-scenario/1
+domain: patchback.fit
+scenario: phrase-fit-confidence-missing
+summary: A phrase fit from an estimated note sequence without a confidence is refused with NoteConfidenceMissing; no run starts.
+
+timeline:
+  - at: 2026-10-22T16:10:00Z
+    command: patchback.fit.StartFit
+    actor: patchback.fit.Operator
+    input:
+      reference_clip_id: 5ab16e40-0000-4000-8000-000000000101
+      note_sequence_id: 5ab16e40-0000-4000-8000-000000000102
+      note_source: Estimated
+      scope: Phrase
+      topology_id: 5ab16e40-0000-4000-8000-000000000103
+      seed: 42
+      max_renders: 6000
+      max_wall_time_ms: 1800000
+      max_restarts: 4
+      improvement_threshold: 0.001
+    outcome: note-confidence-missing
+    error:
+      name: patchback.fit.NoteConfidenceMissing

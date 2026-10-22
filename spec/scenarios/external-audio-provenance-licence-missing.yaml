@@ -1,0 +1,23 @@
+# AGENTS.md: "Fixtures are synthesized by Patchback or carry a recorded licence and provenance."
+# An external recording with provenance but no licence is refused.
+type: ess-scenario/1
+domain: patchback.audio
+scenario: external-audio-provenance-licence-missing
+summary: An external recording with provenance but no licence is refused with LicenceMissing and no clip is created.
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.audio.ImportWav
+    actor: patchback.audio.Operator
+    input:
+      path: tests/fixtures/unlicensed.wav
+      origin: ExternalRecording
+      provenance: downloaded from a sample pack, author unknown
+      sample_rate_hz: 48000
+      channel_count: 1
+      format_tag: 1
+      bits_per_sample: 16
+      frame_count: 72000
+    outcome: licence-missing
+    error:
+      name: patchback.audio.LicenceMissing

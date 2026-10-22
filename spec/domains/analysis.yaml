@@ -1,0 +1,1070 @@
+domain: patchback.analysis
+
+summary: >-
+  The native analysis library (DESIGN.md 6): STFT, envelope and spectral descriptors of an audio
+  clip with their recorded configuration, the versioned feature contract `features/1`, the
+  feature vectors extracted under it, the training-split normalization statistics, and monophonic
+  note estimation (DESIGN.md 6.1, 6.2, 6.3, 7.1, 10, 12.3).
+
+types:
+  - name: patchback.analysis.AnalysisId
+    kind: newtype
+    of: Uuid
+
+  - name: patchback.analysis.FeatureContractId
+    kind: newtype
+    of: Uuid
+
+  - name: patchback.analysis.NormalizationStatsId
+    kind: newtype
+    of: Uuid
+
+  - name: patchback.analysis.FeatureVectorId
+    kind: newtype
+    of: Uuid
+
+  - name: patchback.analysis.NoteEstimationId
+    kind: newtype
+    of: Uuid
+
+  - name: patchback.analysis.FeatureContractVersion
+    kind: newtype
+    of: String
+    naming:
+      summary: A feature contract version such as `features/1` (DESIGN.md 6.3).
+
+  # DESIGN.md 6.2: "Hann windows". No other window is named.
+  - name: patchback.analysis.WindowKind
+    kind: enum
+    variants: [Hann]
+
+  # DESIGN.md 6.3: "energy in eight logarithmic frequency bands, computed separately for attack,
+  # body, and release windows".
+  - name: patchback.analysis.BandWindow
+    kind: enum
+    variants: [Attack, Body, Release]
+
+  # DESIGN.md 6.3, the eight scalar values in the order the design lists them: "calibrated RMS,
+  # peak, spectral centroid, rolloff, spectral flatness, zero-crossing rate, attack-envelope
+  # slope, and normalized MIDI pitch".
+  - name: patchback.analysis.ScalarFeature
+    kind: enum
+    naming:
+      summary: The eight scalar features of `features/1`, declared in the order DESIGN.md 6.3 lists them.
+    variants:
+      - Rms
+      - Peak
+      - SpectralCentroid
+      - Rolloff
+      - SpectralFlatness
+      - ZeroCrossingRate
+      - AttackEnvelopeSlope
+      - NormalizedMidiPitch
+
+  # DESIGN.md 10 NoteEvent (start_sample, end_sample, midi_note, velocity) plus the per-estimate
+  # confidence DESIGN.md 6.1 requires ("estimated and emitted with confidence scores") and the
+  # tail Milestone C names ("note onsets, pitches, gate lengths, and tails").
+  # UNMAPPED: no section says whether confidence is one score per note or one per estimated
+  # quantity (onset, pitch, gate, tail). This model records one per quantity.
+  # UNMAPPED: DESIGN.md 10 carries `velocity: f32`; no section says whether velocity is
+  # estimated for external audio. It is left out here.
+  - name: patchback.analysis.EstimatedNote
+    kind: struct
+    fields:
+      - name: start_sample
+        type: Integer
+      - name: end_sample
+        type: Integer
+        summary: End of the gate; the gate length is end_sample - start_sample.
+      - name: tail_end_sample
+        type: Integer
+        summary: Where the release tail falls below the silence threshold.
+      - name: midi_note
+        type: Integer
+      - name: onset_confidence
+        type: Decimal
+      - name: pitch_confidence
+        type: Decimal
+      - name: gate_confidence
+        type: Decimal
+      - name: tail_confidence
+        type: Decimal
+
+entities:
+  - name: patchback.analysis.Analysis
+    naming:
+      summary: >-
+        One run of `patchback analyze` over one clip: STFT, log magnitude, RMS and peak
+        envelopes, spectral centroid, rolloff, flatness, log-band energies, spectral flux and the
+        monophonic f0 estimate, with the configuration that produced them (DESIGN.md 6.2, 11).
+    identity:
+      name: analysis_id
+      type: patchback.analysis.AnalysisId
+    fields:
+      - name: audio_clip_id
+        type: patchback.audio.AudioClipId
+      - name: out_dir
+        type: String
+      - name: sample_rate_hz
+        type: Integer
+      - name: frame_count
+        type: Integer
+      - name: fft_lengths
+        type: List<Integer>
+        summary: The STFT frame sizes, in samples (DESIGN.md 6.2 "several frame sizes", 6.3 "512, 2048, 8192").
+      - name: hop_length
+        type: Integer
+        summary: STFT hop in samples.
+      # UNMAPPED: DESIGN.md 6.3 asks for "consistent overlap/window conventions" and names no hop
+      # or overlap; whether the hop is one value for every frame size or a fixed fraction of each
+      # is open. This model records one hop as given.
+      - name: window
+        type: patchback.analysis.WindowKind
+    invariants:
+      - sample_rate_hz == 48000
+      - frame_count > 0
+    relations:
+      - name: clip
+        kind: references
+        target: patchback.audio.AudioClip
+        cardinality: one
+        via: audio_clip_id
+    lifecycle:
+      initial: Complete
+      states: [Complete]
+      terminal: [Complete]
+
+  - name: patchback.analysis.FeatureContract
+    naming:
+      summary: >-
+        A versioned feature contract (DESIGN.md 6.3): its length, band and scalar layout and FFT
+        sizes, drafted and then frozen by publishing before dataset generation.
+    identity:
+      name: feature_contract_id
+      type: patchback.analysis.FeatureContractId
+    fields:
+      - name: version
+        type: patchback.analysis.FeatureContractVersion
+      - name: value_count
+        type: Integer
+      - name: band_count
+        type: Integer
+      - name: band_windows
+        type: List<patchback.analysis.BandWindow>
+      - name: scalar_features
+        type: List<patchback.analysis.ScalarFeature>
+      - name: fft_lengths
+        type: List<Integer>
+    # UNMAPPED: DESIGN.md 6.3 lists the 24 band energies before the 8 scalars and says the 24 are
+    # eight bands "computed separately for attack, body, and release windows"; it does not say
+    # whether the 24 are ordered window-major (attack bands 0-7, body 0-7, release 0-7) or
+    # band-major. Open question for the owner.
+    # UNMAPPED: DESIGN.md 6.3 says window bounds, amplitude reference, band edges and
+    # missing-data behaviour are frozen in the contract and gives no values; they are not fields
+    # here until the owner gives them.
+    lifecycle:
+      initial: Draft
+      states: [Draft, Published]
+      terminal: [Published]
+      transitions:
+        - name: publish
+          from: [Draft]
+          to: Published
+
+  - name: patchback.analysis.FeatureVector
+    naming:
+      summary: One feature vector extracted from an analysis under a published feature contract (DESIGN.md 6.3, 7.1).
+    identity:
+      name: feature_vector_id
+      type: patchback.analysis.FeatureVectorId
+    fields:
+      - name: analysis_id
+        type: patchback.analysis.AnalysisId
+      - name: feature_contract_id
+        type: patchback.analysis.FeatureContractId
+    relations:
+      - name: analysis
+        kind: references
+        target: patchback.analysis.Analysis
+        cardinality: one
+        via: analysis_id
+      - name: contract
+        kind: references
+        target: patchback.analysis.FeatureContract
+        cardinality: one
+        via: feature_contract_id
+    lifecycle:
+      initial: Extracted
+      states: [Extracted]
+      terminal: [Extracted]
+
+  - name: patchback.analysis.NormalizationStats
+    naming:
+      summary: >-
+        Per-feature means and standard deviations computed from the training split under one
+        feature contract, saved once and reused unchanged for inference (DESIGN.md 6.3, 7.1).
+    identity:
+      name: normalization_stats_id
+      type: patchback.analysis.NormalizationStatsId
+    fields:
+      - name: feature_contract_id
+        type: patchback.analysis.FeatureContractId
+      - name: feature_contract_version
+        type: patchback.analysis.FeatureContractVersion
+        summary: The version of the contract the statistics were computed under, copied at computation.
+      - name: dataset_split_id
+        type: patchback.dataset.DatasetSplitId
+      - name: split_role
+        type: patchback.dataset.SplitRole
+    invariants:
+      - split_role == Train
+    relations:
+      - name: contract
+        kind: references
+        target: patchback.analysis.FeatureContract
+        cardinality: one
+        via: feature_contract_id
+      - name: split
+        kind: references
+        target: patchback.dataset.DatasetSplit
+        cardinality: one
+        via: dataset_split_id
+    lifecycle:
+      initial: Computed
+      states: [Computed]
+      terminal: [Computed]
+
+  - name: patchback.analysis.NoteEstimation
+    naming:
+      summary: >-
+        Monophonic onset, pitch, gate-length and tail estimates for one clip, each note with its
+        confidence (DESIGN.md 6.1, 6.2, 10 V1, Milestone C).
+    identity:
+      name: note_estimation_id
+      type: patchback.analysis.NoteEstimationId
+    fields:
+      - name: audio_clip_id
+        type: patchback.audio.AudioClipId
+      - name: notes
+        type: List<patchback.analysis.EstimatedNote>
+    relations:
+      - name: clip
+        kind: references
+        target: patchback.audio.AudioClip
+        cardinality: one
+        via: audio_clip_id
+    # DESIGN.md 10 keeps the score separate from the instrument: an estimation does not create a
+    # note sequence; patchback.score.NoteSequence records the estimation it was written from
+    # (relation `estimation`).
+    lifecycle:
+      initial: Estimated
+      states: [Estimated]
+      terminal: [Estimated]
+
+actors:
+  - name: patchback.analysis.Operator
+    naming:
+      display: Operator
+      summary: The person running the patchback CLI (DESIGN.md 11).
+    may:
+      - patchback.analysis.AnalyzeAudio
+      - patchback.analysis.DefineFeatureContract
+      - patchback.analysis.AmendFeatureContract
+      - patchback.analysis.PublishFeatureContract
+      - patchback.analysis.ExtractFeatures
+      - patchback.analysis.CheckFeatureVector
+      - patchback.analysis.ComputeNormalizationStats
+      - patchback.analysis.ApplyNormalization
+      - patchback.analysis.EstimateNotes
+
+errors:
+  - name: patchback.analysis.EmptyAudio
+    summary: The clip holds no frames; nothing was analysed (DESIGN.md 12.3).
+    fields:
+      - name: frame_count
+        type: Integer
+
+  - name: patchback.analysis.UnsupportedSampleRate
+    summary: The clip is not at 48000 Hz; analysis refuses it and converts nothing (DESIGN.md 5.3, 6.1, 12.3).
+    fields:
+      - name: sample_rate_hz
+        type: Integer
+
+  - name: patchback.analysis.NonFiniteSamples
+    summary: The clip holds a NaN or infinite sample; nothing was analysed (DESIGN.md 2 invariant 4, 6.1).
+    fields:
+      - name: frame_count
+        type: Integer
+
+  - name: patchback.analysis.DurationOverBound
+    summary: The clip is longer than the configured analysis duration bound (DESIGN.md 12.3).
+    fields:
+      - name: frame_count
+        type: Integer
+
+  - name: patchback.analysis.FftLengthOverBound
+    summary: A requested FFT length is above the configured FFT length bound (DESIGN.md 12.3).
+    fields:
+      - name: fft_lengths
+        type: List<Integer>
+
+  - name: patchback.analysis.FftLengthNotPowerOfTwo
+    summary: A requested FFT length is not a power of two, which the radix-2 FFT needs (DESIGN.md 6.2).
+    fields:
+      - name: fft_lengths
+        type: List<Integer>
+
+  - name: patchback.analysis.InvalidHopLength
+    summary: The STFT hop is not a positive number of samples.
+    fields:
+      - name: hop_length
+        type: Integer
+
+  - name: patchback.analysis.PitchAmbiguous
+    summary: >-
+      The monophonic f0 estimate fell below the confidence threshold; refused with its diagnostic
+      rather than guessed (DESIGN.md 6.2 "low-confidence refusal", 6.2 "surfaced rather than
+      guessed away").
+    fields:
+      - name: audio_clip_id
+        type: patchback.audio.AudioClipId
+      - name: confidence
+        type: Decimal
+        summary: The f0 estimator's confidence, below the threshold.
+
+  - name: patchback.analysis.SilentInput
+    summary: Silence detection found no signal to analyse (DESIGN.md 6.2, 7.1).
+    fields:
+      - name: audio_clip_id
+        type: patchback.audio.AudioClipId
+
+  - name: patchback.analysis.FeatureVersionTaken
+    summary: A feature contract with this version already exists; a version is never redefined (DESIGN.md 6.3).
+    fields:
+      - name: version
+        type: patchback.analysis.FeatureContractVersion
+
+  - name: patchback.analysis.FeatureCountMismatch
+    summary: "`features/1` has exactly 32 values; a definition with another count is refused (DESIGN.md 6.3)."
+    fields:
+      - name: version
+        type: patchback.analysis.FeatureContractVersion
+      - name: value_count
+        type: Integer
+
+  - name: patchback.analysis.FeatureContractFrozen
+    summary: The feature contract is published and frozen; nothing was changed (DESIGN.md 6.3).
+    fields:
+      - name: feature_contract_id
+        type: patchback.analysis.FeatureContractId
+
+  - name: patchback.analysis.FeatureContractNotFound
+    summary: No feature contract has this identity.
+    fields:
+      - name: feature_contract_id
+        type: patchback.analysis.FeatureContractId
+
+  - name: patchback.analysis.FeatureContractNotPublished
+    summary: The feature contract is still a draft; features and statistics need a frozen contract (DESIGN.md 6.3).
+    fields:
+      - name: feature_contract_id
+        type: patchback.analysis.FeatureContractId
+
+  - name: patchback.analysis.FeatureNotComputable
+    summary: A feature cannot be computed reliably; a structured diagnostic, never a fabricated estimate (DESIGN.md 6.3).
+    fields:
+      - name: analysis_id
+        type: patchback.analysis.AnalysisId
+
+  - name: patchback.analysis.NonFiniteFeature
+    summary: A feature value is NaN or infinite (DESIGN.md 12.3).
+    fields:
+      - name: feature_contract_id
+        type: patchback.analysis.FeatureContractId
+
+  - name: patchback.analysis.FeatureVersionMismatch
+    summary: The vector was produced under another feature contract version than the one it is checked against (DESIGN.md 6.3, 12.1).
+    fields:
+      - name: version
+        type: patchback.analysis.FeatureContractVersion
+
+  - name: patchback.analysis.FeatureLengthMismatch
+    summary: The vector does not hold the contract's number of values (DESIGN.md 6.3, 7.2).
+    fields:
+      - name: value_count
+        type: Integer
+
+  - name: patchback.analysis.StatsFromNonTrainingSplit
+    summary: >-
+      Normalization statistics come from the training split only; validation and test splits are
+      refused (DESIGN.md 6.3 "Neither test-set statistics nor test audio may affect training
+      normalization").
+    fields:
+      - name: split_role
+        type: patchback.dataset.SplitRole
+
+  - name: patchback.analysis.DatasetSplitNotFound
+    summary: No dataset split has this identity; no statistics are computed.
+    fields:
+      - name: dataset_split_id
+        type: patchback.dataset.DatasetSplitId
+
+  - name: patchback.analysis.NormalizationStatsNotFound
+    summary: No normalization statistics have this identity.
+    fields:
+      - name: normalization_stats_id
+        type: patchback.analysis.NormalizationStatsId
+
+  - name: patchback.analysis.NormalizationContractMismatch
+    summary: The statistics were computed under another feature contract version than the features being normalized (DESIGN.md 6.3).
+    fields:
+      - name: feature_contract_version
+        type: patchback.analysis.FeatureContractVersion
+
+  - name: patchback.analysis.PolyphonicInput
+    summary: >-
+      More than one simultaneous note was found; polyphony is outside the MVP and is surfaced, not
+      guessed away (DESIGN.md 2 non-goals, 6.2, 10).
+    fields:
+      - name: audio_clip_id
+        type: patchback.audio.AudioClipId
+
+  - name: patchback.analysis.LowConfidenceNotes
+    summary: >-
+      One or more estimated notes fell below the confidence threshold; every estimated note is
+      returned with its confidence, none is dropped (DESIGN.md 6.1, 6.2, 10 "refusals include
+      confidence/ambiguity diagnostics").
+    fields:
+      - name: audio_clip_id
+        type: patchback.audio.AudioClipId
+      - name: notes
+        type: List<patchback.analysis.EstimatedNote>
+        summary: Every estimated note, the low-confidence ones included, each with its confidences.
+
+commands:
+  # DESIGN.md 11: `patchback analyze --input reference.wav --out analysis/`. The analyser reads
+  # the WAV header itself, so the header facts are inputs here, as in patchback.audio.ImportWav.
+  # UNMAPPED: whether `analyze` reads the WAV again or a clip already imported by
+  # patchback.audio.ImportWav is not settled. If a clip, the sample-rate and empty-audio guards
+  # become when_related guards on patchback.audio.AudioClip (its fields, by audio_clip_id), which
+  # this domain does not write while that domain is being drafted.
+  # UNMAPPED: DESIGN.md 12.3 bounds input duration and FFT length and gives no value, so both
+  # refusals are external until the owner sets the bounds.
+  # UNMAPPED: silence. DESIGN.md 6.2 names "basic silence detection" and 7.1 lists silence among
+  # "rejection cases"; no section says whether `analyze` refuses silent input or completes and
+  # reports it. This model refuses it with a typed diagnostic (SilentInput).
+  - name: patchback.analysis.AnalyzeAudio
+    naming:
+      wire: analyze-audio
+      display: Analyze audio
+      summary: Compute the STFT, envelope and spectral descriptors of one clip and record the configuration.
+    input:
+      - name: audio_clip_id
+        type: patchback.audio.AudioClipId
+      - name: out_dir
+        type: String
+      - name: sample_rate_hz
+        type: Integer
+      - name: frame_count
+        type: Integer
+      - name: fft_lengths
+        type: List<Integer>
+      - name: hop_length
+        type: Integer
+      - name: window
+        type: patchback.analysis.WindowKind
+    outcomes:
+      - name: empty
+        when: frame_count <= 0
+        error: patchback.analysis.EmptyAudio
+        payload:
+          patchback.analysis.EmptyAudio: {frame_count: input.frame_count}
+        summary: A clip with no frames is refused; no analysis exists.
+
+      - name: unsupported-sample-rate
+        when: sample_rate_hz != 48000
+        error: patchback.analysis.UnsupportedSampleRate
+        payload:
+          patchback.analysis.UnsupportedSampleRate: {sample_rate_hz: input.sample_rate_hz}
+        summary: Any rate other than 48000 Hz is refused; nothing is converted.
+
+      - name: invalid-hop
+        when: hop_length <= 0
+        error: patchback.analysis.InvalidHopLength
+        payload:
+          patchback.analysis.InvalidHopLength: {hop_length: input.hop_length}
+
+      - name: fft-not-power-of-two
+        external: a requested FFT length is not a power of two
+        error: patchback.analysis.FftLengthNotPowerOfTwo
+        payload:
+          patchback.analysis.FftLengthNotPowerOfTwo: {fft_lengths: input.fft_lengths}
+
+      - name: fft-over-bound
+        external: a requested FFT length exceeds the configured FFT length bound
+        error: patchback.analysis.FftLengthOverBound
+        payload:
+          patchback.analysis.FftLengthOverBound: {fft_lengths: input.fft_lengths}
+
+      - name: duration-over-bound
+        external: the frame count exceeds the configured analysis duration bound
+        error: patchback.analysis.DurationOverBound
+        payload:
+          patchback.analysis.DurationOverBound: {frame_count: input.frame_count}
+
+      - name: non-finite
+        external: the analyser finds a NaN or infinite sample in the clip
+        error: patchback.analysis.NonFiniteSamples
+        payload:
+          patchback.analysis.NonFiniteSamples: {frame_count: input.frame_count}
+
+      - name: silent
+        external: silence detection finds no signal above the silence threshold
+        error: patchback.analysis.SilentInput
+        payload:
+          patchback.analysis.SilentInput: {audio_clip_id: input.audio_clip_id}
+        summary: Silence is reported as a typed diagnostic, not a failure of the analyser.
+
+      # UNMAPPED: DESIGN.md 6.2 refuses a low-confidence f0 estimate and gives no confidence
+      # threshold; it also does not say whether the other descriptors are still written when only
+      # the f0 estimate is refused. This model refuses the analysis.
+      - name: pitch-ambiguous
+        external: the monophonic f0 estimate is below the confidence threshold
+        error: patchback.analysis.PitchAmbiguous
+        payload:
+          patchback.analysis.PitchAmbiguous: {audio_clip_id: input.audio_clip_id, confidence: {generated: true}}
+        summary: An ambiguous pitch is reported with its diagnostic, never guessed.
+
+      - name: analyzed
+        creates: patchback.analysis.Analysis
+        instance: analysis_id
+        sets:
+          audio_clip_id: input.audio_clip_id
+          out_dir: input.out_dir
+          sample_rate_hz: input.sample_rate_hz
+          frame_count: input.frame_count
+          fft_lengths: input.fft_lengths
+          hop_length: input.hop_length
+          window: input.window
+        emits: [patchback.analysis.AudioAnalyzed]
+        payload:
+          patchback.analysis.AudioAnalyzed:
+            analysis_id: {generated: true}
+            audio_clip_id: input.audio_clip_id
+            fft_lengths: input.fft_lengths
+            hop_length: input.hop_length
+            window: input.window
+        summary: The descriptors are written to out_dir with the FFT lengths, hop and window that produced them.
+
+  - name: patchback.analysis.DefineFeatureContract
+    naming:
+      wire: define-feature-contract
+      display: Define a feature contract
+      summary: Draft a new feature contract version (DESIGN.md 6.3).
+    input:
+      - name: version
+        type: patchback.analysis.FeatureContractVersion
+      - name: value_count
+        type: Integer
+      - name: band_count
+        type: Integer
+      - name: band_windows
+        type: List<patchback.analysis.BandWindow>
+      - name: scalar_features
+        type: List<patchback.analysis.ScalarFeature>
+      - name: fft_lengths
+        type: List<Integer>
+    outcomes:
+      - name: wrong-count
+        when: {all: [version == "features/1", value_count != 32]}
+        error: patchback.analysis.FeatureCountMismatch
+        payload:
+          patchback.analysis.FeatureCountMismatch:
+            version: input.version
+            value_count: input.value_count
+        summary: "`features/1` is defined with exactly 32 values."
+
+      - name: version-taken
+        when_related:
+          entity: patchback.analysis.FeatureContract
+          where: version == input.version
+          exists: true
+        error: patchback.analysis.FeatureVersionTaken
+        payload:
+          patchback.analysis.FeatureVersionTaken: {version: input.version}
+        summary: A version is defined once; a change is a new version.
+
+      - name: defined
+        creates: patchback.analysis.FeatureContract
+        instance: feature_contract_id
+        sets:
+          version: input.version
+          value_count: input.value_count
+          band_count: input.band_count
+          band_windows: input.band_windows
+          scalar_features: input.scalar_features
+          fft_lengths: input.fft_lengths
+        emits: [patchback.analysis.FeatureContractDefined]
+        payload:
+          patchback.analysis.FeatureContractDefined:
+            feature_contract_id: {generated: true}
+            version: input.version
+            value_count: input.value_count
+
+  - name: patchback.analysis.AmendFeatureContract
+    naming:
+      wire: amend-feature-contract
+      display: Amend a draft feature contract
+      summary: Change the FFT lengths of a contract that is still a draft.
+    input:
+      - name: feature_contract_id
+        type: patchback.analysis.FeatureContractId
+      - name: fft_lengths
+        type: List<Integer>
+    outcomes:
+      - name: no-such-contract
+        unknown_instance: true
+        error: patchback.analysis.FeatureContractNotFound
+        payload:
+          patchback.analysis.FeatureContractNotFound: {feature_contract_id: input.feature_contract_id}
+
+      - name: frozen
+        when_subject_state: Published
+        error: patchback.analysis.FeatureContractFrozen
+        payload:
+          patchback.analysis.FeatureContractFrozen: {feature_contract_id: input.feature_contract_id}
+        summary: A published contract is frozen; nothing changed.
+
+      - name: amended
+        updates: patchback.analysis.FeatureContract
+        instance: feature_contract_id
+        sets:
+          fft_lengths: input.fft_lengths
+        emits: [patchback.analysis.FeatureContractAmended]
+        payload:
+          patchback.analysis.FeatureContractAmended:
+            feature_contract_id: input.feature_contract_id
+            fft_lengths: input.fft_lengths
+
+  - name: patchback.analysis.PublishFeatureContract
+    naming:
+      wire: publish-feature-contract
+      display: Publish a feature contract
+      summary: Freeze a feature contract version before dataset generation (DESIGN.md 6.3, Milestone B).
+    input:
+      - name: feature_contract_id
+        type: patchback.analysis.FeatureContractId
+    outcomes:
+      - name: no-such-contract
+        unknown_instance: true
+        error: patchback.analysis.FeatureContractNotFound
+        payload:
+          patchback.analysis.FeatureContractNotFound: {feature_contract_id: input.feature_contract_id}
+
+      - name: published
+        moves: patchback.analysis.FeatureContract.publish
+        instance: feature_contract_id
+        emits: [patchback.analysis.FeatureContractPublished]
+        payload:
+          patchback.analysis.FeatureContractPublished:
+            feature_contract_id: input.feature_contract_id
+
+      - name: already-published
+        wrong_state: true
+        error: patchback.analysis.FeatureContractFrozen
+        payload:
+          patchback.analysis.FeatureContractFrozen: {feature_contract_id: input.feature_contract_id}
+
+  - name: patchback.analysis.ExtractFeatures
+    naming:
+      wire: extract-features
+      display: Extract features
+      summary: Compute one feature vector of an analysis under a published feature contract (DESIGN.md 6.3, 7.1).
+    input:
+      - name: analysis_id
+        type: patchback.analysis.AnalysisId
+      - name: feature_contract_id
+        type: patchback.analysis.FeatureContractId
+    outcomes:
+      - name: no-such-contract
+        when_related: {via: input.feature_contract_id, exists: false}
+        error: patchback.analysis.FeatureContractNotFound
+        payload:
+          patchback.analysis.FeatureContractNotFound: {feature_contract_id: input.feature_contract_id}
+
+      - name: contract-draft
+        when_related: {via: input.feature_contract_id, predicate: state == Draft}
+        error: patchback.analysis.FeatureContractNotPublished
+        payload:
+          patchback.analysis.FeatureContractNotPublished: {feature_contract_id: input.feature_contract_id}
+        summary: Features are extracted only under a frozen contract.
+
+      - name: not-computable
+        external: a feature of the contract cannot be computed reliably from this analysis
+        error: patchback.analysis.FeatureNotComputable
+        payload:
+          patchback.analysis.FeatureNotComputable: {analysis_id: input.analysis_id}
+        summary: A structured diagnostic; no estimate is fabricated.
+
+      - name: non-finite
+        external: a computed feature value is NaN or infinite
+        error: patchback.analysis.NonFiniteFeature
+        payload:
+          patchback.analysis.NonFiniteFeature: {feature_contract_id: input.feature_contract_id}
+
+      - name: extracted
+        creates: patchback.analysis.FeatureVector
+        instance: feature_vector_id
+        sets:
+          analysis_id: input.analysis_id
+          feature_contract_id: input.feature_contract_id
+        emits: [patchback.analysis.FeaturesExtracted]
+        payload:
+          patchback.analysis.FeaturesExtracted:
+            feature_vector_id: {generated: true}
+            analysis_id: input.analysis_id
+            feature_contract_id: input.feature_contract_id
+
+  # The check every reader of a feature vector makes before using it: the dataset writer
+  # (DESIGN.md 7.2, 12.1 "feature version pinning") and the inference adapter (8.2 step 3).
+  - name: patchback.analysis.CheckFeatureVector
+    naming:
+      wire: check-feature-vector
+      display: Check a feature vector against its contract
+      summary: Admit a feature vector only when its version and length match the contract and every value is finite.
+    input:
+      - name: feature_contract_id
+        type: patchback.analysis.FeatureContractId
+      - name: version
+        type: patchback.analysis.FeatureContractVersion
+      - name: value_count
+        type: Integer
+    outcomes:
+      - name: no-such-contract
+        when_related: {via: input.feature_contract_id, exists: false}
+        error: patchback.analysis.FeatureContractNotFound
+        payload:
+          patchback.analysis.FeatureContractNotFound: {feature_contract_id: input.feature_contract_id}
+
+      - name: wrong-version
+        when_related: {via: input.feature_contract_id, predicate: version != input.version}
+        error: patchback.analysis.FeatureVersionMismatch
+        payload:
+          patchback.analysis.FeatureVersionMismatch: {version: input.version}
+
+      - name: wrong-length
+        when_related: {via: input.feature_contract_id, predicate: value_count != input.value_count}
+        error: patchback.analysis.FeatureLengthMismatch
+        payload:
+          patchback.analysis.FeatureLengthMismatch: {value_count: input.value_count}
+
+      - name: non-finite
+        external: a value of the vector is NaN or infinite
+        error: patchback.analysis.NonFiniteFeature
+        payload:
+          patchback.analysis.NonFiniteFeature: {feature_contract_id: input.feature_contract_id}
+
+      - name: admitted
+        accepts: nothing
+        summary: The vector matches the contract's version and length.
+
+  # DESIGN.md 6.3: "Training-set means/standard deviations are saved as an internal artifact and
+  # reused unchanged for inference. Neither test-set statistics nor test audio may affect
+  # training normalization."
+  # The split's role is read from patchback.dataset.DatasetSplit by dataset_split_id.
+  # UNMAPPED: DESIGN.md 6.3 forbids test-set statistics; it does not name the validation split.
+  # The task and 7.1 ("train/validation/test") read "training split only", so validation is
+  # refused too. Confirm with the owner.
+  - name: patchback.analysis.ComputeNormalizationStats
+    naming:
+      wire: compute-normalization-stats
+      display: Compute normalization statistics
+      summary: Save per-feature means and standard deviations of the training split under one feature contract.
+    input:
+      - name: feature_contract_id
+        type: patchback.analysis.FeatureContractId
+      - name: dataset_split_id
+        type: patchback.dataset.DatasetSplitId
+      - name: feature_contract_version
+        type: patchback.analysis.FeatureContractVersion
+    outcomes:
+      - name: no-such-split
+        when_related: {via: input.dataset_split_id, exists: false}
+        error: patchback.analysis.DatasetSplitNotFound
+        payload:
+          patchback.analysis.DatasetSplitNotFound: {dataset_split_id: input.dataset_split_id}
+
+      - name: no-such-contract
+        when_related: {via: input.feature_contract_id, exists: false}
+        error: patchback.analysis.FeatureContractNotFound
+        payload:
+          patchback.analysis.FeatureContractNotFound: {feature_contract_id: input.feature_contract_id}
+
+      - name: not-training-split
+        when_related: {via: input.dataset_split_id, predicate: role != Train}
+        error: patchback.analysis.StatsFromNonTrainingSplit
+        payload:
+          patchback.analysis.StatsFromNonTrainingSplit:
+            split_role: {related: {via: input.dataset_split_id, field: role}}
+        summary: Statistics from the validation or test split are refused.
+
+      - name: contract-draft
+        when_related: {via: input.feature_contract_id, predicate: state == Draft}
+        error: patchback.analysis.FeatureContractNotPublished
+        payload:
+          patchback.analysis.FeatureContractNotPublished: {feature_contract_id: input.feature_contract_id}
+
+      - name: version-mismatch
+        when_related: {via: input.feature_contract_id, predicate: version != input.feature_contract_version}
+        error: patchback.analysis.FeatureVersionMismatch
+        payload:
+          patchback.analysis.FeatureVersionMismatch: {version: input.feature_contract_version}
+        summary: The version named must be the contract's own; the statistics carry it.
+
+      - name: computed
+        creates: patchback.analysis.NormalizationStats
+        instance: normalization_stats_id
+        sets:
+          feature_contract_id: input.feature_contract_id
+          dataset_split_id: input.dataset_split_id
+          # not-training-split refuses every other role, so the role computed from is Train.
+          split_role: Train
+          feature_contract_version: input.feature_contract_version
+        emits: [patchback.analysis.NormalizationStatsComputed]
+        payload:
+          patchback.analysis.NormalizationStatsComputed:
+            normalization_stats_id: {generated: true}
+            feature_contract_id: input.feature_contract_id
+            dataset_split_id: input.dataset_split_id
+
+  - name: patchback.analysis.ApplyNormalization
+    naming:
+      wire: apply-normalization
+      display: Apply normalization statistics
+      summary: Normalize features with saved statistics, unchanged, as inference does (DESIGN.md 6.3).
+    input:
+      - name: normalization_stats_id
+        type: patchback.analysis.NormalizationStatsId
+      - name: feature_contract_version
+        type: patchback.analysis.FeatureContractVersion
+        summary: The feature contract version the features to normalize were extracted under.
+    outcomes:
+      - name: no-such-stats
+        unknown_instance: true
+        error: patchback.analysis.NormalizationStatsNotFound
+        payload:
+          patchback.analysis.NormalizationStatsNotFound: {normalization_stats_id: input.normalization_stats_id}
+
+      - name: contract-mismatch
+        when_subject:
+          predicate: feature_contract_version != input.feature_contract_version
+        error: patchback.analysis.NormalizationContractMismatch
+        payload:
+          patchback.analysis.NormalizationContractMismatch: {feature_contract_version: input.feature_contract_version}
+        summary: Statistics of another feature contract are refused.
+
+      - name: normalized
+        preserves: patchback.analysis.NormalizationStats
+        instance: normalization_stats_id
+        summary: The statistics are read and left unchanged.
+
+  # DESIGN.md 10 V1 and Milestone C: monophonic onset, pitch, gate and tail estimates.
+  # UNMAPPED: DESIGN.md 2 puts polyphony outside the MVP, 10 defers "simple polyphony" to V2, and
+  # 6.2 says the limitation "must be surfaced rather than guessed away"; none says whether
+  # polyphonic input is refused outright or estimated as far as possible and reported. This
+  # model refuses it (PolyphonicInput).
+  # UNMAPPED: no confidence threshold is given (DESIGN.md 6.2, 10).
+  - name: patchback.analysis.EstimateNotes
+    naming:
+      wire: estimate-notes
+      display: Estimate notes
+      summary: Estimate monophonic notes of a clip, each with its onset, pitch, gate and tail confidence.
+    input:
+      - name: audio_clip_id
+        type: patchback.audio.AudioClipId
+      - name: analysis_id
+        type: patchback.analysis.AnalysisId
+    outcomes:
+      - name: polyphonic
+        external: the estimator finds more than one simultaneous note
+        error: patchback.analysis.PolyphonicInput
+        payload:
+          patchback.analysis.PolyphonicInput: {audio_clip_id: input.audio_clip_id}
+
+      - name: low-confidence
+        external: one or more estimated notes are below the confidence threshold
+        error: patchback.analysis.LowConfidenceNotes
+        payload:
+          patchback.analysis.LowConfidenceNotes: {audio_clip_id: input.audio_clip_id, notes: {generated: true}}
+        summary: The refusal carries every estimated note with its confidence; none is dropped silently.
+
+      - name: estimated
+        creates: patchback.analysis.NoteEstimation
+        instance: note_estimation_id
+        sets:
+          audio_clip_id: input.audio_clip_id
+          notes: {generated: true}
+        emits: [patchback.analysis.NotesEstimated]
+        payload:
+          patchback.analysis.NotesEstimated:
+            note_estimation_id: {generated: true}
+            audio_clip_id: input.audio_clip_id
+
+events:
+  - name: patchback.analysis.AudioAnalyzed
+    fields:
+      - name: analysis_id
+        type: patchback.analysis.AnalysisId
+      - name: audio_clip_id
+        type: patchback.audio.AudioClipId
+      - name: fft_lengths
+        type: List<Integer>
+      - name: hop_length
+        type: Integer
+      - name: window
+        type: patchback.analysis.WindowKind
+
+  - name: patchback.analysis.FeatureContractDefined
+    fields:
+      - name: feature_contract_id
+        type: patchback.analysis.FeatureContractId
+      - name: version
+        type: patchback.analysis.FeatureContractVersion
+      - name: value_count
+        type: Integer
+
+  - name: patchback.analysis.FeatureContractAmended
+    fields:
+      - name: feature_contract_id
+        type: patchback.analysis.FeatureContractId
+      - name: fft_lengths
+        type: List<Integer>
+
+  - name: patchback.analysis.FeatureContractPublished
+    fields:
+      - name: feature_contract_id
+        type: patchback.analysis.FeatureContractId
+
+  - name: patchback.analysis.FeaturesExtracted
+    fields:
+      - name: feature_vector_id
+        type: patchback.analysis.FeatureVectorId
+      - name: analysis_id
+        type: patchback.analysis.AnalysisId
+      - name: feature_contract_id
+        type: patchback.analysis.FeatureContractId
+
+  - name: patchback.analysis.NormalizationStatsComputed
+    fields:
+      - name: normalization_stats_id
+        type: patchback.analysis.NormalizationStatsId
+      - name: feature_contract_id
+        type: patchback.analysis.FeatureContractId
+      - name: dataset_split_id
+        type: patchback.dataset.DatasetSplitId
+
+  - name: patchback.analysis.NotesEstimated
+    fields:
+      - name: note_estimation_id
+        type: patchback.analysis.NoteEstimationId
+      - name: audio_clip_id
+        type: patchback.audio.AudioClipId
+
+views:
+  - name: patchback.analysis.Analyses
+    source: patchback.analysis.Analysis
+    consistency: read_your_writes
+    fields:
+      - name: analysis_id
+        type: patchback.analysis.AnalysisId
+      - name: state
+        type: patchback.analysis.Analysis.State
+      - name: audio_clip_id
+        type: patchback.audio.AudioClipId
+      - name: sample_rate_hz
+        type: Integer
+      - name: frame_count
+        type: Integer
+      - name: fft_lengths
+        type: List<Integer>
+      - name: hop_length
+        type: Integer
+      - name: window
+        type: patchback.analysis.WindowKind
+    naming:
+      wire: analyses
+      display: Analyses
+
+  - name: patchback.analysis.FeatureContracts
+    source: patchback.analysis.FeatureContract
+    consistency: read_your_writes
+    fields:
+      - name: feature_contract_id
+        type: patchback.analysis.FeatureContractId
+      - name: state
+        type: patchback.analysis.FeatureContract.State
+      - name: version
+        type: patchback.analysis.FeatureContractVersion
+      - name: value_count
+        type: Integer
+      - name: band_count
+        type: Integer
+      - name: band_windows
+        type: List<patchback.analysis.BandWindow>
+      - name: scalar_features
+        type: List<patchback.analysis.ScalarFeature>
+      - name: fft_lengths
+        type: List<Integer>
+    naming:
+      wire: feature-contracts
+      display: Feature contracts
+
+  - name: patchback.analysis.FeatureVectors
+    source: patchback.analysis.FeatureVector
+    consistency: read_your_writes
+    fields:
+      - name: feature_vector_id
+        type: patchback.analysis.FeatureVectorId
+      - name: state
+        type: patchback.analysis.FeatureVector.State
+      - name: analysis_id
+        type: patchback.analysis.AnalysisId
+      - name: feature_contract_id
+        type: patchback.analysis.FeatureContractId
+    naming:
+      wire: feature-vectors
+      display: Feature vectors
+
+  - name: patchback.analysis.NormalizationStatsSet
+    source: patchback.analysis.NormalizationStats
+    consistency: read_your_writes
+    fields:
+      - name: normalization_stats_id
+        type: patchback.analysis.NormalizationStatsId
+      - name: state
+        type: patchback.analysis.NormalizationStats.State
+      - name: feature_contract_id
+        type: patchback.analysis.FeatureContractId
+      - name: feature_contract_version
+        type: patchback.analysis.FeatureContractVersion
+      - name: dataset_split_id
+        type: patchback.dataset.DatasetSplitId
+      - name: split_role
+        type: patchback.dataset.SplitRole
+    naming:
+      wire: normalization-stats
+      display: Normalization statistics
+
+  - name: patchback.analysis.NoteEstimations
+    source: patchback.analysis.NoteEstimation
+    consistency: read_your_writes
+    fields:
+      - name: note_estimation_id
+        type: patchback.analysis.NoteEstimationId
+      - name: state
+        type: patchback.analysis.NoteEstimation.State
+      - name: audio_clip_id
+        type: patchback.audio.AudioClipId
+    naming:
+      wire: note-estimations
+      display: Note estimations

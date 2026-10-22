@@ -1,0 +1,32 @@
+# DESIGN.md 12.3: "Use recordings the project is authorized to analyze; maintain provenance for
+# test fixtures"; 12.2 External audio: "At least one independently recorded isolated monophonic
+# synth note". AGENTS.md: fixtures carry a recorded licence and provenance.
+type: ess-scenario/1
+domain: patchback.audio
+scenario: external-audio-provenance-accepted
+summary: An external recording with provenance and licence imports as a clip that keeps both.
+
+arrange:
+  - instance: recording
+    entity: patchback.audio.AudioClip
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.audio.ImportWav
+    actor: patchback.audio.Operator
+    input:
+      path: tests/fixtures/external-note.wav
+      origin: ExternalRecording
+      provenance: recorded by the project from a hardware monosynth, 2026-10-20
+      licence: CC-BY-4.0
+      sample_rate_hz: 48000
+      channel_count: 1
+      format_tag: 1
+      bits_per_sample: 16
+      frame_count: 72000
+    outcome: imported
+    events:
+      - event: patchback.audio.ClipImported
+        payload:
+          origin: ExternalRecording
+    capture: {instance: recording, event: patchback.audio.ClipImported, field: audio_clip_id}

@@ -1,0 +1,102 @@
+# DESIGN.md 11: the results are "produced per fit run" once it has a result. A run still Running
+# has no final best patch or report values, so writing its results is refused.
+type: ess-scenario/1
+domain: patchback.fit
+scenario: fit-run-artifacts-running-run-refused
+summary: Writing the results of a run that is still Running is refused with FitStillRunning, and of an unknown run with FitRunNotFound.
+
+arrange:
+  - instance: reference
+    entity: patchback.audio.AudioClip
+  - instance: run
+    entity: patchback.fit.FitRun
+
+timeline:
+  - at: 2026-10-22T00:00:01Z
+    command: patchback.patch.DeclareTopology
+    actor: patchback.patch.Operator
+    input:
+      topology_id: 2d8f3b10-0000-4000-8000-000000000303
+      name: subtractive-mono/1
+      parameters: []
+    outcome: declared
+
+  - at: 2026-10-22T00:00:02Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 2d8f3b10-0000-4000-8000-0000000003f1
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 2d8f3b10-0000-4000-8000-000000000303
+      nodes:
+        - {id: 2, kind: SawOscillator, parameters: []}
+      edges: []
+    outcome: loaded
+
+  - at: 2026-10-22T00:00:03Z
+    command: patchback.score.LoadNoteSequence
+    actor: patchback.score.Operator
+    input:
+      note_sequence_id: 2d8f3b10-0000-4000-8000-000000000302
+      format_version: 1
+      sample_rate_hz: 48000
+      patch_id: 2d8f3b10-0000-4000-8000-0000000003f1
+      notes:
+        - {start_sample: 0, end_sample: 24000, midi_note: 45, velocity: 0.8}
+    outcome: loaded
+
+  - at: 2026-10-22T00:00:04Z
+    command: patchback.audio.ImportWav
+    actor: patchback.audio.Operator
+    input:
+      path: reference.wav
+      origin: PatchbackSynthesized
+      sample_rate_hz: 48000
+      channel_count: 1
+      format_tag: 3
+      bits_per_sample: 32
+      frame_count: 48000
+    outcome: imported
+    capture: {instance: reference, event: patchback.audio.ClipImported, field: audio_clip_id}
+
+  - at: 2026-10-22T12:30:00Z
+    command: patchback.fit.StartFit
+    actor: patchback.fit.Operator
+    input:
+      reference_clip_id: {$instance: reference}
+      note_sequence_id: 2d8f3b10-0000-4000-8000-000000000302
+      note_source: Known
+      scope: SingleNote
+      topology_id: 2d8f3b10-0000-4000-8000-000000000303
+      seed: 42
+      max_renders: 2000
+      max_wall_time_ms: 600000
+      max_restarts: 4
+      improvement_threshold: 0.001
+    outcome: started
+    capture: {instance: run, event: patchback.fit.FitStarted, field: fit_run_id}
+
+  - at: 2026-10-22T12:30:01Z
+    command: patchback.fit.WriteFitResults
+    actor: patchback.fit.Operator
+    input:
+      fit_run_id: {$instance: run}
+      out_dir: results/
+      reconstructed_wav_id: 2d8f3b10-0000-4000-8000-000000000330
+      warnings: []
+    outcome: still-running
+    error:
+      name: patchback.fit.FitStillRunning
+
+  - at: 2026-10-22T12:30:02Z
+    command: patchback.fit.WriteFitResults
+    actor: patchback.fit.Operator
+    input:
+      fit_run_id: 2d8f3b10-0000-4000-8000-000000000399
+      out_dir: results/
+      reconstructed_wav_id: 2d8f3b10-0000-4000-8000-000000000330
+      warnings: []
+    outcome: no-such-run
+    error:
+      name: patchback.fit.FitRunNotFound

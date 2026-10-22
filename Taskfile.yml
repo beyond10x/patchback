@@ -1,0 +1,99 @@
+version: "3"
+
+vars:
+  SCRATCH:
+    sh: echo "${PATCHBACK_SCRATCH:-$HOME/.cache/patchback-conform}"
+  STUDIO_ROOTS: >-
+    --root patchback.studio.CataloguePublished
+    --root patchback.studio.GraphDrawn
+    --root patchback.studio.TraceOpened
+    --root patchback.studio.FrameAppended
+    --root patchback.studio.TraceClosedEvent
+    --root patchback.studio.ResultComposed
+
+tasks:
+  spec-validate:
+    dir: spec
+    cmds:
+      - ess specify validate --path . --strict-requires
+
+  spec-synthesize:
+    dir: spec
+    cmds:
+      - mkdir -p "{{.SCRATCH}}"
+      - ess verify conform synthesize --path . --scenarios . --out "{{.SCRATCH}}/suite.json"
+
+  spec-conform:
+    deps: [spec-synthesize]
+    dir: spec
+    cmds:
+      - ess verify conform run --path . --target interpreted --suite "{{.SCRATCH}}/suite.json" --report-format 2 --report-out "{{.SCRATCH}}/report.json"
+
+  plan-validate:
+    cmds:
+      - aep plan artifact validate
+
+  acceptance-check:
+    silent: true
+    cmds:
+      - cmd: |
+          set -eu
+          missing=0
+          for path in $(grep -ohE 'spec/scenarios/[A-Za-z0-9._-]+\.yaml' .engineering/planning/story/*.md | sort -u); do
+            if [ ! -f "$path" ]; then
+              echo "acceptance-check: $path is named by a story and does not exist" >&2
+              missing=1
+            fi
+          done
+          for story in .engineering/planning/story/*.md; do
+            if ! grep -qE 'spec/scenarios/[A-Za-z0-9._-]+\.yaml' "$story"; then
+              echo "acceptance-check: $story names no acceptance scenario" >&2
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+  docs-generate:
+    cmds:
+      - cargo run --locked -p patchback-docs -- generate
+
+  docs-check:
+    cmds:
+      - cargo run --locked -p patchback-docs -- generate --check
+      - cargo test --locked -p patchback-docs
+
+  studio-types:
+    cmds:
+      - rm -rf studio/src/generated
+      - ess generate types --path spec --target typescript --names short {{.STUDIO_ROOTS}} --out studio/src/generated
+
+  studio-types-check:
+    vars:
+      DRIFT:
+        sh: mktemp -d "$HOME/.cache/patchback-studio-types.XXXXXX"
+    cmds:
+      - defer: rm -rf "{{.DRIFT}}"
+      - ess generate types --path spec --target typescript --names short {{.STUDIO_ROOTS}} --out "{{.DRIFT}}/generated"
+      - diff -r -x .ess-output studio/src/generated "{{.DRIFT}}/generated"
+
+  studio-install:
+    cmds:
+      - pnpm --dir studio install --frozen-lockfile
+
+  studio-dev:
+    deps: [studio-install]
+    cmds:
+      - pnpm --dir studio dev
+
+  studio-build:
+    deps: [studio-install]
+    cmds:
+      - pnpm --dir studio build
+
+  check:
+    cmds:
+      - task: spec-validate
+      - task: spec-conform
+      - task: plan-validate
+      - task: acceptance-check
+      - task: docs-check

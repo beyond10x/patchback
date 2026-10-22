@@ -1,0 +1,56 @@
+# epic:patch-studio, fit evolution view, live. Once a trace has its run's end it takes no
+# further frame and cannot be closed twice: a late or duplicated stream message is refused rather
+# than extending a finished run.
+type: ess-scenario/1
+domain: patchback.studio
+scenario: studio-fit-live-closed-takes-no-frame
+summary: A frame after the trace closed, and a second close, are both refused.
+
+timeline:
+  - at: 2026-10-22T14:10:00Z
+    command: patchback.studio.OpenTrace
+    actor: patchback.studio.FitStream
+    input:
+      trace_id: 5a0d0000-0000-4000-8000-000000000406
+      fit_run_id: 5a0d0000-0000-4000-8000-000000000506
+      source: Live
+      topology_id: 5a0d0000-0000-4000-8000-000000000101
+      parameter_paths: [cutoff]
+    outcome: opened
+
+  - at: 2026-10-22T14:10:01Z
+    command: patchback.studio.CloseTrace
+    actor: patchback.studio.FitStream
+    input:
+      trace_id: 5a0d0000-0000-4000-8000-000000000406
+      ended: Completed
+    outcome: closed
+
+  - at: 2026-10-22T14:10:02Z
+    command: patchback.studio.AppendFrame
+    actor: patchback.studio.FitStream
+    input:
+      frame_id: 5a0d0000-0000-4000-8000-000000000651
+      trace_id: 5a0d0000-0000-4000-8000-000000000406
+      sequence: 0
+      evaluation: 1
+      outcome: FirstRetained
+      topology_id: 5a0d0000-0000-4000-8000-000000000101
+      total_loss: 0.645
+      best_loss: 0.645
+      parameters: [{path: cutoff, normalized_value: 0.5}]
+    outcome: trace-closed
+    error:
+      name: patchback.studio.TraceClosed
+    no_events: [patchback.studio.FrameAppended]
+
+  - at: 2026-10-22T14:10:03Z
+    command: patchback.studio.CloseTrace
+    actor: patchback.studio.FitStream
+    input:
+      trace_id: 5a0d0000-0000-4000-8000-000000000406
+      ended: Completed
+    outcome: already-closed
+    error:
+      name: patchback.studio.TraceStateConflict
+    no_events: [patchback.studio.TraceClosedEvent]

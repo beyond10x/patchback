@@ -1,0 +1,54 @@
+# epic:patch-studio, fit evolution view, replay. DESIGN.md 9.2 step 5: an invalid candidate is
+# never retained and has no loss. A rejected frame that carries a loss, and an improving frame
+# whose loss is not the new best, contradict the run and are refused.
+type: ess-scenario/1
+domain: patchback.studio
+scenario: studio-fit-replay-inconsistent-frame
+summary: A rejected frame carrying a loss and an improved frame whose loss is not the best loss are both refused.
+
+timeline:
+  - at: 2026-10-22T13:50:00Z
+    command: patchback.studio.OpenTrace
+    actor: patchback.studio.Studio
+    input:
+      trace_id: 5a0d0000-0000-4000-8000-000000000404
+      fit_run_id: 5a0d0000-0000-4000-8000-000000000504
+      source: Replay
+      topology_id: 5a0d0000-0000-4000-8000-000000000101
+      parameter_paths: [cutoff]
+    outcome: opened
+
+  - at: 2026-10-22T13:50:01Z
+    command: patchback.studio.AppendFrame
+    actor: patchback.studio.Studio
+    input:
+      frame_id: 5a0d0000-0000-4000-8000-000000000631
+      trace_id: 5a0d0000-0000-4000-8000-000000000404
+      sequence: 0
+      evaluation: 1
+      outcome: Rejected
+      topology_id: 5a0d0000-0000-4000-8000-000000000101
+      total_loss: 0.645
+      parameters: [{path: cutoff, normalized_value: 0.5}]
+    outcome: rejected-with-loss
+    error:
+      name: patchback.studio.InconsistentFrame
+    no_events: [patchback.studio.FrameAppended]
+
+  - at: 2026-10-22T13:50:02Z
+    command: patchback.studio.AppendFrame
+    actor: patchback.studio.Studio
+    input:
+      frame_id: 5a0d0000-0000-4000-8000-000000000632
+      trace_id: 5a0d0000-0000-4000-8000-000000000404
+      sequence: 0
+      evaluation: 1
+      outcome: Improved
+      topology_id: 5a0d0000-0000-4000-8000-000000000101
+      total_loss: 0.43
+      best_loss: 0.645
+      parameters: [{path: cutoff, normalized_value: 0.5}]
+    outcome: retained-not-best
+    error:
+      name: patchback.studio.InconsistentFrame
+    no_events: [patchback.studio.FrameAppended]

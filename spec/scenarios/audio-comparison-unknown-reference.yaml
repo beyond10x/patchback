@@ -1,0 +1,39 @@
+# DESIGN.md 9.1 compares a candidate rendering with a reference; both clips must exist. A reference
+# that was never imported is refused before the candidate is looked at, and no Comparison is recorded.
+type: ess-scenario/1
+domain: patchback.fit
+scenario: audio-comparison-unknown-reference
+summary: Comparing against a reference clip that was never imported is refused with ClipNotFound naming the reference, and nothing is compared.
+
+arrange:
+  - instance: candidate
+    entity: patchback.audio.AudioClip
+
+timeline:
+  - at: 2026-10-22T00:00:01Z
+    command: patchback.audio.ImportWav
+    actor: patchback.audio.Operator
+    input:
+      path: candidate.wav
+      origin: PatchbackSynthesized
+      sample_rate_hz: 48000
+      channel_count: 1
+      format_tag: 3
+      bits_per_sample: 32
+      frame_count: 48000
+    outcome: imported
+    capture: {instance: candidate, event: patchback.audio.ClipImported, field: audio_clip_id}
+
+  - at: 2026-10-22T11:00:00Z
+    command: patchback.fit.CompareAudio
+    actor: patchback.fit.Operator
+    input:
+      reference_clip_id: 1c4a2e90-0000-4000-8000-000000000098
+      candidate_clip_id: {$instance: candidate}
+      weights: {log_spectral: 0.4, envelope: 0.3, transient: 0.2, band_energy: 0.1}
+    outcome: unknown-reference
+    error:
+      name: patchback.fit.ClipNotFound
+      fields:
+        audio_clip_id: 1c4a2e90-0000-4000-8000-000000000098
+    no_events: [patchback.fit.AudioCompared]

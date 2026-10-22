@@ -1,0 +1,51 @@
+# DESIGN.md 6.1: "MVP accepts mono WAV ... with PCM16 or IEEE float32 samples at 48 kHz."
+# Format tag 1 is PCM, 3 is IEEE float (WAVE fmt chunk).
+type: ess-scenario/1
+domain: patchback.audio
+scenario: wav-io-import-mono
+summary: A mono 48 kHz PCM16 file and a mono 48 kHz float32 file each import as a clip that is not downmixed.
+
+arrange:
+  - instance: pcm16
+    entity: patchback.audio.AudioClip
+  - instance: float32
+    entity: patchback.audio.AudioClip
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.audio.ImportWav
+    actor: patchback.audio.Operator
+    input:
+      path: reference-pcm16.wav
+      origin: PatchbackSynthesized
+      sample_rate_hz: 48000
+      channel_count: 1
+      format_tag: 1
+      bits_per_sample: 16
+      frame_count: 48000
+    outcome: imported
+    events:
+      - event: patchback.audio.ClipImported
+        payload:
+          source_channel_count: 1
+          downmixed: false
+    capture: {instance: pcm16, event: patchback.audio.ClipImported, field: audio_clip_id}
+
+  - at: 2026-10-22T09:00:01Z
+    command: patchback.audio.ImportWav
+    actor: patchback.audio.Operator
+    input:
+      path: reference-f32.wav
+      origin: PatchbackSynthesized
+      sample_rate_hz: 48000
+      channel_count: 1
+      format_tag: 3
+      bits_per_sample: 32
+      frame_count: 96000
+    outcome: imported
+    events:
+      - event: patchback.audio.ClipImported
+        payload:
+          frame_count: 96000
+          downmixed: false
+    capture: {instance: float32, event: patchback.audio.ClipImported, field: audio_clip_id}

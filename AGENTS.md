@@ -1,0 +1,71 @@
+# Patchback
+
+Inverse synthesis for electronic music: from a recording, recover an editable DSP patch and the
+note events that drive it, render it, and compare the rendering with the recording. Humans start
+at [README.md](README.md); the design is [DESIGN.md](DESIGN.md).
+
+## State
+
+Specification only (DESIGN.md revision 0.3). No application code exists yet; `studio/` holds the patch studio prototype on fixture data. `spec/` holds the ESS domains and
+the authored conformance scenarios; `.engineering/` holds the AEP planning store with one epic per
+DESIGN.md § 13 milestone and draft stories whose acceptance is a list of named scenarios. The first
+implementation slice is DESIGN.md § 15 (Milestone A, no ML).
+
+## Commands
+
+Entry points are the `Taskfile.yml` tasks (go-task):
+
+- `task spec-validate`: `ess specify validate --path . --strict-requires` from inside `spec/`.
+- `task spec-synthesize`: `ess verify conform synthesize` over `spec/` and its authored scenarios;
+  the suite goes to `$PATCHBACK_SCRATCH` (default `~/.cache/patchback-conform`), never into `spec/`.
+- `task spec-conform`: runs that suite against ESS's `interpreted` reference target, which executes
+  the model itself. It proves the scenarios agree with the model; it is not evidence about any
+  Patchback implementation.
+- `task plan-validate`: `aep plan artifact validate`.
+- `task acceptance-check`: fails when a story names no acceptance scenario, or names a
+  `spec/scenarios/<name>.yaml` that does not exist.
+- `task docs-generate`: `patchback-docs generate` rewrites the generated site pages
+  (`website/docs/reference/ess/`, `website/docs/status.mdx`, `website/data/`) from `spec/` and the
+  capability list in `crates/patchback-docs/src/status.rs`. Run it after every `spec/` change.
+- `task docs-check`: `generate --check` plus `cargo test -p patchback-docs`.
+- `task check`: all of the above; the gate. CI (`check.yml`) runs it.
+- Site build: `npm --prefix website ci --allow-git=root` (npm 12 refuses Git dependencies without
+  the flag; CI's Node 22 needs none), then `npm --prefix website run build`. `pages.yml`
+  ("Documentation validation") builds it in CI; `b10x-docs-site.yml` ("Documentation site")
+  deploys it to `https://beyond10x.github.io/patchback/` after a bot push to `main`.
+- Cargo builds run through `b10x-build-slot`. Never delete `target/` or `website/node_modules/`.
+
+## Planning and specification
+
+- Work is planned in the AEP store under `.engineering/` through the `aep` CLI only
+  (`aep plan artifact list` to start). Never edit a store file by hand. Body drafts go in
+  `.engineering/drafts/` (git-ignored).
+- Spec-first: every noun in DESIGN.md has its ESS domain in `spec/domains/` before a story is
+  written around it. A story's `## Acceptance` lists the authored scenarios that decide it, one
+  `spec/scenarios/<name>.yaml` per line; `task acceptance-check` holds the names.
+- `spec/ess-inputs.yaml` pins the `ess` release; move the pin, and the checksum in
+  `.github/workflows/check.yml`, to the newest ESS release when one ships.
+- Numeric DSP and analysis properties (finite output, golden waveforms, FFT accuracy, loss
+  reduction) are not expressible as ESS scenarios. The scenario names the command outcome; the
+  numeric bound is stated in the story body and held by Rust tests when code lands.
+- A relation or rule no source settles carries an `UNMAPPED:` marker in the domain and an open
+  question in the store; never a guessed value.
+- Generated output (`ess generate`, conformance suites and reports) goes outside `spec/`.
+
+## Rules
+
+- DESIGN.md is the authority. A change to an invariant (§ 2), the dependency policy (§ 3), a
+  contract (§ 5–8, § 11) or an ADR (§ 14) edits DESIGN.md in the same change and bumps its
+  revision line.
+- Running code is Rust. No Python, PyTorch, or ML, DSP, maths or serialization crates (DESIGN.md
+  § 3); at most one optional audio I/O crate, behind a feature, once live audio is approved.
+- ModelSpec is pinned to a tested release; never assume a ModelSpec capability its documentation
+  does not list as shipped (DESIGN.md § 1.1).
+- Fixtures are synthesized by Patchback or carry a recorded licence and provenance.
+- Use `Taskfile.yml` (go-task) for entry points; not a Makefile.
+
+## Delivery
+
+All commits and pushes are `b10x-bot[bot]` through `b10x-gates bot --repository
+beyond10x/patchback`. Common Gates (`shared-gates.yml`) are enrolled in `gates-policy`. Releases,
+once code exists, follow the modelspec pattern: bare-version tags, Keep a Changelog 1.1.0.

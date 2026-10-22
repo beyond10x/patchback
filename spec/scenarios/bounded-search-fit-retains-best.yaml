@@ -1,0 +1,143 @@
+# DESIGN.md 9.2 step 3: "coordinate search ..., retaining only improvements"; 12.1 Optimization:
+# "never worsens retained best candidate". The first valid candidate is retained, a strictly
+# lower loss replaces it, a higher and an equal loss do not, and an invalid candidate is counted
+# without replacing it (9.2 step 5).
+type: ess-scenario/1
+domain: patchback.fit
+scenario: bounded-search-fit-retains-best
+summary: The retained best candidate is replaced only by a strictly lower loss; worse, equal and invalid candidates leave it unchanged.
+
+arrange:
+  - instance: reference
+    entity: patchback.audio.AudioClip
+  - instance: run
+    entity: patchback.fit.FitRun
+
+timeline:
+  - at: 2026-10-22T00:00:01Z
+    command: patchback.patch.DeclareTopology
+    actor: patchback.patch.Operator
+    input:
+      topology_id: 0b6e7d1a-0000-4000-8000-000000000003
+      name: subtractive-mono/1
+      parameters: []
+    outcome: declared
+
+  - at: 2026-10-22T00:00:02Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 0b6e7d1a-0000-4000-8000-0000000000f1
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 0b6e7d1a-0000-4000-8000-000000000003
+      nodes:
+        - {id: 2, kind: SawOscillator, parameters: []}
+      edges: []
+    outcome: loaded
+
+  - at: 2026-10-22T00:00:03Z
+    command: patchback.score.LoadNoteSequence
+    actor: patchback.score.Operator
+    input:
+      note_sequence_id: 0b6e7d1a-0000-4000-8000-000000000002
+      format_version: 1
+      sample_rate_hz: 48000
+      patch_id: 0b6e7d1a-0000-4000-8000-0000000000f1
+      notes:
+        - {start_sample: 0, end_sample: 24000, midi_note: 45, velocity: 0.8}
+    outcome: loaded
+
+  - at: 2026-10-22T00:00:04Z
+    command: patchback.audio.ImportWav
+    actor: patchback.audio.Operator
+    input:
+      path: reference.wav
+      origin: PatchbackSynthesized
+      sample_rate_hz: 48000
+      channel_count: 1
+      format_tag: 3
+      bits_per_sample: 32
+      frame_count: 48000
+    outcome: imported
+    capture: {instance: reference, event: patchback.audio.ClipImported, field: audio_clip_id}
+
+  - at: 2026-10-22T10:00:00Z
+    command: patchback.fit.StartFit
+    actor: patchback.fit.Operator
+    input:
+      reference_clip_id: {$instance: reference}
+      note_sequence_id: 0b6e7d1a-0000-4000-8000-000000000002
+      note_source: Known
+      scope: SingleNote
+      topology_id: 0b6e7d1a-0000-4000-8000-000000000003
+      seed: 42
+      max_renders: 2000
+      max_wall_time_ms: 600000
+      max_restarts: 4
+      improvement_threshold: 0.001
+    outcome: started
+    capture: {instance: run, event: patchback.fit.FitStarted, field: fit_run_id}
+
+  - at: 2026-10-22T10:00:01Z
+    command: patchback.fit.EvaluateCandidate
+    actor: patchback.fit.Optimizer
+    input:
+      fit_run_id: {$instance: run}
+      patch_id: 0b6e7d1a-0000-4000-8000-000000000010
+      render_id: 0b6e7d1a-0000-4000-8000-000000000020
+      components: {log_spectral: 0.8, envelope: 0.6, transient: 0.4, band_energy: 0.5}
+      total_loss: 0.645
+    outcome: first-retained
+
+  - at: 2026-10-22T10:00:02Z
+    command: patchback.fit.EvaluateCandidate
+    actor: patchback.fit.Optimizer
+    input:
+      fit_run_id: {$instance: run}
+      patch_id: 0b6e7d1a-0000-4000-8000-000000000011
+      render_id: 0b6e7d1a-0000-4000-8000-000000000021
+      components: {log_spectral: 0.5, envelope: 0.4, transient: 0.3, band_energy: 0.3}
+      total_loss: 0.43
+    outcome: improved
+
+  - at: 2026-10-22T10:00:03Z
+    command: patchback.fit.EvaluateCandidate
+    actor: patchback.fit.Optimizer
+    input:
+      fit_run_id: {$instance: run}
+      patch_id: 0b6e7d1a-0000-4000-8000-000000000012
+      render_id: 0b6e7d1a-0000-4000-8000-000000000022
+      components: {log_spectral: 0.9, envelope: 0.7, transient: 0.5, band_energy: 0.6}
+      total_loss: 0.745
+    outcome: not-improved
+
+  - at: 2026-10-22T10:00:04Z
+    command: patchback.fit.EvaluateCandidate
+    actor: patchback.fit.Optimizer
+    input:
+      fit_run_id: {$instance: run}
+      patch_id: 0b6e7d1a-0000-4000-8000-000000000013
+      render_id: 0b6e7d1a-0000-4000-8000-000000000023
+      components: {log_spectral: 0.5, envelope: 0.4, transient: 0.3, band_energy: 0.3}
+      total_loss: 0.43
+    outcome: not-improved
+
+  - at: 2026-10-22T10:00:05Z
+    command: patchback.fit.RejectCandidate
+    actor: patchback.fit.Optimizer
+    input:
+      fit_run_id: {$instance: run}
+      patch_id: 0b6e7d1a-0000-4000-8000-000000000014
+    outcome: rejected
+
+  - at: 2026-10-22T10:00:06Z
+    command: patchback.fit.EvaluateCandidate
+    actor: patchback.fit.Optimizer
+    input:
+      fit_run_id: {$instance: run}
+      patch_id: 0b6e7d1a-0000-4000-8000-000000000015
+      render_id: 0b6e7d1a-0000-4000-8000-000000000025
+      components: {log_spectral: 0.5, envelope: 0.4, transient: 0.3, band_energy: 0.2}
+      total_loss: 0.415
+    outcome: improved

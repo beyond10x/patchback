@@ -1,0 +1,31 @@
+# DESIGN.md section 5.2: the eight normalized prediction targets of the fixed subtractive voice and
+# their physical mappings; section 2 invariant 2: every parameter has a documented domain, default,
+# unit, mapping and clamping policy. Mappings: attack 0.001*2000^p s, decay and release
+# 0.005*400^p s, cutoff 40*400^p Hz (exponential, at_zero and at_one are the domain ends);
+# sustain p, resonance 0.5+11.5p, drive 24p dB, output gain -24+24p dB (linear).
+# UNMAPPED: section 5.2 gives no defaults and no path names; default_normalized 0.5 and the paths
+# below are placeholders for the owner to replace.
+type: ess-scenario/1
+domain: patchback.patch
+scenario: parameter-contracts-subtractive-mono
+summary: Topology subtractive-mono/1 is declared with its eight parameter contracts.
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.patch.DeclareTopology
+    actor: patchback.patch.Operator
+    input:
+      topology_id: 7f0c0000-0000-4000-8000-000000000001
+      name: subtractive-mono/1
+      parameters:
+        - {path: attack, index: 0, unit: Seconds, mapping: Exponential, physical_at_zero: 0.001, physical_at_one: 2, default_normalized: 0.5, clamp: ClampToUnitInterval}
+        - {path: decay, index: 1, unit: Seconds, mapping: Exponential, physical_at_zero: 0.005, physical_at_one: 2, default_normalized: 0.5, clamp: ClampToUnitInterval}
+        - {path: sustain, index: 2, unit: LinearAmplitude, mapping: Linear, physical_at_zero: 0, physical_at_one: 1, default_normalized: 0.5, clamp: ClampToUnitInterval}
+        - {path: release, index: 3, unit: Seconds, mapping: Exponential, physical_at_zero: 0.005, physical_at_one: 2, default_normalized: 0.5, clamp: ClampToUnitInterval}
+        - {path: filter_cutoff, index: 4, unit: Hertz, mapping: Exponential, physical_at_zero: 40, physical_at_one: 16000, default_normalized: 0.5, clamp: ClampToUnitInterval}
+        - {path: resonance_q, index: 5, unit: Dimensionless, mapping: Linear, physical_at_zero: 0.5, physical_at_one: 12, default_normalized: 0.5, clamp: ClampToUnitInterval}
+        - {path: drive, index: 6, unit: Decibels, mapping: Linear, physical_at_zero: 0, physical_at_one: 24, default_normalized: 0.5, clamp: ClampToUnitInterval}
+        - {path: output_gain, index: 7, unit: Decibels, mapping: Linear, physical_at_zero: -24, physical_at_one: 0, default_normalized: 0.5, clamp: ClampToUnitInterval}
+    outcome: declared
+    events:
+      - event: patchback.patch.TopologyDeclared

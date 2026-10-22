@@ -1,0 +1,97 @@
+# DESIGN.md 8 and 6.3: a weight artifact is bound to the feature contract version it was trained
+# on; a prediction from features of another version is meaningless. The weight artifact names its
+# contract and patchback.analysis.Analysis names none, so the refusal is external (UNMAPPED in
+# fit.yaml, StartFit). The reference, note sequence, topology and analysis exist first.
+type: ess-scenario/1
+domain: patchback.fit
+scenario: regressor-seeded-fit-feature-contract-mismatch
+summary: A regressor-seeded fit whose weight artifact and analysis differ in feature-contract version is refused with FeatureContractMismatch; no run starts.
+
+arrange:
+  - instance: analysis
+    entity: patchback.analysis.Analysis
+  - instance: reference
+    entity: patchback.audio.AudioClip
+
+timeline:
+  - at: 2026-10-22T00:00:01Z
+    command: patchback.patch.DeclareTopology
+    actor: patchback.patch.Operator
+    input:
+      topology_id: 4fa05d30-0000-4000-8000-000000000103
+      name: subtractive-mono/1
+      parameters: []
+    outcome: declared
+
+  - at: 2026-10-22T00:00:02Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 4fa05d30-0000-4000-8000-0000000001f1
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 4fa05d30-0000-4000-8000-000000000103
+      nodes:
+        - {id: 2, kind: SawOscillator, parameters: []}
+      edges: []
+    outcome: loaded
+
+  - at: 2026-10-22T00:00:03Z
+    command: patchback.score.LoadNoteSequence
+    actor: patchback.score.Operator
+    input:
+      note_sequence_id: 4fa05d30-0000-4000-8000-000000000102
+      format_version: 1
+      sample_rate_hz: 48000
+      patch_id: 4fa05d30-0000-4000-8000-0000000001f1
+      notes:
+        - {start_sample: 0, end_sample: 24000, midi_note: 45, velocity: 0.8}
+    outcome: loaded
+
+  - at: 2026-10-22T00:00:04Z
+    command: patchback.audio.ImportWav
+    actor: patchback.audio.Operator
+    input:
+      path: reference.wav
+      origin: PatchbackSynthesized
+      sample_rate_hz: 48000
+      channel_count: 1
+      format_tag: 3
+      bits_per_sample: 32
+      frame_count: 48000
+    outcome: imported
+    capture: {instance: reference, event: patchback.audio.ClipImported, field: audio_clip_id}
+
+  - at: 2026-10-22T00:00:09Z
+    command: patchback.analysis.AnalyzeAudio
+    actor: patchback.analysis.Operator
+    input:
+      audio_clip_id: {$instance: reference}
+      out_dir: analysis/
+      sample_rate_hz: 48000
+      frame_count: 48000
+      fft_lengths: [512, 2048, 8192]
+      hop_length: 512
+      window: Hann
+    outcome: analyzed
+    capture: {instance: analysis, event: patchback.analysis.AudioAnalyzed, field: analysis_id}
+
+  - at: 2026-10-22T15:10:00Z
+    command: patchback.fit.StartFit
+    actor: patchback.fit.Operator
+    input:
+      reference_clip_id: {$instance: reference}
+      note_sequence_id: 4fa05d30-0000-4000-8000-000000000102
+      note_source: Known
+      scope: SingleNote
+      topology_id: 4fa05d30-0000-4000-8000-000000000103
+      weight_artifact_id: 4fa05d30-0000-4000-8000-000000000104
+      analysis_id: {$instance: analysis}
+      seed: 42
+      max_renders: 2000
+      max_wall_time_ms: 600000
+      max_restarts: 4
+      improvement_threshold: 0.001
+    outcome: feature-contract-mismatch
+    error:
+      name: patchback.fit.FeatureContractMismatch

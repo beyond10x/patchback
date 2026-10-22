@@ -1,0 +1,33 @@
+# DESIGN.md 5.3: "explicit rejection of unsupported sample rates (no silent conversion)"; a block
+# size must be a positive number of frames. Both refusals are input guards, so they precede the
+# patch and note-sequence lookups and need no patch (see subtractive-voice-render-refused-patch).
+type: ess-scenario/1
+domain: patchback.audio
+scenario: subtractive-voice-render-refused-configuration
+summary: A render at 44.1 kHz and a render with block size 0 are each refused and record no render.
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.audio.RenderPatch
+    actor: patchback.audio.Operator
+    input:
+      patch_id: 1a2b3c4d-0000-4000-8000-000000000003
+      note_sequence_id: 5e6f7a8b-0000-4000-8000-000000000003
+      sample_rate_hz: 44100
+      out_path: out.wav
+    outcome: unsupported-sample-rate
+    error:
+      name: patchback.audio.UnsupportedSampleRate
+
+  - at: 2026-10-22T09:00:01Z
+    command: patchback.audio.RenderPatch
+    actor: patchback.audio.Operator
+    input:
+      patch_id: 1a2b3c4d-0000-4000-8000-000000000003
+      note_sequence_id: 5e6f7a8b-0000-4000-8000-000000000003
+      sample_rate_hz: 48000
+      block_size_frames: 0
+      out_path: out.wav
+    outcome: invalid-block-size
+    error:
+      name: patchback.audio.InvalidBlockSize

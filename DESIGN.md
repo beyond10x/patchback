@@ -1,7 +1,7 @@
 # Patchback — Technical Design
 
 **Status:** Proposed architecture / implementation-ready MVP scope  
-**Revision:** 0.2  
+**Revision:** 0.3  
 **Date:** 2026-10-22  
 **Primary stack:** Rust + [Beyond10x ModelSpec](https://github.com/beyond10x/modelspec)  
 **Dependency policy:** No third-party ML, DSP, mathematics, serialization, or application frameworks. External audio I/O is the **only** permitted application dependency category.
@@ -76,6 +76,7 @@ Sources: [ModelSpec README](https://github.com/beyond10x/modelspec), [current CL
 | ML / tensor / numerical crates | **Forbidden** (e.g. PyTorch, TorchSynth, ndarray, rustfft, tch, burn) |
 | GPU | ModelSpec's future backend only; system Vulkan loader / driver are platform prerequisites, not application ML libraries |
 | ESS | Required **specification** tool: `spec/` holds the application contracts and conformance scenarios, validated by `task check`; **not** a runtime or ML dependency (ADR-008) |
+| Patch studio (`studio/`) | Separate developer tool in Vue 3 + TypeScript + Vite + pnpm, **outside** this policy (ADR-011, § 16). It is not linked into, shipped with or required by the Rust application; its live server half is Rust `std` only |
 
 The rule applies to application-level dependencies. ModelSpec and an optional audio backend have their own upstream/transitive build requirements; these do **not** grant permission to add unrelated application dependencies. CI audits dependency changes and rejects unreviewed additions. An offline first milestone can be built with **zero** third-party runtime crates.
 
@@ -127,12 +128,13 @@ flowchart TD
 │   ├── patchback-model/              # ModelSpec CLI adapter + CPU weight runner
 │   ├── patchback-fit/                # Candidate search + audio loss
 │   └── patchback-cli/                # Application entry point
+├── studio/                           # Patch studio developer tool (§ 16, ADR-011); not shipped
 ├── tests/
 │   └── fixtures/                     # Small licensed/synthesized fixtures
 └── runs/                             # Ignored generated data, weights, reports
 ```
 
-No extra service, database, HTTP backend, or UI framework is necessary for the first release.
+No extra service, database, HTTP backend, or UI framework is necessary for the first release. The patch studio (§ 16) is a developer tool beside the application, not part of a release (ADR-011).
 
 ## 5. Patch and DSP graph contract
 
@@ -150,18 +152,38 @@ struct Patch {
 struct Node {
     id: u32,
     kind: NodeKind,
-    parameters: Vec<ParameterValue>,
+    parameters: Vec<ParameterValue>,   // name + value in physical units (§ 5.2)
 }
 
 struct Edge {
-    from: PortAddress,
-    to: PortAddress,
+    from_node: u32,
+    from_port: PortName,
+    from_rate: PortRate,
+    to_node: u32,
+    to_port: PortName,
+    to_rate: PortRate,
 }
 
 enum PortRate { Audio, Control, Event }
 ```
 
+`Node` and `Edge` are values nested in `Patch`, with no identity of their own; the specification names them `patchback.patch.NodeDecl` and `patchback.patch.EdgeDecl` (`spec/domains/patch.yaml`). An edge is one flat record, as one line of the `.patch` file (§ 11) carries it; it names each end's port and the rate the node kind declares for that port, so validation compares the two rates without a catalogue lookup and checks separately that the kind declares that port.
+
 Each module declares input/output ports with explicit rate and meaning. Connections must be type-compatible. Parameters are addressed by **stable module/parameter identifiers**, not by mutable UI order.
+
+**Ports of the MVP voice.** The § 5.2 signal chain fixes which connections the MVP kinds need; the directions below are read from the § 5.2 diagram. The port names and the `pitch` and `env` rates are the ones the conformance scenarios use (`spec/scenarios/subtractive-voice-render-*.yaml`) and stay proposals until the owner confirms them (§ 17, OQ-3):
+
+| Kind (`NodeKind`) | Inputs | Outputs |
+| --- | --- | --- |
+| `NoteInput` (MIDI note/gate) | none | `pitch` (Control), `gate` (Event) |
+| `SawOscillator` | `pitch` (Control) | `out` (Audio) |
+| `Drive` | `in` (Audio) | `out` (Audio) |
+| `LowpassFilter` | `in` (Audio) | `out` (Audio) |
+| `AdsrEnvelope` | `gate` (Event) | `env` (Control) |
+| `Vca` | `in` (Audio), `gain` (Control) | `out` (Audio) |
+| `Output` | `in` (Audio) | none |
+
+Ports of the § 5.4 families (Square/Sine, highpass/bandpass, LFO, delay, noise) are listed when each family is added.
 
 Graph compilation performs: identifier checks → parameter validation → port/rate checks → cycle checks → scheduling → buffer assignment → a DSP execution plan. The runtime never follows arbitrary graph references in the hot audio loop.
 
@@ -177,16 +199,18 @@ One monophonic voice, one Saw oscillator, one drive stage, one resonant lowpass 
 
 Eight normalized prediction targets in `[0, 1]`:
 
-| Index | Parameter | Physical mapping (example contract) |
-| --- | --- | --- |
-| 0 | Attack | `0.001 * 2000^p` seconds (1 ms–2 s) |
-| 1 | Decay | `0.005 * 400^p` seconds (5 ms–2 s) |
-| 2 | Sustain | `p` linear amplitude |
-| 3 | Release | `0.005 * 400^p` seconds (5 ms–2 s) |
-| 4 | Filter cutoff | `40 * 400^p` Hz (40 Hz–16 kHz) |
-| 5 | Resonance Q | `0.5 + 11.5*p` |
-| 6 | Drive | `24*p` dB pre-filter drive |
-| 7 | Output gain | `-24 + 24*p` dB |
+| Index | Parameter | Physical mapping (example contract) | Default `p` |
+| --- | --- | --- | --- |
+| 0 | Attack | `0.001 * 2000^p` seconds (1 ms–2 s) | open (OQ-1) |
+| 1 | Decay | `0.005 * 400^p` seconds (5 ms–2 s) | open (OQ-1) |
+| 2 | Sustain | `p` linear amplitude | open (OQ-1) |
+| 3 | Release | `0.005 * 400^p` seconds (5 ms–2 s) | open (OQ-1) |
+| 4 | Filter cutoff | `40 * 400^p` Hz (40 Hz–16 kHz) | open (OQ-1) |
+| 5 | Resonance Q | `0.5 + 11.5*p` | open (OQ-1) |
+| 6 | Drive | `24*p` dB pre-filter drive | open (OQ-1) |
+| 7 | Output gain | `-24 + 24*p` dB | open (OQ-1) |
+
+Invariant 2 requires a documented default for each parameter, and the defaults are also the "fixed safe default" patch of § 9.2 step 1 and the default-patch baseline of § 12.2. The column is therefore part of the contract, and § 15 measures against the default patch, so it must be filled before the Milestone A baseline is run. Until the owner sets it, a topology declared in `spec/` carries placeholder defaults.
 
 These ranges are design choices to evaluate, not assertions about upstream ModelSpec. Implement forward/inverse mappings with tests, clamp `p` to `[0,1]`, and reject NaN/Infinity. Keep serialized values in **physical units** and model outputs in **normalized units**. Note frequency is driven separately by note events; it is **not** learned as a timbre parameter.
 
@@ -366,7 +390,7 @@ struct ControlEvent {
 }
 ```
 
-All event timing is represented in **samples** at the patch sample rate. V0 uses known note events for generated references. V1 adds monophonic onset/pitch/gate estimates; refusals include confidence/ambiguity diagnostics. V2 supports one instrument stem with repeated notes, then simple polyphony. V3 handles multiple stems and arrangement, *not* an unconstrained stereo mix as the first task.
+All event timing is represented in **samples** at the sample rate the sequence declares, which must equal the sample rate of the patch that renders it (48 kHz for every MVP patch, § 5.3). A sequence is bound to a sample rate, not to one patch: it records the patch it was written for, and any patch at the same rate may render it, so one sequence drives every candidate patch of a fit run (§ 9.2). A control event's `normalized_value` is a parameter's `p` and follows § 5.2: a value outside `[0,1]` is clamped with a warning, not refused, and NaN/Infinity is refused. Whether the clamp rewrites the stored value or is applied at render is open (§ 17, OQ-27). V0 uses known note events for generated references. V1 adds monophonic onset/pitch/gate estimates; refusals include confidence/ambiguity diagnostics. V2 supports one instrument stem with repeated notes, then simple polyphony. V3 handles multiple stems and arrangement, *not* an unconstrained stereo mix as the first task.
 
 A separate composition/generation model may eventually propose sequences, but **sound reconstruction** and **musical composition** are distinct objectives with distinct evaluations. Do not claim the first feature regressor can compose electronic music.
 
@@ -391,8 +415,11 @@ results/
 ├── notes.events          # versioned sample-timestamped events
 ├── reconstructed.wav     # rendered waveform
 ├── report.txt            # loss terms, versions, timings, warnings, confidence
-└── run.meta              # seed, inputs digests, ModelSpec version, feature spec
+├── run.meta              # seed, inputs digests, ModelSpec version, feature spec
+└── trace.events          # versioned per-evaluation trace of the run (below)
 ```
+
+**`trace.events`** is the per-candidate log § 9.1 asks for ("log its component values for every candidate"), written as the run proceeds, one file per fit run. It is line-oriented and versioned like `.patch` and `.events`: a header line carrying the format version, then one line naming the fit run, its starting topology and the parameter paths in display order, then one line per evaluation in evaluation order. An evaluation line carries its sequence number, the evaluation count, the outcome (first retained, improved, not improved, rejected), the topology, the candidate patch, the four loss components and weighted total (§ 9.1) for a valid candidate and none for a rejected one, the best retained loss after it, and the candidate's normalized parameter values. A closing line records how the run ended (completed or failed). The patch studio replays a run from this file (§ 16); `spec/domains/studio.yaml` (`TraceFrame`) types its records. The exact grammar and whether a failed run's trace is kept are open (§ 17, OQ-12).
 
 Use a small internally parsed **line-oriented, versioned** format for `.patch`, `.events`, and metadata, not an unreviewed homegrown general JSON parser. All parsers reject unknown versions, duplicate keys/IDs, malformed numbers, unsupported rates, and unbounded lengths. Consider a standard interoperable format later if the dependency rule changes.
 
@@ -490,6 +517,7 @@ For the first quality review, target **≥20% reduction in median normalized aud
 | ADR-008 | Is ESS mandatory? | **Yes, for the specification only** (revision 0.2): the beyond10x workspace rule "ESS drives every product repository" wins over revision 0.1's "optional". ESS types the contracts in `spec/`; it is never a runtime or ML dependency |
 | ADR-009 | How to handle ambiguous reconstruction? | Auditory loss + simple patch bias + transparent candidate ranking |
 | ADR-010 | When to support GPU? | After documented upstream implementation and CPU/GPU equivalence tests |
+| ADR-011 | How are modules, patches and fit runs made visible? | A **patch studio** (§ 16): a separate developer tool in Vue 3 + TypeScript + Vite + pnpm under `studio/`. The studio is outside the § 3 dependency policy and the § 4.1 runtime rules (Rust-only running code, no UI framework, no HTTP backend), because it is never linked into, shipped with or required by the Rust application (revision 0.3). It only draws: it reads `trace.events` (§ 11) and Rust-computed artifacts, and its live server is Rust `std` only |
 
 ## 15. Immediate next engineering slice
 
@@ -504,6 +532,65 @@ proof:  deterministic audio-loss improvement over the default patch
 In parallel, check that the **pinned ModelSpec binary** accepts the minimal `.mspec` from §8.1 and the dense-data directory from §7.2. Only after the renderer and feature contract are stable should synthetic training data be generated at scale.
 
 This minimizes project risk: if the patch search fails, a bigger neural model will not fix a broken renderer, loss function, or parameter representation.
+
+## 16. Patch studio (developer tool)
+
+The patch studio lets an engineer see what Patchback recovered and how: modules, patches, a fit run evaluation by evaluation, and the end result. Later it follows a run live and, after Milestone D, a learned architecture changing during training (ADR-003). It is specified in `spec/domains/studio.yaml` (`patchback.studio`) and decided by ADR-011.
+
+**Views.**
+
+- **Module catalogue:** one card per `NodeKind` with its ports (direction, rate, meaning; § 5.1) and its parameter contracts (index, path, mapping, physical range, default; § 5.2).
+- **Patch graph:** nodes placed by rank, ports on node edges, edges styled by `PortRate`, delayed feedback (§ 5.4) drawn as a visible `z⁻¹` return path.
+- **Fit replay:** a scrubber and play control over the evaluations of a fit run, read from its `trace.events` (§ 11): the loss curve (candidate loss, best retained loss, rejected candidates without a loss), the candidate or retained patch with its parameter values, per-parameter trajectories, and the topology of each frame with a marker where it changes.
+- **Live fit:** the same view fed as the run proceeds, over Server-Sent Events from a Rust server. The server uses `std` only (`std::net`), binds to `127.0.0.1`, and sends the records of `trace.events`; it adds no crate to the application.
+- **End result:** the retained patch, a table of reference against recovered parameters, and the reference and render spectra at the § 6.3 FFT lengths (512, 2048, 8192).
+
+**Boundaries.**
+
+- The studio only draws. **Spectra are computed in Rust** by the analysis code (§ 6.2) and written as artifacts; the studio never computes a spectrum, a loss or a feature.
+- The studio never edits a patch, plays audio, or changes the fit, analysis or render code paths. It reads what they produce.
+- The studio lives under `studio/` (Vue 3, TypeScript, Vite, pnpm). Its wire types are generated from `spec/domains/studio.yaml` (`ess generate types --target typescript`), with a drift check. It is outside the § 3 runtime dependency policy (ADR-011); the Rust application never depends on it, and a release never ships it.
+- Delivery order: replay from fit-run artifacts first, live over SSE later.
+
+## 17. Open questions
+
+What this document does not settle. Each item is an `UNMAPPED:` marker in `spec/` and an open question in the planning store; none is answered by a guessed value.
+
+| ID | Question | Spec marker |
+| --- | --- | --- |
+| OQ-1 | Default `p` of each of the eight parameters (§ 2 inv. 2, § 5.2) | `patch.yaml` ParameterContract |
+| OQ-2 | Parameter path syntax: bare (`attack`) or module-qualified (`adsr.attack`) (§ 5.1, § 10) | `patch.yaml` ParameterPath |
+| OQ-3 | Port names, and the rates of `pitch`, `env` and `gain`, for the MVP kinds; ports of the § 5.4 families | `patch.yaml` EdgeDecl, `studio.yaml` PortSpec |
+| OQ-4 | Which port rates may meet; the control interpolation rule (§ 5.4) | `patch.yaml` incompatible-rates |
+| OQ-5 | Feedback gain limit and the parameter that carries it (§ 5.4) | `patch.yaml` feedback-gain-exceeded |
+| OQ-6 | Caps: graph size, voice count, note count, input duration, FFT length, file and line lengths (§ 11, § 12.3) | `patch.yaml`, `audio.yaml`, `score.yaml`, `analysis.yaml` |
+| OQ-7 | Whether a parameter change may update a compiled plan in place (§ 5.1) | `patch.yaml` Patch lifecycle |
+| OQ-8 | NoteEvent velocity range: normalized `[0, 1]` or MIDI `0..127` (§ 10) | `score.yaml` NoteEvent |
+| OQ-9 | Whether control automation shares `notes.events` or has its own file (§ 10, § 11) | `score.yaml` NoteSequence |
+| OQ-10 | Whether an arrangement stem may pair a patch with a sequence written for another patch at the same rate (§ 10 as of 0.3) | `score.yaml` AddStem |
+| OQ-11 | Loss weight constraints; length tolerance of time alignment (§ 9.1) | `fit.yaml` LossWeights, CompareAudio |
+| OQ-12 | `trace.events` grammar; whether a failed run keeps its trace and writes a diagnostic report (§ 11) | `fit.yaml` FitResults, `studio.yaml` |
+| OQ-13 | Fit failure causes; candidate count bound; complexity penalty formula; tie-breaking (§ 9.2, § 9.3, § 13 D) | `fit.yaml` |
+| OQ-14 | Whether an improvement below `improvement_threshold` is retained (§ 9.2 step 4) | `fit.yaml` EvaluateCandidate |
+| OQ-15 | Feature contract details: band order, window bounds, amplitude reference, band edges, hop (§ 6.3) | `analysis.yaml` FeatureContract |
+| OQ-16 | Confidence: per note or per quantity, and its threshold; polyphonic input refused or reported (§ 6.2, § 10) | `analysis.yaml` |
+| OQ-17 | Whether `analyze` refuses silent input or reports it (§ 6.2, § 7.1) | `analysis.yaml` AnalyzeAudio |
+| OQ-18 | Whether normalization statistics may come from the validation split (§ 6.3) | `analysis.yaml` ComputeNormalizationStats |
+| OQ-19 | PRNG algorithm; the declared training note distribution; how `--samples` maps to split counts; the `order.u32` check (§ 7) | `dataset.yaml` |
+| OQ-20 | Provenance on every external import or only on fixtures; what "explicit" downmix means; WAVE_FORMAT_EXTENSIBLE; PCM16 export of out-of-range samples (§ 6.1, § 12.3) | `audio.yaml` |
+| OQ-21 | Weight checksum algorithm; which test qualifies a ModelSpec pin; split-role rules for training (§ 3, § 8) | `model.yaml` |
+| OQ-22 | How the dependency audit tells application crates from upstream build requirements, and where an approval is recorded (§ 3, ADR-007) | `dependency.yaml` |
+| OQ-23 | Arrangement shape: stem mixing, lengths, count, polyphony (§ 13 E) | `score.yaml` Arrangement, Stem |
+| OQ-24 | Live transport details: SSE event names, `Last-Event-ID` resume, back-pressure (§ 16) | `studio.yaml` events |
+| OQ-25 | Whether one trace spans several topologies (§ 13 D), and the frame of a learned graph (ADR-003) | `studio.yaml` EvolutionTrace |
+| OQ-26 | Name and format of the spectrum artifact the end-result view reads (§ 16) | `studio.yaml` ResultView |
+| OQ-27 | An out-of-range control value: stored as submitted and clamped at render, or rewritten to the clamped value at load (§ 5.2, § 10) | `score.yaml` AutomateParameters |
+| OQ-28 | Milestone A holdout: synthesized reference clips (draft approval record) or a dataset split (§ 12.2, § 13 A) | `fit.yaml` Benchmark |
+
+## Changelog
+
+- **0.3 (2026-10-22):** § 5.1 `Node`/`Edge` agree with the specification (flat edge record, nested values) and the MVP ports are listed; § 5.2 gains the default column required by invariant 2, open as OQ-1; § 10 binds a sequence to a sample rate, not one patch, so one sequence drives every fit candidate, and an out-of-range control value is clamped per § 5.2 (OQ-27); § 11 adds the versioned `trace.events` artifact; § 3, § 4.1 and ADR-011 admit the patch studio as a developer tool outside the runtime policy; new § 16 (patch studio, spectra computed in Rust) and § 17 (open questions, OQ-1 to OQ-28).
+- **0.2 (2026-10-22):** ESS is a required specification tool (ADR-008).
 
 ---
 

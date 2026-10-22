@@ -1,0 +1,708 @@
+{
+  "$defs": {
+    "patchback.audio.AudioClipId": {
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "title": "AudioClipId",
+      "type": "string",
+      "x-ess-kind": "newtype",
+      "x-ess-name": "patchback.audio.AudioClipId"
+    },
+    "patchback.audio.RenderId": {
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "title": "RenderId",
+      "type": "string",
+      "x-ess-kind": "newtype",
+      "x-ess-name": "patchback.audio.RenderId"
+    },
+    "patchback.fit.FitRunId": {
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "title": "FitRunId",
+      "type": "string",
+      "x-ess-kind": "newtype",
+      "x-ess-name": "patchback.fit.FitRunId"
+    },
+    "patchback.fit.LossComponents": {
+      "additionalProperties": false,
+      "description": "The four component values of the comparison loss of DESIGN.md 9.1; the loss code logs them for every candidate.",
+      "properties": {
+        "band_energy": {
+          "format": "decimal",
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "envelope": {
+          "format": "decimal",
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "log_spectral": {
+          "format": "decimal",
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "transient": {
+          "format": "decimal",
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "log_spectral",
+        "envelope",
+        "transient",
+        "band_energy"
+      ],
+      "title": "LossComponents",
+      "type": "object",
+      "x-ess-kind": "struct",
+      "x-ess-name": "patchback.fit.LossComponents"
+    },
+    "patchback.patch.ClampPolicy": {
+      "description": "What happens to a normalized value outside [0,1] (section 5.2 clamps p to [0,1]).",
+      "enum": [
+        "ClampToUnitInterval"
+      ],
+      "title": "ClampPolicy",
+      "type": "string",
+      "x-ess-kind": "enum",
+      "x-ess-name": "patchback.patch.ClampPolicy"
+    },
+    "patchback.patch.ModuleFamily": {
+      "description": "A family of module kinds a topology admits beyond the fixed subtractive voice.",
+      "enum": [
+        "SquareSine",
+        "HighpassBandpass",
+        "Lfo",
+        "Delay",
+        "Noise"
+      ],
+      "title": "ModuleFamily",
+      "type": "string",
+      "x-ess-kind": "enum",
+      "x-ess-name": "patchback.patch.ModuleFamily"
+    },
+    "patchback.patch.NodeKind": {
+      "enum": [
+        "NoteInput",
+        "SawOscillator",
+        "Drive",
+        "LowpassFilter",
+        "AdsrEnvelope",
+        "Vca",
+        "Output",
+        "SquareOscillator",
+        "SineOscillator",
+        "HighpassFilter",
+        "BandpassFilter",
+        "Lfo",
+        "Delay",
+        "Noise"
+      ],
+      "title": "NodeKind",
+      "type": "string",
+      "x-ess-kind": "enum",
+      "x-ess-name": "patchback.patch.NodeKind"
+    },
+    "patchback.patch.ParameterContract": {
+      "additionalProperties": false,
+      "description": "Domain, default, unit, mapping and clamping policy of one parameter (section 2, invariant 2).",
+      "properties": {
+        "clamp": {
+          "$ref": "#/$defs/patchback.patch.ClampPolicy"
+        },
+        "default_normalized": {
+          "format": "decimal",
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "index": {
+          "description": "Position of the parameter in the model's normalized target vector.",
+          "type": "integer"
+        },
+        "mapping": {
+          "$ref": "#/$defs/patchback.patch.ParameterMapping"
+        },
+        "path": {
+          "$ref": "#/$defs/patchback.patch.ParameterPath"
+        },
+        "physical_at_one": {
+          "description": "Physical value at p = 1, the upper end of the domain.",
+          "format": "decimal",
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "physical_at_zero": {
+          "description": "Physical value at p = 0, the lower end of the domain.",
+          "format": "decimal",
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "unit": {
+          "$ref": "#/$defs/patchback.patch.ParameterUnit"
+        }
+      },
+      "required": [
+        "path",
+        "index",
+        "unit",
+        "mapping",
+        "physical_at_zero",
+        "physical_at_one",
+        "default_normalized",
+        "clamp"
+      ],
+      "title": "ParameterContract",
+      "type": "object",
+      "x-ess-kind": "struct",
+      "x-ess-name": "patchback.patch.ParameterContract"
+    },
+    "patchback.patch.ParameterMapping": {
+      "description": "How a normalized value p in [0,1] maps to the physical value: Exponential is at_zero * (at_one / at_zero)^p, Linear is at_zero + (at_one - at_zero) * p.",
+      "enum": [
+        "Exponential",
+        "Linear"
+      ],
+      "title": "ParameterMapping",
+      "type": "string",
+      "x-ess-kind": "enum",
+      "x-ess-name": "patchback.patch.ParameterMapping"
+    },
+    "patchback.patch.ParameterPath": {
+      "description": "The stable identifier of one parameter of a topology.",
+      "title": "ParameterPath",
+      "type": "string",
+      "x-ess-kind": "newtype",
+      "x-ess-name": "patchback.patch.ParameterPath"
+    },
+    "patchback.patch.ParameterUnit": {
+      "enum": [
+        "Seconds",
+        "LinearAmplitude",
+        "Hertz",
+        "Dimensionless",
+        "Decibels"
+      ],
+      "title": "ParameterUnit",
+      "type": "string",
+      "x-ess-kind": "enum",
+      "x-ess-name": "patchback.patch.ParameterUnit"
+    },
+    "patchback.patch.PatchId": {
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "title": "PatchId",
+      "type": "string",
+      "x-ess-kind": "newtype",
+      "x-ess-name": "patchback.patch.PatchId"
+    },
+    "patchback.patch.PortName": {
+      "title": "PortName",
+      "type": "string",
+      "x-ess-kind": "newtype",
+      "x-ess-name": "patchback.patch.PortName"
+    },
+    "patchback.patch.PortRate": {
+      "enum": [
+        "Audio",
+        "Control",
+        "Event"
+      ],
+      "title": "PortRate",
+      "type": "string",
+      "x-ess-kind": "enum",
+      "x-ess-name": "patchback.patch.PortRate"
+    },
+    "patchback.patch.TopologyId": {
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "title": "TopologyId",
+      "type": "string",
+      "x-ess-kind": "newtype",
+      "x-ess-name": "patchback.patch.TopologyId"
+    },
+    "patchback.studio.CatalogueId": {
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "title": "CatalogueId",
+      "type": "string",
+      "x-ess-kind": "newtype",
+      "x-ess-name": "patchback.studio.CatalogueId"
+    },
+    "patchback.studio.CataloguePublished": {
+      "additionalProperties": false,
+      "properties": {
+        "catalogue_id": {
+          "$ref": "#/$defs/patchback.studio.CatalogueId"
+        },
+        "modules": {
+          "items": {
+            "$ref": "#/$defs/patchback.studio.ModuleSpec"
+          },
+          "type": "array"
+        },
+        "topology_id": {
+          "$ref": "#/$defs/patchback.patch.TopologyId"
+        }
+      },
+      "required": [
+        "catalogue_id",
+        "topology_id",
+        "modules"
+      ],
+      "title": "CataloguePublished",
+      "type": "object",
+      "x-ess-kind": "event-payload",
+      "x-ess-name": "patchback.studio.CataloguePublished"
+    },
+    "patchback.studio.FrameAppended": {
+      "additionalProperties": false,
+      "properties": {
+        "best_loss": {
+          "format": "decimal",
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "components": {
+          "$ref": "#/$defs/patchback.fit.LossComponents"
+        },
+        "evaluation": {
+          "type": "integer"
+        },
+        "frame_id": {
+          "$ref": "#/$defs/patchback.studio.TraceFrameId"
+        },
+        "outcome": {
+          "$ref": "#/$defs/patchback.studio.FrameOutcome"
+        },
+        "parameters": {
+          "items": {
+            "$ref": "#/$defs/patchback.studio.ParameterSample"
+          },
+          "type": "array"
+        },
+        "patch_id": {
+          "$ref": "#/$defs/patchback.patch.PatchId"
+        },
+        "sequence": {
+          "type": "integer"
+        },
+        "topology_id": {
+          "$ref": "#/$defs/patchback.patch.TopologyId"
+        },
+        "total_loss": {
+          "format": "decimal",
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "trace_id": {
+          "$ref": "#/$defs/patchback.studio.TraceId"
+        }
+      },
+      "required": [
+        "frame_id",
+        "trace_id",
+        "sequence",
+        "outcome",
+        "evaluation",
+        "topology_id",
+        "parameters"
+      ],
+      "title": "FrameAppended",
+      "type": "object",
+      "x-ess-kind": "event-payload",
+      "x-ess-name": "patchback.studio.FrameAppended"
+    },
+    "patchback.studio.FrameOutcome": {
+      "enum": [
+        "FirstRetained",
+        "Improved",
+        "NotImproved",
+        "Rejected"
+      ],
+      "title": "FrameOutcome",
+      "type": "string",
+      "x-ess-kind": "enum",
+      "x-ess-name": "patchback.studio.FrameOutcome"
+    },
+    "patchback.studio.GraphDrawn": {
+      "additionalProperties": false,
+      "properties": {
+        "edges": {
+          "items": {
+            "$ref": "#/$defs/patchback.studio.GraphEdge"
+          },
+          "type": "array"
+        },
+        "graph_view_id": {
+          "$ref": "#/$defs/patchback.studio.GraphViewId"
+        },
+        "nodes": {
+          "items": {
+            "$ref": "#/$defs/patchback.studio.GraphNode"
+          },
+          "type": "array"
+        },
+        "patch_id": {
+          "$ref": "#/$defs/patchback.patch.PatchId"
+        },
+        "topology_id": {
+          "$ref": "#/$defs/patchback.patch.TopologyId"
+        }
+      },
+      "required": [
+        "graph_view_id",
+        "patch_id",
+        "topology_id",
+        "nodes",
+        "edges"
+      ],
+      "title": "GraphDrawn",
+      "type": "object",
+      "x-ess-kind": "event-payload",
+      "x-ess-name": "patchback.studio.GraphDrawn"
+    },
+    "patchback.studio.GraphEdge": {
+      "additionalProperties": false,
+      "description": "One drawn edge, coloured by its rate. delayed_feedback marks the edge leaving the Delay node that closes a cycle (DESIGN.md section 5.4: a cycle is admitted only through a Delay node of at least one sample); the studio draws it as a return arc.",
+      "properties": {
+        "delayed_feedback": {
+          "type": "boolean"
+        },
+        "from_node": {
+          "type": "integer"
+        },
+        "from_port": {
+          "$ref": "#/$defs/patchback.patch.PortName"
+        },
+        "rate": {
+          "$ref": "#/$defs/patchback.patch.PortRate"
+        },
+        "to_node": {
+          "type": "integer"
+        },
+        "to_port": {
+          "$ref": "#/$defs/patchback.patch.PortName"
+        }
+      },
+      "required": [
+        "from_node",
+        "from_port",
+        "to_node",
+        "to_port",
+        "rate",
+        "delayed_feedback"
+      ],
+      "title": "GraphEdge",
+      "type": "object",
+      "x-ess-kind": "struct",
+      "x-ess-name": "patchback.studio.GraphEdge"
+    },
+    "patchback.studio.GraphNode": {
+      "additionalProperties": false,
+      "description": "One node of a drawn patch: the patch's node id and kind, and its rank, the longest path to it from a node with no inputs once every delayed feedback edge is removed. The studio lays nodes out left to right by rank.",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/patchback.patch.NodeKind"
+        },
+        "node_id": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "rank": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "node_id",
+        "kind",
+        "rank"
+      ],
+      "title": "GraphNode",
+      "type": "object",
+      "x-ess-invariants": [
+        "node_id >= 0",
+        "rank >= 0"
+      ],
+      "x-ess-kind": "struct",
+      "x-ess-name": "patchback.studio.GraphNode"
+    },
+    "patchback.studio.GraphViewId": {
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "title": "GraphViewId",
+      "type": "string",
+      "x-ess-kind": "newtype",
+      "x-ess-name": "patchback.studio.GraphViewId"
+    },
+    "patchback.studio.ModuleSpec": {
+      "additionalProperties": false,
+      "description": "One atomic module kind as the catalogue view draws it: its ports and the contracts of the parameters it owns (DESIGN.md sections 2 invariant 2, 5.1, 5.2). A kind of the fixed subtractive voice has no family; a kind added by section 5.4 names its family.",
+      "properties": {
+        "family": {
+          "$ref": "#/$defs/patchback.patch.ModuleFamily"
+        },
+        "kind": {
+          "$ref": "#/$defs/patchback.patch.NodeKind"
+        },
+        "parameters": {
+          "items": {
+            "$ref": "#/$defs/patchback.patch.ParameterContract"
+          },
+          "type": "array"
+        },
+        "ports": {
+          "items": {
+            "$ref": "#/$defs/patchback.studio.PortSpec"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "ports",
+        "parameters"
+      ],
+      "title": "ModuleSpec",
+      "type": "object",
+      "x-ess-kind": "struct",
+      "x-ess-name": "patchback.studio.ModuleSpec"
+    },
+    "patchback.studio.ParameterSample": {
+      "additionalProperties": false,
+      "description": "The normalized value of one parameter of the evaluated patch (DESIGN.md 5.2, normalized units).",
+      "properties": {
+        "normalized_value": {
+          "format": "decimal",
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "path": {
+          "$ref": "#/$defs/patchback.patch.ParameterPath"
+        }
+      },
+      "required": [
+        "path",
+        "normalized_value"
+      ],
+      "title": "ParameterSample",
+      "type": "object",
+      "x-ess-kind": "struct",
+      "x-ess-name": "patchback.studio.ParameterSample"
+    },
+    "patchback.studio.PortDirection": {
+      "enum": [
+        "Input",
+        "Output"
+      ],
+      "title": "PortDirection",
+      "type": "string",
+      "x-ess-kind": "enum",
+      "x-ess-name": "patchback.studio.PortDirection"
+    },
+    "patchback.studio.PortSpec": {
+      "additionalProperties": false,
+      "description": "One port of one module kind, with its direction, rate and meaning (DESIGN.md section 5.1).",
+      "properties": {
+        "direction": {
+          "$ref": "#/$defs/patchback.studio.PortDirection"
+        },
+        "meaning": {
+          "type": "string"
+        },
+        "name": {
+          "$ref": "#/$defs/patchback.patch.PortName"
+        },
+        "rate": {
+          "$ref": "#/$defs/patchback.patch.PortRate"
+        }
+      },
+      "required": [
+        "name",
+        "direction",
+        "rate",
+        "meaning"
+      ],
+      "title": "PortSpec",
+      "type": "object",
+      "x-ess-kind": "struct",
+      "x-ess-name": "patchback.studio.PortSpec"
+    },
+    "patchback.studio.ResultComposed": {
+      "additionalProperties": false,
+      "properties": {
+        "best_patch_id": {
+          "$ref": "#/$defs/patchback.patch.PatchId"
+        },
+        "best_render_id": {
+          "$ref": "#/$defs/patchback.audio.RenderId"
+        },
+        "fit_run_id": {
+          "$ref": "#/$defs/patchback.fit.FitRunId"
+        },
+        "reference_clip_id": {
+          "$ref": "#/$defs/patchback.audio.AudioClipId"
+        },
+        "result_view_id": {
+          "$ref": "#/$defs/patchback.studio.ResultViewId"
+        },
+        "spectra": {
+          "items": {
+            "$ref": "#/$defs/patchback.studio.SpectrumSpec"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "result_view_id",
+        "fit_run_id",
+        "reference_clip_id",
+        "spectra"
+      ],
+      "title": "ResultComposed",
+      "type": "object",
+      "x-ess-kind": "event-payload",
+      "x-ess-name": "patchback.studio.ResultComposed"
+    },
+    "patchback.studio.ResultViewId": {
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "title": "ResultViewId",
+      "type": "string",
+      "x-ess-kind": "newtype",
+      "x-ess-name": "patchback.studio.ResultViewId"
+    },
+    "patchback.studio.SpectrumSource": {
+      "enum": [
+        "Reference",
+        "Render"
+      ],
+      "title": "SpectrumSource",
+      "type": "string",
+      "x-ess-kind": "enum",
+      "x-ess-name": "patchback.studio.SpectrumSource"
+    },
+    "patchback.studio.SpectrumSpec": {
+      "additionalProperties": false,
+      "description": "One log-magnitude spectrum the end-result view draws, of the reference or of the best render.",
+      "properties": {
+        "fft_size": {
+          "type": "integer"
+        },
+        "source": {
+          "$ref": "#/$defs/patchback.studio.SpectrumSource"
+        }
+      },
+      "required": [
+        "source",
+        "fft_size"
+      ],
+      "title": "SpectrumSpec",
+      "type": "object",
+      "x-ess-kind": "struct",
+      "x-ess-name": "patchback.studio.SpectrumSpec"
+    },
+    "patchback.studio.TraceClosedEvent": {
+      "additionalProperties": false,
+      "description": "A trace was closed with its run's end.",
+      "properties": {
+        "ended": {
+          "$ref": "#/$defs/patchback.studio.TraceEnd"
+        },
+        "trace_id": {
+          "$ref": "#/$defs/patchback.studio.TraceId"
+        }
+      },
+      "required": [
+        "trace_id",
+        "ended"
+      ],
+      "title": "TraceClosedEvent",
+      "type": "object",
+      "x-ess-kind": "event-payload",
+      "x-ess-name": "patchback.studio.TraceClosedEvent"
+    },
+    "patchback.studio.TraceEnd": {
+      "description": "How the fit run a trace follows ended (patchback.fit.FitRun states Completed and Failed).",
+      "enum": [
+        "Completed",
+        "Failed"
+      ],
+      "title": "TraceEnd",
+      "type": "string",
+      "x-ess-kind": "enum",
+      "x-ess-name": "patchback.studio.TraceEnd"
+    },
+    "patchback.studio.TraceFrameId": {
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "title": "TraceFrameId",
+      "type": "string",
+      "x-ess-kind": "newtype",
+      "x-ess-name": "patchback.studio.TraceFrameId"
+    },
+    "patchback.studio.TraceId": {
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "title": "TraceId",
+      "type": "string",
+      "x-ess-kind": "newtype",
+      "x-ess-name": "patchback.studio.TraceId"
+    },
+    "patchback.studio.TraceOpened": {
+      "additionalProperties": false,
+      "properties": {
+        "fit_run_id": {
+          "$ref": "#/$defs/patchback.fit.FitRunId"
+        },
+        "parameter_paths": {
+          "items": {
+            "$ref": "#/$defs/patchback.patch.ParameterPath"
+          },
+          "type": "array"
+        },
+        "source": {
+          "$ref": "#/$defs/patchback.studio.TraceSource"
+        },
+        "topology_id": {
+          "$ref": "#/$defs/patchback.patch.TopologyId"
+        },
+        "trace_id": {
+          "$ref": "#/$defs/patchback.studio.TraceId"
+        }
+      },
+      "required": [
+        "trace_id",
+        "fit_run_id",
+        "source",
+        "topology_id",
+        "parameter_paths"
+      ],
+      "title": "TraceOpened",
+      "type": "object",
+      "x-ess-kind": "event-payload",
+      "x-ess-name": "patchback.studio.TraceOpened"
+    },
+    "patchback.studio.TraceSource": {
+      "description": "Where a trace's frames come from; a fit run's artifacts first, a live stream from a Rust server later.",
+      "enum": [
+        "Replay",
+        "Live"
+      ],
+      "title": "TraceSource",
+      "type": "string",
+      "x-ess-kind": "enum",
+      "x-ess-name": "patchback.studio.TraceSource"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "x-ess-provenance": {
+    "contract_digest": "slice-sha256/2:d87f692ef19bf356b05951f6debde7fe8a7d7352a1bf2f4a5e21142cf6ba3560",
+    "source_digest": "6d0c266ecaa72621021d98b39451bb0d9aeebaae328221b102774f55b596d2fd",
+    "specification_version": "v1",
+    "system": "patchback"
+  }
+}

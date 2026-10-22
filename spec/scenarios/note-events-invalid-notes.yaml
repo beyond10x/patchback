@@ -1,0 +1,53 @@
+# DESIGN.md section 10: a note ends after it starts, its MIDI note is 0 to 127, and its velocity
+# lies in range. Each refusal is decided on the file alone, before the patch is looked up.
+# UNMAPPED: the velocity range ([0,1] here, or MIDI 0 to 127) is not settled in DESIGN.md.
+type: ess-scenario/1
+domain: patchback.score
+scenario: note-events-invalid-notes
+summary: A note that ends before it starts, a MIDI note of 128 and a velocity above 1 are each refused.
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.score.LoadNoteSequence
+    actor: patchback.score.Operator
+    input:
+      note_sequence_id: 7f0c0000-0000-4000-8000-000000000253
+      format_version: 1
+      sample_rate_hz: 48000
+      patch_id: 7f0c0000-0000-4000-8000-000000000152
+      notes:
+        - {start_sample: 4800, end_sample: 4800, midi_note: 45, velocity: 0.8}
+    outcome: invalid-timing
+    error:
+      name: patchback.score.InvalidNoteTiming
+    no_events: [patchback.score.NoteSequenceLoaded]
+
+  - at: 2026-10-22T09:00:01Z
+    command: patchback.score.LoadNoteSequence
+    actor: patchback.score.Operator
+    input:
+      note_sequence_id: 7f0c0000-0000-4000-8000-000000000253
+      format_version: 1
+      sample_rate_hz: 48000
+      patch_id: 7f0c0000-0000-4000-8000-000000000152
+      notes:
+        - {start_sample: 0, end_sample: 4800, midi_note: 128, velocity: 0.8}
+    outcome: midi-out-of-range
+    error:
+      name: patchback.score.MidiNoteOutOfRange
+    no_events: [patchback.score.NoteSequenceLoaded]
+
+  - at: 2026-10-22T09:00:02Z
+    command: patchback.score.LoadNoteSequence
+    actor: patchback.score.Operator
+    input:
+      note_sequence_id: 7f0c0000-0000-4000-8000-000000000253
+      format_version: 1
+      sample_rate_hz: 48000
+      patch_id: 7f0c0000-0000-4000-8000-000000000152
+      notes:
+        - {start_sample: 0, end_sample: 4800, midi_note: 60, velocity: 1.2}
+    outcome: velocity-out-of-range
+    error:
+      name: patchback.score.VelocityOutOfRange
+    no_events: [patchback.score.NoteSequenceLoaded]

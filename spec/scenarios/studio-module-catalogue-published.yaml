@@ -1,0 +1,48 @@
+# epic:patch-studio, module catalogue view. The six module kinds of the fixed subtractive voice
+# (DESIGN.md section 5.2), each with its ports and the contracts of the parameters it owns. Port
+# names and meanings are illustrative: DESIGN.md gives no port list per kind (UNMAPPED in
+# patch.yaml and studio.yaml). The two ADSR contracts use the section 5.2 mappings; the defaults
+# are placeholders (UNMAPPED in patch.yaml: section 5.2 gives no defaults).
+type: ess-scenario/1
+domain: patchback.studio
+scenario: studio-module-catalogue-published
+summary: A catalogue of the subtractive voice's module kinds, with ports, rates and parameter contracts, is published and listed.
+
+timeline:
+  - at: 2026-10-22T13:00:00Z
+    command: patchback.studio.PublishCatalogue
+    actor: patchback.studio.Studio
+    input:
+      catalogue_id: 5a0d0000-0000-4000-8000-000000000001
+      topology_id: 5a0d0000-0000-4000-8000-000000000101
+      modules:
+        - kind: NoteInput
+          ports:
+            - {name: note, direction: Output, rate: Event, meaning: note pitch at note-on}
+            - {name: gate, direction: Output, rate: Event, meaning: note-on and note-off}
+          parameters: []
+        - kind: SawOscillator
+          ports:
+            - {name: note, direction: Input, rate: Event, meaning: oscillator frequency follows the note}
+            - {name: out, direction: Output, rate: Audio, meaning: band-limited saw}
+          parameters: []
+        - kind: AdsrEnvelope
+          ports:
+            - {name: gate, direction: Input, rate: Event, meaning: note-on and note-off}
+            - {name: env, direction: Output, rate: Control, meaning: envelope level}
+          parameters:
+            - {path: attack, index: 0, unit: Seconds, mapping: Exponential, physical_at_zero: 0.001, physical_at_one: 2, default_normalized: 0.5, clamp: ClampToUnitInterval}
+            - {path: sustain, index: 2, unit: LinearAmplitude, mapping: Linear, physical_at_zero: 0, physical_at_one: 1, default_normalized: 0.5, clamp: ClampToUnitInterval}
+        - kind: Vca
+          ports:
+            - {name: in, direction: Input, rate: Audio, meaning: filtered signal}
+            - {name: gain, direction: Input, rate: Control, meaning: envelope gain}
+            - {name: out, direction: Output, rate: Audio, meaning: shaped signal}
+          parameters: []
+
+assert:
+  - view: patchback.studio.Catalogues
+    contains:
+      catalogue_id: 5a0d0000-0000-4000-8000-000000000001
+      state: Published
+      topology_id: 5a0d0000-0000-4000-8000-000000000101

@@ -1,0 +1,52 @@
+# epic:patch-studio, fit evolution view, replay. DESIGN.md 12.1: the optimizer "never worsens
+# retained best candidate". A frame whose best loss is above an earlier frame's contradicts that,
+# and the trace refuses it rather than drawing a loss curve that rises.
+type: ess-scenario/1
+domain: patchback.studio
+scenario: studio-fit-replay-best-worsened
+summary: A frame whose retained best loss rises above an earlier frame's is refused.
+
+timeline:
+  - at: 2026-10-22T13:30:00Z
+    command: patchback.studio.OpenTrace
+    actor: patchback.studio.Studio
+    input:
+      trace_id: 5a0d0000-0000-4000-8000-000000000402
+      fit_run_id: 5a0d0000-0000-4000-8000-000000000502
+      source: Replay
+      topology_id: 5a0d0000-0000-4000-8000-000000000101
+      parameter_paths: [cutoff]
+    outcome: opened
+
+  - at: 2026-10-22T13:30:01Z
+    command: patchback.studio.AppendFrame
+    actor: patchback.studio.Studio
+    input:
+      frame_id: 5a0d0000-0000-4000-8000-000000000611
+      trace_id: 5a0d0000-0000-4000-8000-000000000402
+      sequence: 0
+      evaluation: 1
+      outcome: FirstRetained
+      topology_id: 5a0d0000-0000-4000-8000-000000000101
+      total_loss: 0.43
+      best_loss: 0.43
+      parameters: [{path: cutoff, normalized_value: 0.5}]
+    outcome: appended
+
+  - at: 2026-10-22T13:30:02Z
+    command: patchback.studio.AppendFrame
+    actor: patchback.studio.Studio
+    input:
+      frame_id: 5a0d0000-0000-4000-8000-000000000612
+      trace_id: 5a0d0000-0000-4000-8000-000000000402
+      sequence: 1
+      evaluation: 2
+      outcome: NotImproved
+      topology_id: 5a0d0000-0000-4000-8000-000000000101
+      total_loss: 0.645
+      best_loss: 0.645
+      parameters: [{path: cutoff, normalized_value: 0.75}]
+    outcome: best-worsened
+    error:
+      name: patchback.studio.BestLossWorsened
+    no_events: [patchback.studio.FrameAppended]

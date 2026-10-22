@@ -1,0 +1,69 @@
+# epic:patch-studio, fit evolution view, live. A running fit streams its evaluations as they
+# happen; the trace is the same frames as a replay, from the Live source, and closes when the run
+# fails. A failed run's trace is kept, so the view shows how far it got (DESIGN.md 9.2 step 5).
+type: ess-scenario/1
+domain: patchback.studio
+scenario: studio-fit-live-streamed
+summary: A live trace takes two streamed frames and closes with the run's failure.
+
+timeline:
+  - at: 2026-10-22T14:00:00Z
+    command: patchback.studio.OpenTrace
+    actor: patchback.studio.FitStream
+    input:
+      trace_id: 5a0d0000-0000-4000-8000-000000000405
+      fit_run_id: 5a0d0000-0000-4000-8000-000000000505
+      source: Live
+      topology_id: 5a0d0000-0000-4000-8000-000000000101
+      parameter_paths: [cutoff, resonance]
+    outcome: opened
+    events:
+      - event: patchback.studio.TraceOpened
+        payload:
+          source: Live
+
+  - at: 2026-10-22T14:00:01Z
+    command: patchback.studio.AppendFrame
+    actor: patchback.studio.FitStream
+    input:
+      frame_id: 5a0d0000-0000-4000-8000-000000000641
+      trace_id: 5a0d0000-0000-4000-8000-000000000405
+      sequence: 0
+      evaluation: 1
+      outcome: Rejected
+      topology_id: 5a0d0000-0000-4000-8000-000000000101
+      parameters:
+        - {path: cutoff, normalized_value: 1}
+        - {path: resonance, normalized_value: 1}
+    outcome: appended
+
+  - at: 2026-10-22T14:00:02Z
+    command: patchback.studio.AppendFrame
+    actor: patchback.studio.FitStream
+    input:
+      frame_id: 5a0d0000-0000-4000-8000-000000000642
+      trace_id: 5a0d0000-0000-4000-8000-000000000405
+      sequence: 1
+      evaluation: 2
+      outcome: Rejected
+      topology_id: 5a0d0000-0000-4000-8000-000000000101
+      parameters:
+        - {path: cutoff, normalized_value: 0.75}
+        - {path: resonance, normalized_value: 1}
+    outcome: appended
+
+  - at: 2026-10-22T14:00:03Z
+    command: patchback.studio.CloseTrace
+    actor: patchback.studio.FitStream
+    input:
+      trace_id: 5a0d0000-0000-4000-8000-000000000405
+      ended: Failed
+    outcome: closed
+
+assert:
+  - view: patchback.studio.Traces
+    contains:
+      trace_id: 5a0d0000-0000-4000-8000-000000000405
+      state: Closed
+      source: Live
+      ended: Failed

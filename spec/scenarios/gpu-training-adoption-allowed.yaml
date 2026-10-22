@@ -1,0 +1,60 @@
+# DESIGN.md 13 Milestone E / ADR-010: once the pin lists Vulkan as shipped and CPU/GPU equivalence
+# is recorded on it, a Vulkan training run may be planned. Equivalence is recorded once per pin.
+type: ess-scenario/1
+domain: patchback.model
+scenario: gpu-training-adoption-allowed
+summary: After equivalence is recorded on a pin that ships Vulkan, a Vulkan run is planned; recording it again is refused.
+
+arrange:
+  - instance: pin
+    entity: patchback.model.ModelSpecPin
+  - instance: run
+    entity: patchback.model.TrainingRun
+
+timeline:
+  - at: 2026-10-22T13:20:00Z
+    command: patchback.model.PinModelSpec
+    actor: patchback.model.Operator
+    input:
+      version: pinned-release-with-vulkan
+      commit: 89abcdef0123456789abcdef0123456789abcdef
+      vulkan_backend_shipped: true
+    outcome: pinned
+    capture: {instance: pin, event: patchback.model.ModelSpecPinned, field: model_spec_pin_id}
+
+  - at: 2026-10-22T13:20:01Z
+    command: patchback.model.RecordGpuEquivalence
+    actor: patchback.model.Operator
+    input:
+      model_spec_pin_id: {$instance: pin}
+      equivalent: true
+    outcome: recorded
+
+  - at: 2026-10-22T13:20:02Z
+    command: patchback.model.PlanTrainingRun
+    actor: patchback.model.Operator
+    input:
+      model_spec_pin_id: {$instance: pin}
+      backend: Vulkan
+    outcome: planned
+    capture: {instance: run, event: patchback.model.TrainingRunPlanned, field: training_run_id}
+
+  - at: 2026-10-22T13:20:03Z
+    command: patchback.model.RecordGpuEquivalence
+    actor: patchback.model.Operator
+    input:
+      model_spec_pin_id: {$instance: pin}
+      equivalent: true
+    outcome: wrong-state
+    error:
+      name: patchback.model.GpuEquivalenceAlreadyRecorded
+
+  - at: 2026-10-22T13:20:04Z
+    command: patchback.model.RecordGpuEquivalence
+    actor: patchback.model.Operator
+    input:
+      model_spec_pin_id: 6f000000-0000-4000-8000-0000000000ff
+      equivalent: true
+    outcome: unknown-pin
+    error:
+      name: patchback.model.UnknownPin

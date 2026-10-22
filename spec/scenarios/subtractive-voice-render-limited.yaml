@@ -1,0 +1,90 @@
+# DESIGN.md 5.3: "protective output clipping/limiting reported, not silently used to hide
+# instability". Whether the limiter engages is the renderer's finding, external to the model.
+# The compiled subtractive voice and its note sequence are set up as in
+# subtractive-voice-render-renders.
+type: ess-scenario/1
+domain: patchback.audio
+scenario: subtractive-voice-render-limited
+summary: A render on which the protective limiter engages succeeds and reports limited true in its event and record.
+
+arrange:
+  - instance: hot
+    entity: patchback.audio.Render
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.patch.DeclareTopology
+    actor: patchback.patch.Operator
+    input:
+      topology_id: 7f0c0000-0000-4000-8000-000000000901
+      name: subtractive-mono/1
+      parameters: []
+    outcome: declared
+
+  - at: 2026-10-22T09:00:01Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000911
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 7f0c0000-0000-4000-8000-000000000901
+      nodes:
+        - {id: 1, kind: NoteInput, parameters: []}
+        - {id: 2, kind: SawOscillator, parameters: []}
+        - {id: 3, kind: Drive, parameters: [{name: drive, value: 6}]}
+        - {id: 4, kind: LowpassFilter, parameters: [{name: cutoff, value: 1200}, {name: resonance, value: 0.7}]}
+        - {id: 5, kind: AdsrEnvelope, parameters: [{name: attack, value: 0.01}, {name: decay, value: 0.2}, {name: sustain, value: 0.6}, {name: release, value: 0.3}]}
+        - {id: 6, kind: Vca, parameters: []}
+        - {id: 7, kind: Output, parameters: [{name: gain, value: -6}]}
+      edges:
+        - {from_node: 1, from_port: pitch, from_rate: Control, to_node: 2, to_port: pitch, to_rate: Control}
+        - {from_node: 1, from_port: gate, from_rate: Event, to_node: 5, to_port: gate, to_rate: Event}
+        - {from_node: 2, from_port: out, from_rate: Audio, to_node: 3, to_port: in, to_rate: Audio}
+        - {from_node: 3, from_port: out, from_rate: Audio, to_node: 4, to_port: in, to_rate: Audio}
+        - {from_node: 4, from_port: out, from_rate: Audio, to_node: 6, to_port: in, to_rate: Audio}
+        - {from_node: 5, from_port: env, from_rate: Control, to_node: 6, to_port: gain, to_rate: Control}
+        - {from_node: 6, from_port: out, from_rate: Audio, to_node: 7, to_port: in, to_rate: Audio}
+    outcome: loaded
+
+  - at: 2026-10-22T09:00:02Z
+    command: patchback.patch.ValidatePatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000911
+    outcome: validated
+
+  - at: 2026-10-22T09:00:03Z
+    command: patchback.patch.CompilePatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000911
+    outcome: compiled
+
+  - at: 2026-10-22T09:00:04Z
+    command: patchback.score.LoadNoteSequence
+    actor: patchback.score.Operator
+    input:
+      note_sequence_id: 7f0c0000-0000-4000-8000-000000000921
+      format_version: 1
+      sample_rate_hz: 48000
+      patch_id: 7f0c0000-0000-4000-8000-000000000911
+      notes:
+        - {start_sample: 0, end_sample: 24000, midi_note: 45, velocity: 0.8}
+    outcome: loaded
+
+
+  - at: 2026-10-22T09:00:05Z
+    command: patchback.audio.RenderPatch
+    actor: patchback.audio.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000911
+      note_sequence_id: 7f0c0000-0000-4000-8000-000000000921
+      sample_rate_hz: 48000
+      out_path: hot.wav
+    outcome: rendered-limited
+    events:
+      - event: patchback.audio.PatchRendered
+        payload:
+          limited: true
+    capture: {instance: hot, event: patchback.audio.PatchRendered, field: render_id}

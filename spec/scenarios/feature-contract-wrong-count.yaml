@@ -1,0 +1,27 @@
+# DESIGN.md 6.3: `features/1` is "a fixed-size 32-element vector".
+type: ess-scenario/1
+domain: patchback.analysis
+scenario: feature-contract-wrong-count
+summary: "`features/1` defined with 31 values is refused and no contract exists."
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.analysis.DefineFeatureContract
+    actor: patchback.analysis.Operator
+    input:
+      version: features/1
+      value_count: 31
+      band_count: 8
+      band_windows: [Attack, Body, Release]
+      scalar_features:
+        - Rms
+        - Peak
+        - SpectralCentroid
+        - Rolloff
+        - SpectralFlatness
+        - ZeroCrossingRate
+        - AttackEnvelopeSlope
+      fft_lengths: [512, 2048, 8192]
+    outcome: wrong-count
+    error:
+      name: patchback.analysis.FeatureCountMismatch

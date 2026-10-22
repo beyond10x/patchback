@@ -1,0 +1,62 @@
+# DESIGN.md 12.3: "Cap render evaluations and wall time"; 9.2 "Bound wall-clock time and number of
+# restarts". A run must state every bound as a positive value; a zero or negative bound is refused
+# and names the bound.
+type: ess-scenario/1
+domain: patchback.fit
+scenario: bounded-search-fit-invalid-bounds
+summary: A fit with no render budget, no wall-time budget or no restart budget is refused with InvalidSearchBound; no run starts.
+
+timeline:
+  - at: 2026-10-22T10:30:00Z
+    command: patchback.fit.StartFit
+    actor: patchback.fit.Operator
+    input:
+      reference_clip_id: 0b6e7d1a-0000-4000-8000-000000000301
+      note_sequence_id: 0b6e7d1a-0000-4000-8000-000000000302
+      note_source: Known
+      scope: SingleNote
+      topology_id: 0b6e7d1a-0000-4000-8000-000000000303
+      seed: 42
+      max_renders: 0
+      max_wall_time_ms: 600000
+      max_restarts: 4
+      improvement_threshold: 0.001
+    outcome: invalid-render-bound
+    error:
+      name: patchback.fit.InvalidSearchBound
+
+  - at: 2026-10-22T10:30:01Z
+    command: patchback.fit.StartFit
+    actor: patchback.fit.Operator
+    input:
+      reference_clip_id: 0b6e7d1a-0000-4000-8000-000000000301
+      note_sequence_id: 0b6e7d1a-0000-4000-8000-000000000302
+      note_source: Known
+      scope: SingleNote
+      topology_id: 0b6e7d1a-0000-4000-8000-000000000303
+      seed: 42
+      max_renders: 2000
+      max_wall_time_ms: 0
+      max_restarts: 4
+      improvement_threshold: 0.001
+    outcome: invalid-time-bound
+    error:
+      name: patchback.fit.InvalidSearchBound
+
+  - at: 2026-10-22T10:30:02Z
+    command: patchback.fit.StartFit
+    actor: patchback.fit.Operator
+    input:
+      reference_clip_id: 0b6e7d1a-0000-4000-8000-000000000301
+      note_sequence_id: 0b6e7d1a-0000-4000-8000-000000000302
+      note_source: Known
+      scope: SingleNote
+      topology_id: 0b6e7d1a-0000-4000-8000-000000000303
+      seed: 42
+      max_renders: 2000
+      max_wall_time_ms: 600000
+      max_restarts: -1
+      improvement_threshold: 0.001
+    outcome: invalid-restart-bound
+    error:
+      name: patchback.fit.InvalidSearchBound

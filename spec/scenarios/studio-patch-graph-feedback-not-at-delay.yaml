@@ -1,0 +1,25 @@
+# epic:patch-studio, patch graph view. Only an edge leaving a Delay node may be drawn as delayed
+# feedback (DESIGN.md section 5.4); marking the Drive -> Lowpass edge would show an instantaneous
+# cycle as if it were admitted.
+type: ess-scenario/1
+domain: patchback.studio
+scenario: studio-patch-graph-feedback-not-at-delay
+summary: An edge marked as delayed feedback that leaves a Drive node is refused and nothing is drawn.
+
+timeline:
+  - at: 2026-10-22T13:10:00Z
+    command: patchback.studio.DrawGraph
+    actor: patchback.studio.Studio
+    input:
+      graph_view_id: 5a0d0000-0000-4000-8000-000000000203
+      patch_id: 5a0d0000-0000-4000-8000-000000000303
+      topology_id: 5a0d0000-0000-4000-8000-000000000101
+      nodes:
+        - {node_id: 3, kind: Drive, rank: 0}
+        - {node_id: 4, kind: LowpassFilter, rank: 1}
+      edges:
+        - {from_node: 3, from_port: out, to_node: 4, to_port: in, rate: Audio, delayed_feedback: true}
+    outcome: feedback-not-at-delay
+    error:
+      name: patchback.studio.FeedbackNotAtDelay
+    no_events: [patchback.studio.GraphDrawn]

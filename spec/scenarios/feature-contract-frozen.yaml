@@ -1,0 +1,89 @@
+# DESIGN.md 6.3: feature definitions "are frozen as a versioned spec before dataset generation"
+# and FFT lengths "can be changed only by versioning the feature contract". A draft may change; a
+# published contract may not, and a version is never defined twice.
+type: ess-scenario/1
+domain: patchback.analysis
+scenario: feature-contract-frozen
+summary: A draft contract is amended, then published; amending or republishing it and redefining its version are refused.
+
+arrange:
+  - instance: contract
+    entity: patchback.analysis.FeatureContract
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.analysis.DefineFeatureContract
+    actor: patchback.analysis.Operator
+    input:
+      version: features/1
+      value_count: 32
+      band_count: 8
+      band_windows: [Attack, Body, Release]
+      scalar_features:
+        - Rms
+        - Peak
+        - SpectralCentroid
+        - Rolloff
+        - SpectralFlatness
+        - ZeroCrossingRate
+        - AttackEnvelopeSlope
+        - NormalizedMidiPitch
+      fft_lengths: [512, 2048]
+    outcome: defined
+    capture: {instance: contract, event: patchback.analysis.FeatureContractDefined, field: feature_contract_id}
+
+  - at: 2026-10-22T09:00:01Z
+    command: patchback.analysis.AmendFeatureContract
+    actor: patchback.analysis.Operator
+    input:
+      feature_contract_id: {$instance: contract}
+      fft_lengths: [512, 2048, 8192]
+    outcome: amended
+
+  - at: 2026-10-22T09:00:02Z
+    command: patchback.analysis.PublishFeatureContract
+    actor: patchback.analysis.Operator
+    input:
+      feature_contract_id: {$instance: contract}
+    outcome: published
+
+  - at: 2026-10-22T09:00:03Z
+    command: patchback.analysis.AmendFeatureContract
+    actor: patchback.analysis.Operator
+    input:
+      feature_contract_id: {$instance: contract}
+      fft_lengths: [1024]
+    outcome: frozen
+    error:
+      name: patchback.analysis.FeatureContractFrozen
+
+  - at: 2026-10-22T09:00:04Z
+    command: patchback.analysis.PublishFeatureContract
+    actor: patchback.analysis.Operator
+    input:
+      feature_contract_id: {$instance: contract}
+    outcome: already-published
+    error:
+      name: patchback.analysis.FeatureContractFrozen
+
+  - at: 2026-10-22T09:00:05Z
+    command: patchback.analysis.DefineFeatureContract
+    actor: patchback.analysis.Operator
+    input:
+      version: features/1
+      value_count: 32
+      band_count: 8
+      band_windows: [Attack, Body, Release]
+      scalar_features:
+        - Rms
+        - Peak
+        - SpectralCentroid
+        - Rolloff
+        - SpectralFlatness
+        - ZeroCrossingRate
+        - AttackEnvelopeSlope
+        - NormalizedMidiPitch
+      fft_lengths: [1024]
+    outcome: version-taken
+    error:
+      name: patchback.analysis.FeatureVersionTaken

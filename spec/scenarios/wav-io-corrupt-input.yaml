@@ -1,0 +1,53 @@
+# DESIGN.md 6.1: "Validate RIFF sizes and chunks, allocation bounds, finite float samples";
+# 12.1: "truncation, size overflow, ... NaN/Inf, corrupted chunks". The byte-level findings are
+# external to the model: the WAV reader decides them.
+type: ess-scenario/1
+domain: patchback.audio
+scenario: wav-io-corrupt-input
+summary: A truncated file, a file with a corrupt chunk and a float32 file holding NaN are each refused and no clip is created.
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.audio.ImportWav
+    actor: patchback.audio.Operator
+    input:
+      path: truncated.wav
+      origin: PatchbackSynthesized
+      sample_rate_hz: 48000
+      channel_count: 1
+      format_tag: 1
+      bits_per_sample: 16
+      frame_count: 48000
+    outcome: truncated
+    error:
+      name: patchback.audio.TruncatedRiff
+
+  - at: 2026-10-22T09:00:01Z
+    command: patchback.audio.ImportWav
+    actor: patchback.audio.Operator
+    input:
+      path: corrupt-chunk.wav
+      origin: PatchbackSynthesized
+      sample_rate_hz: 48000
+      channel_count: 1
+      format_tag: 1
+      bits_per_sample: 16
+      frame_count: 48000
+    outcome: corrupt-chunk
+    error:
+      name: patchback.audio.CorruptRiffChunk
+
+  - at: 2026-10-22T09:00:02Z
+    command: patchback.audio.ImportWav
+    actor: patchback.audio.Operator
+    input:
+      path: nan.wav
+      origin: PatchbackSynthesized
+      sample_rate_hz: 48000
+      channel_count: 1
+      format_tag: 3
+      bits_per_sample: 32
+      frame_count: 48000
+    outcome: non-finite
+    error:
+      name: patchback.audio.NonFiniteSamples

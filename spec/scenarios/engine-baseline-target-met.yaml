@@ -1,0 +1,46 @@
+# DESIGN.md 12.2: "Target for Milestone A: closed-loop matching reduces median audio loss by at
+# least 20% relative to the default patch on the synthetic holdout set. This is a go/no-go
+# experiment target, not a guaranteed result." 13 A. A reduction of 27.5% records Met. The
+# reduction itself is computed by the benchmark harness (numeric obligation, held by Rust tests).
+type: ess-scenario/1
+domain: patchback.fit
+scenario: engine-baseline-target-met
+summary: An engine baseline over a seeded holdout whose median loss falls by 27.5% completes with target verdict Met.
+
+arrange:
+  - instance: bench
+    entity: patchback.fit.Benchmark
+
+timeline:
+  - at: 2026-10-22T13:00:00Z
+    command: patchback.fit.StartBenchmark
+    actor: patchback.fit.Operator
+    input:
+      kind: EngineBaseline
+      holdout_split_id: 3e9a4c20-0000-4000-8000-000000000001
+      seed: 1234
+      example_count: 200
+    outcome: started
+    events:
+      - event: patchback.fit.BenchmarkStarted
+        payload:
+          kind: EngineBaseline
+          seed: 1234
+    capture: {instance: bench, event: patchback.fit.BenchmarkStarted, field: benchmark_id}
+
+  - at: 2026-10-22T13:30:00Z
+    command: patchback.fit.RecordBaselineResult
+    actor: patchback.fit.Operator
+    input:
+      benchmark_id: {$instance: bench}
+      default_median_loss: 0.8
+      default_search_median_loss: 0.58
+      median_loss_reduction_percent: 27.5
+      default_search_median_evaluations: 1400
+      wall_time_ms: 1800000
+      listening_examples: [listen/example-01.wav, listen/example-02.wav]
+    outcome: target-met
+    events:
+      - event: patchback.fit.BenchmarkCompleted
+        payload:
+          target_verdict: Met

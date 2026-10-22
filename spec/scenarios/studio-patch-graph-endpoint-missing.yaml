@@ -1,0 +1,23 @@
+# epic:patch-studio, patch graph view. Every edge the view draws joins two drawn nodes; an edge
+# into node 9, which the drawing does not hold, is refused rather than drawn into empty space.
+type: ess-scenario/1
+domain: patchback.studio
+scenario: studio-patch-graph-endpoint-missing
+summary: An edge into a node the drawing does not hold is refused and nothing is drawn.
+
+timeline:
+  - at: 2026-10-22T13:10:00Z
+    command: patchback.studio.DrawGraph
+    actor: patchback.studio.Studio
+    input:
+      graph_view_id: 5a0d0000-0000-4000-8000-000000000204
+      patch_id: 5a0d0000-0000-4000-8000-000000000304
+      topology_id: 5a0d0000-0000-4000-8000-000000000101
+      nodes:
+        - {node_id: 6, kind: Vca, rank: 0}
+      edges:
+        - {from_node: 6, from_port: out, to_node: 9, to_port: in, rate: Audio, delayed_feedback: false}
+    outcome: endpoint-missing
+    error:
+      name: patchback.studio.GraphEndpointMissing
+    no_events: [patchback.studio.GraphDrawn]

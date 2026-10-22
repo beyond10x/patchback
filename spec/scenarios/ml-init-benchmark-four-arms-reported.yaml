@@ -1,0 +1,46 @@
+# DESIGN.md 13 B: "Compare default vs ML-init vs ML-init-plus-search"; 12.2: "The raw-model-only
+# result is also reported"; 9.2: "benchmarked against both the default patch and the raw regressor
+# prediction". All four arms over the same holdout are recorded, the raw regressor arm included.
+type: ess-scenario/1
+domain: patchback.fit
+scenario: ml-init-benchmark-four-arms-reported
+summary: An ML-init benchmark records the default, default plus search, raw regressor and regressor plus search median losses on one holdout.
+
+arrange:
+  - instance: bench
+    entity: patchback.fit.Benchmark
+
+timeline:
+  - at: 2026-10-22T14:00:00Z
+    command: patchback.fit.StartBenchmark
+    actor: patchback.fit.Operator
+    input:
+      kind: MlInit
+      holdout_split_id: 3e9a4c20-0000-4000-8000-000000000101
+      seed: 1234
+      example_count: 200
+      weight_artifact_id: 3e9a4c20-0000-4000-8000-000000000102
+    outcome: started
+    capture: {instance: bench, event: patchback.fit.BenchmarkStarted, field: benchmark_id}
+
+  - at: 2026-10-22T14:40:00Z
+    command: patchback.fit.RecordMlInitResult
+    actor: patchback.fit.Operator
+    input:
+      benchmark_id: {$instance: bench}
+      default_median_loss: 0.8
+      default_search_median_loss: 0.58
+      raw_regressor_median_loss: 0.62
+      regressor_search_median_loss: 0.5
+      default_search_median_evaluations: 1400
+      regressor_search_median_evaluations: 600
+      wall_time_ms: 2400000
+      listening_examples: [listen/ml-01.wav]
+    outcome: recorded
+    events:
+      - event: patchback.fit.MlInitCompared
+        payload:
+          default_median_loss: 0.8
+          default_search_median_loss: 0.58
+          raw_regressor_median_loss: 0.62
+          regressor_search_median_loss: 0.5

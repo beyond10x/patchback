@@ -1,0 +1,54 @@
+{
+  "note": "illustrative fixture data: hand-built for the studio prototype, not the output of a Patchback fit; the spectra are drawn in the browser from an analytic saw-through-lowpass approximation, not from a Patchback render (where spectra are computed is UNMAPPED)",
+  "event": {
+    "result_view_id": "5a0d0000-0000-4000-8000-000000000801",
+    "fit_run_id": "5a0d0000-0000-4000-8000-000000000501",
+    "best_patch_id": "5a0d0000-0000-4000-8000-000000000720",
+    "reference_clip_id": "5a0d0000-0000-4000-8000-000000000901",
+    "best_render_id": "5a0d0000-0000-4000-8000-000000000902",
+    "spectra": [
+      {
+        "source": "Reference",
+        "fft_size": 8192
+      },
+      {
+        "source": "Render",
+        "fft_size": 8192
+      }
+    ]
+  },
+  "reference_parameters": [
+    {
+      "path": "attack",
+      "normalized_value": "0.1800"
+    },
+    {
+      "path": "decay",
+      "normalized_value": "0.4200"
+    },
+    {
+      "path": "sustain",
+      "normalized_value": "0.6200"
+    },
+    {
+      "path": "release",
+      "normalized_value": "0.3500"
+    },
+    {
+      "path": "filter_cutoff",
+      "normalized_value": "0.7100"
+    },
+    {
+      "path": "resonance_q",
+      "normalized_value": "0.2800"
+    },
+    {
+      "path": "drive",
+      "normalized_value": "0.4000"
+    },
+    {
+      "path": "output_gain",
+      "normalized_value": "0.6600"
+    }
+  ]
+}

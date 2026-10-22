@@ -1,0 +1,99 @@
+# DESIGN.md 7.2: `x.f32` is N × 32 and `y.f32` is N × 8 row-major little-endian f32, `order.u32` is
+# optional, and the validation count is a multiple of the batch size so it can be passed to
+# `--eval`. 4,992 rows: x is 4,992 × 32 × 4 = 638,976 bytes, y is 4,992 × 8 × 4 = 159,744 bytes,
+# order is 4,992 × 1 × 4 = 19,968 bytes.
+type: ess-scenario/1
+domain: patchback.dataset
+scenario: dense-data-files-written
+summary: The validation split's x.f32, y.f32 and order.u32 are written with matching rows and byte counts, and the split becomes Written.
+
+arrange:
+  - instance: dataset
+    entity: patchback.dataset.Dataset
+  - instance: validation
+    entity: patchback.dataset.DatasetSplit
+  - instance: x
+    entity: patchback.dataset.DenseDataFile
+  - instance: y
+    entity: patchback.dataset.DenseDataFile
+  - instance: order
+    entity: patchback.dataset.DenseDataFile
+
+timeline:
+  - at: 2026-10-22T10:30:00Z
+    command: patchback.dataset.GenerateDataset
+    actor: patchback.dataset.Operator
+    input:
+      seed: 42
+      prng_algorithm: std-only-generator
+      batch_size: 16
+      feature_contract_id: 5a000000-0000-4000-8000-000000000001
+      topology_id: 5a000000-0000-4000-8000-000000000002
+      out_dir: data/
+    outcome: generated
+    capture: {instance: dataset, event: patchback.dataset.DatasetGenerated, field: dataset_id}
+
+  - at: 2026-10-22T10:30:01Z
+    command: patchback.dataset.OpenSplit
+    actor: patchback.dataset.Operator
+    input:
+      dataset_id: {$instance: dataset}
+      role: Validation
+      sample_count: 4992
+    outcome: opened
+    capture: {instance: validation, event: patchback.dataset.SplitOpened, field: dataset_split_id}
+
+  - at: 2026-10-22T10:30:02Z
+    command: patchback.dataset.WriteDenseFile
+    actor: patchback.dataset.Operator
+    input:
+      dataset_split_id: {$instance: validation}
+      kind: X
+      path: data/val/x.f32
+      rows: 4992
+      columns: 32
+      byte_count: 638976
+    outcome: written
+    capture: {instance: x, event: patchback.dataset.DenseFileWritten, field: dense_data_file_id}
+
+  - at: 2026-10-22T10:30:03Z
+    command: patchback.dataset.WriteDenseFile
+    actor: patchback.dataset.Operator
+    input:
+      dataset_split_id: {$instance: validation}
+      kind: Y
+      path: data/val/y.f32
+      rows: 4992
+      columns: 8
+      byte_count: 159744
+    outcome: written
+    capture: {instance: y, event: patchback.dataset.DenseFileWritten, field: dense_data_file_id}
+
+  - at: 2026-10-22T10:30:04Z
+    command: patchback.dataset.WriteDenseFile
+    actor: patchback.dataset.Operator
+    input:
+      dataset_split_id: {$instance: validation}
+      kind: Order
+      path: data/val/order.u32
+      rows: 4992
+      columns: 1
+      byte_count: 19968
+    outcome: written
+    capture: {instance: order, event: patchback.dataset.DenseFileWritten, field: dense_data_file_id}
+
+  - at: 2026-10-22T10:30:05Z
+    command: patchback.dataset.FinishSplit
+    actor: patchback.dataset.Operator
+    input:
+      dataset_split_id: {$instance: validation}
+    outcome: written
+
+  - at: 2026-10-22T10:30:06Z
+    command: patchback.dataset.FinishSplit
+    actor: patchback.dataset.Operator
+    input:
+      dataset_split_id: {$instance: validation}
+    outcome: wrong-state
+    error:
+      name: patchback.dataset.SplitAlreadyWritten

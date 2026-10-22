@@ -1,0 +1,218 @@
+# DESIGN.md 6.3 / 8.2 step 3: the artifact is version-locked to its feature contract, so a vector
+# from another contract version is refused; `features/1` holds exactly 32 values; 12.3 "Reject
+# corrupt models ... non-finite features". The checksum and finiteness checks are external
+# decisions (they read the artifact bytes and the f64 values, which ESS conformance cannot carry).
+type: ess-scenario/1
+domain: patchback.model
+scenario: native-predictor-refused-input
+summary: A vector of another feature contract, a 31-value vector, a corrupt artifact, a NaN feature and an unknown artifact are each refused.
+
+arrange:
+  - instance: pin
+    entity: patchback.model.ModelSpecPin
+  - instance: source
+    entity: patchback.model.ModelSource
+  - instance: dataset
+    entity: patchback.dataset.Dataset
+  - instance: train
+    entity: patchback.dataset.DatasetSplit
+  - instance: x
+    entity: patchback.dataset.DenseDataFile
+  - instance: y
+    entity: patchback.dataset.DenseDataFile
+  - instance: run
+    entity: patchback.model.TrainingRun
+
+  - instance: artifact
+    entity: patchback.model.WeightArtifact
+
+timeline:
+  - at: 2026-10-22T12:00:00Z
+    command: patchback.model.PinModelSpec
+    actor: patchback.model.Operator
+    input:
+      version: pinned-release
+      commit: 0123456789abcdef0123456789abcdef01234567
+      vulkan_backend_shipped: false
+    outcome: pinned
+    capture: {instance: pin, event: patchback.model.ModelSpecPinned, field: model_spec_pin_id}
+
+  - at: 2026-10-22T12:00:01Z
+    command: patchback.model.RegisterModelSource
+    actor: patchback.model.Operator
+    input:
+      path: models/patch_regressor.mspec
+      model_name: PatchRegressor
+      batch_size: 16
+      model_spec_pin_id: {$instance: pin}
+    outcome: registered
+    capture: {instance: source, event: patchback.model.ModelSourceRegistered, field: model_source_id}
+
+  - at: 2026-10-22T12:00:02Z
+    command: patchback.model.CheckModelSource
+    actor: patchback.model.Operator
+    input:
+      model_source_id: {$instance: source}
+    outcome: checked
+
+  - at: 2026-10-22T12:00:03Z
+    command: patchback.dataset.GenerateDataset
+    actor: patchback.dataset.Operator
+    input:
+      seed: 42
+      prng_algorithm: std-only-generator
+      batch_size: 16
+      feature_contract_id: 6c000000-0000-4000-8000-000000000001
+      topology_id: 6c000000-0000-4000-8000-000000000002
+      out_dir: data/
+    outcome: generated
+    capture: {instance: dataset, event: patchback.dataset.DatasetGenerated, field: dataset_id}
+
+  - at: 2026-10-22T12:00:04Z
+    command: patchback.dataset.OpenSplit
+    actor: patchback.dataset.Operator
+    input:
+      dataset_id: {$instance: dataset}
+      role: Train
+      sample_count: 50016
+    outcome: opened
+    capture: {instance: train, event: patchback.dataset.SplitOpened, field: dataset_split_id}
+
+  - at: 2026-10-22T12:00:05Z
+    command: patchback.dataset.WriteDenseFile
+    actor: patchback.dataset.Operator
+    input:
+      dataset_split_id: {$instance: train}
+      kind: X
+      path: data/train/x.f32
+      rows: 50016
+      columns: 32
+      byte_count: 6402048
+    outcome: written
+    capture: {instance: x, event: patchback.dataset.DenseFileWritten, field: dense_data_file_id}
+
+  - at: 2026-10-22T12:00:06Z
+    command: patchback.dataset.WriteDenseFile
+    actor: patchback.dataset.Operator
+    input:
+      dataset_split_id: {$instance: train}
+      kind: Y
+      path: data/train/y.f32
+      rows: 50016
+      columns: 8
+      byte_count: 1600512
+    outcome: written
+    capture: {instance: y, event: patchback.dataset.DenseFileWritten, field: dense_data_file_id}
+
+  - at: 2026-10-22T12:00:07Z
+    command: patchback.dataset.FinishSplit
+    actor: patchback.dataset.Operator
+    input:
+      dataset_split_id: {$instance: train}
+    outcome: written
+
+  - at: 2026-10-22T12:00:08Z
+    command: patchback.model.PlanTrainingRun
+    actor: patchback.model.Operator
+    input:
+      model_spec_pin_id: {$instance: pin}
+      backend: Cpu
+    outcome: planned
+    capture: {instance: run, event: patchback.model.TrainingRunPlanned, field: training_run_id}
+
+  - at: 2026-10-22T12:00:09Z
+    command: patchback.model.BindModelSource
+    actor: patchback.model.Operator
+    input:
+      training_run_id: {$instance: run}
+      model_source_id: {$instance: source}
+    outcome: bound
+
+  - at: 2026-10-22T12:00:10Z
+    command: patchback.model.StartTrainingRun
+    actor: patchback.model.Operator
+    input:
+      training_run_id: {$instance: run}
+      data_split_id: {$instance: train}
+      eval_split_id: null
+    outcome: started
+
+  - at: 2026-10-22T12:00:11Z
+    command: patchback.model.FinishTrainingRun
+    actor: patchback.model.Operator
+    input:
+      training_run_id: {$instance: run}
+      exit_status: 0
+    outcome: completed
+
+  - at: 2026-10-22T12:00:13Z
+    command: patchback.model.ExportWeights
+    actor: patchback.model.Operator
+    input:
+      training_run_id: {$instance: run}
+      feature_contract_id: 6c000000-0000-4000-8000-000000000001
+      w1_name: "@PatchRegressor.w1"
+      w1_rows: 32
+      w1_columns: 64
+      w1_elements: 2048
+      w2_name: "@PatchRegressor.w2"
+      w2_rows: 64
+      w2_columns: 8
+      w2_elements: 512
+    outcome: exported
+    capture: {instance: artifact, event: patchback.model.WeightsExported, field: weight_artifact_id}
+
+  - at: 2026-10-22T12:00:14Z
+    command: patchback.model.Predict
+    actor: patchback.model.Operator
+    input:
+      weight_artifact_id: {$instance: artifact}
+      feature_contract_id: 6c000000-0000-4000-8000-0000000000a2
+      feature_count: 32
+    outcome: feature-contract-mismatch
+    error:
+      name: patchback.model.FeatureContractMismatch
+
+  - at: 2026-10-22T12:00:15Z
+    command: patchback.model.Predict
+    actor: patchback.model.Operator
+    input:
+      weight_artifact_id: {$instance: artifact}
+      feature_contract_id: 6c000000-0000-4000-8000-000000000001
+      feature_count: 31
+    outcome: wrong-feature-count
+    error:
+      name: patchback.model.WrongFeatureCount
+
+  - at: 2026-10-22T12:00:16Z
+    command: patchback.model.Predict
+    actor: patchback.model.Operator
+    input:
+      weight_artifact_id: {$instance: artifact}
+      feature_contract_id: 6c000000-0000-4000-8000-000000000001
+      feature_count: 32
+    outcome: corrupt-artifact
+    error:
+      name: patchback.model.CorruptWeightArtifact
+
+  - at: 2026-10-22T12:00:17Z
+    command: patchback.model.Predict
+    actor: patchback.model.Operator
+    input:
+      weight_artifact_id: {$instance: artifact}
+      feature_contract_id: 6c000000-0000-4000-8000-000000000001
+      feature_count: 32
+    outcome: non-finite-feature
+    error:
+      name: patchback.model.NonFiniteFeature
+
+  - at: 2026-10-22T12:00:18Z
+    command: patchback.model.Predict
+    actor: patchback.model.Operator
+    input:
+      weight_artifact_id: 6c000000-0000-4000-8000-0000000000fb
+      feature_contract_id: 6c000000-0000-4000-8000-000000000001
+      feature_count: 32
+    outcome: unknown-artifact
+    error:
+      name: patchback.model.UnknownWeightArtifact

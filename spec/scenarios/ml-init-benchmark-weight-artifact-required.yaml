@@ -1,0 +1,32 @@
+# DESIGN.md 13 B compares arms that need a trained regressor; an ML-init benchmark without a weight
+# artifact cannot run them and is refused. A holdout of zero examples has no median and is refused.
+type: ess-scenario/1
+domain: patchback.fit
+scenario: ml-init-benchmark-weight-artifact-required
+summary: An ML-init benchmark without a weight artifact is refused with WeightArtifactRequired, and a benchmark over an empty holdout with InvalidHoldoutSize.
+
+timeline:
+  - at: 2026-10-22T14:00:00Z
+    command: patchback.fit.StartBenchmark
+    actor: patchback.fit.Operator
+    input:
+      kind: MlInit
+      holdout_split_id: 3e9a4c20-0000-4000-8000-000000000301
+      seed: 1234
+      example_count: 200
+    outcome: weight-artifact-required
+    error:
+      name: patchback.fit.WeightArtifactRequired
+
+  - at: 2026-10-22T14:00:01Z
+    command: patchback.fit.StartBenchmark
+    actor: patchback.fit.Operator
+    input:
+      kind: MlInit
+      holdout_split_id: 3e9a4c20-0000-4000-8000-000000000301
+      seed: 1234
+      example_count: 0
+      weight_artifact_id: 3e9a4c20-0000-4000-8000-000000000302
+    outcome: invalid-holdout-size
+    error:
+      name: patchback.fit.InvalidHoldoutSize

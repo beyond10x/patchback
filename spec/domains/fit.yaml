@@ -1,0 +1,1849 @@
+domain: patchback.fit
+
+summary: >-
+  Closed-loop inverse synthesis: comparisons of a rendering with a reference, bounded
+  derivative-free fit runs, ranked topology candidates, the artifacts a fit run writes, and the
+  benchmarks that judge the optimizer (DESIGN.md sections 9, 10, 11, 12, 13, 15).
+
+types:
+  - name: patchback.fit.FitRunId
+    kind: newtype
+    of: Uuid
+
+  - name: patchback.fit.CandidateId
+    kind: newtype
+    of: Uuid
+
+  - name: patchback.fit.ComparisonId
+    kind: newtype
+    of: Uuid
+
+  - name: patchback.fit.BenchmarkId
+    kind: newtype
+    of: Uuid
+
+  # DESIGN.md 9.1: the four loss components, each a normalized difference.
+  - name: patchback.fit.LossComponents
+    kind: struct
+    naming:
+      summary: >-
+        The four component values of the comparison loss of DESIGN.md 9.1; the loss code logs them
+        for every candidate.
+    fields:
+      - name: log_spectral
+        type: Decimal
+      - name: envelope
+        type: Decimal
+      - name: transient
+        type: Decimal
+      - name: band_energy
+        type: Decimal
+
+  # DESIGN.md 9.1: initial weights 0.45, 0.25, 0.15, 0.15, "hypotheses to benchmark".
+  # UNMAPPED: DESIGN.md 9.1 names the initial weights but no constraint on them (non-negative,
+  # summing to 1, or free). No invariant is declared. Open question for the owner.
+  - name: patchback.fit.LossWeights
+    kind: struct
+    naming:
+      summary: >-
+        The weights of the four loss components; DESIGN.md 9.1 starts at log_spectral 0.45,
+        envelope 0.25, transient 0.15, band_energy 0.15 and treats them as hypotheses.
+    fields:
+      - name: log_spectral
+        type: Decimal
+      - name: envelope
+        type: Decimal
+      - name: transient
+        type: Decimal
+      - name: band_energy
+        type: Decimal
+
+  # DESIGN.md 9.2 step 1: "from the ModelSpec regressor or a fixed safe default if no weights are
+  # available".
+  - name: patchback.fit.InitSource
+    kind: enum
+    variants: [DefaultPatch, RegressorPrediction]
+
+  # DESIGN.md 10: V0 known note events, V1 estimated with confidence.
+  - name: patchback.fit.NoteSource
+    kind: enum
+    variants: [Known, Estimated]
+
+  # DESIGN.md 6.1 "isolated single-note", 13 Milestone C "short bass/lead phrase".
+  - name: patchback.fit.FitScope
+    kind: enum
+    variants: [SingleNote, Phrase]
+
+  # DESIGN.md 9.2 step 4 and 12.3: the bounds a run stops at.
+  - name: patchback.fit.StopReason
+    kind: enum
+    variants: [RenderBudgetExhausted, TimeBudgetExhausted, RestartsExhausted, ImprovementBelowThreshold]
+
+  # UNMAPPED: DESIGN.md 9.2 step 5 and 12.3 imply a run can end without a valid patch but list no
+  # failure causes. These two are the ones the sections imply (every candidate non-finite; the
+  # renderer refusing the topology); the full set is an open question for the owner.
+  - name: patchback.fit.FailureReason
+    kind: enum
+    variants: [NoValidCandidate, RendererFault]
+
+  - name: patchback.fit.SearchBound
+    kind: enum
+    variants: [RenderEvaluations, WallTime, Restarts]
+
+  - name: patchback.fit.FitResultsId
+    kind: newtype
+    of: Uuid
+
+  # DESIGN.md 12.2 Sound matching, 13 A (engine baseline) and 13 B (ML init).
+  - name: patchback.fit.BenchmarkKind
+    kind: enum
+    variants: [EngineBaseline, MlInit]
+
+  # DESIGN.md 12.2: ">=20% reduction in median normalized audio loss ... a go/no-go experiment
+  # target, not a guaranteed result". A verdict, never a pass or fail of the benchmark.
+  - name: patchback.fit.TargetVerdict
+    kind: enum
+    variants: [Met, NotMet]
+
+entities:
+  # DESIGN.md 11 `patchback compare --reference reference.wav --candidate reconstructed.wav`.
+  - name: patchback.fit.Comparison
+    naming:
+      summary: >-
+        One comparison of a candidate rendering with a reference recording: the loss components,
+        their weights and the weighted total (DESIGN.md 9.1, 11 `patchback compare`).
+    identity:
+      name: comparison_id
+      type: patchback.fit.ComparisonId
+    fields:
+      - name: reference_clip_id
+        type: patchback.audio.AudioClipId
+      - name: candidate_clip_id
+        type: patchback.audio.AudioClipId
+      - name: components
+        type: patchback.fit.LossComponents
+      - name: weights
+        type: patchback.fit.LossWeights
+      - name: total_loss
+        type: Decimal
+        summary: The weighted sum of the components (DESIGN.md 9.1); computed by the loss code.
+    relations:
+      - name: reference
+        kind: references
+        target: patchback.audio.AudioClip
+        cardinality: one
+        via: reference_clip_id
+      - name: candidate
+        kind: references
+        target: patchback.audio.AudioClip
+        cardinality: one
+        via: candidate_clip_id
+    lifecycle:
+      initial: Computed
+      states: [Computed]
+      terminal: [Computed]
+
+  # DESIGN.md 9.2, 11 `patchback fit --input reference.wav --out results/ --max-renders 2000`,
+  # 12.1 Optimization, 12.3 "Bound ... optimizer time".
+  # UNMAPPED: the brief asks for a "candidate bound"; DESIGN.md 9.2 step 2 names "several seeded,
+  # bounded restarts" and 9.3 "a small ranked candidate set", and neither gives a count. This
+  # model reads the candidate bound as max_restarts (9.2 step 2). Open question for the owner.
+  # UNMAPPED: DESIGN.md 9.2 gives "up to 2,000 render evaluations per note" as a "tunable offline
+  # upper bound"; whether max_renders above 2000, or a phrase budget other than 2000 per note
+  # (DESIGN.md 10), is refused is not settled. Only a non-positive bound is refused here.
+  - name: patchback.fit.FitRun
+    naming:
+      summary: >-
+        One bounded derivative-free fit of a patch to a reference recording, driven by a note
+        sequence, within one known topology (DESIGN.md 9.2). It holds the retained best valid
+        candidate, which only a strictly lower loss replaces.
+    identity:
+      name: fit_run_id
+      type: patchback.fit.FitRunId
+    fields:
+      - name: reference_clip_id
+        type: patchback.audio.AudioClipId
+      - name: reference_origin
+        type: patchback.audio.AudioOrigin
+      - name: reference_provenance
+        type: Optional<String>
+        summary: Recorded provenance of an external recording (DESIGN.md 12.3); carried into the report.
+      - name: note_sequence_id
+        type: patchback.score.NoteSequenceId
+      - name: note_source
+        type: patchback.fit.NoteSource
+      - name: note_confidence
+        type: Optional<Decimal>
+        summary: >-
+          Confidence of the estimated note sequence (DESIGN.md 6.1, 10); carried into the report
+          so the uncertainty of note estimation is not lost.
+      - name: scope
+        type: patchback.fit.FitScope
+      - name: topology_id
+        type: patchback.patch.TopologyId
+      - name: init
+        type: patchback.fit.InitSource
+      - name: weight_artifact_id
+        type: Optional<patchback.model.WeightArtifactId>
+      - name: analysis_id
+        type: Optional<patchback.analysis.AnalysisId>
+      - name: seed
+        type: Integer
+      - name: max_renders
+        type: Integer
+        summary: Upper bound on renderer calls (DESIGN.md 9.2 step 4, 11 `--max-renders`).
+      - name: max_wall_time_ms
+        type: Integer
+        summary: Upper bound on optimizer wall time (DESIGN.md 12.3).
+      - name: max_restarts
+        type: Integer
+        summary: Number of seeded bounded restarts (DESIGN.md 9.2 step 2).
+      - name: improvement_threshold
+        type: Decimal
+        summary: The search stops when improvement falls below it (DESIGN.md 9.2 step 4).
+      - name: evaluations
+        type: Integer
+        summary: Render evaluations spent so far, valid and invalid candidates alike.
+      - name: initial_loss
+        type: Optional<Decimal>
+        summary: Loss of the first valid candidate (the regressor prediction or the default); the report's loss before.
+      - name: best_loss
+        type: Optional<Decimal>
+        summary: Loss of the retained best valid candidate; the report's loss after.
+      - name: best_patch_id
+        type: Optional<patchback.patch.PatchId>
+      - name: best_render_id
+        type: Optional<patchback.audio.RenderId>
+      - name: best_components
+        type: Optional<patchback.fit.LossComponents>
+      - name: stop_reason
+        type: Optional<patchback.fit.StopReason>
+      - name: failure_reason
+        type: Optional<patchback.fit.FailureReason>
+      - name: wall_time_ms
+        type: Optional<Integer>
+    invariants:
+      - max_renders > 0
+      - max_wall_time_ms > 0
+      - max_restarts > 0
+      - evaluations >= 0
+      - evaluations <= max_renders
+    relations:
+      - name: reference
+        kind: references
+        target: patchback.audio.AudioClip
+        cardinality: one
+        via: reference_clip_id
+      - name: note_sequence
+        kind: references
+        target: patchback.score.NoteSequence
+        cardinality: one
+        via: note_sequence_id
+      - name: topology
+        kind: references
+        target: patchback.patch.Topology
+        cardinality: one
+        via: topology_id
+      - name: weight_artifact
+        kind: references
+        target: patchback.model.WeightArtifact
+        cardinality: one
+        via: weight_artifact_id
+      - name: analysis
+        kind: references
+        target: patchback.analysis.Analysis
+        cardinality: one
+        via: analysis_id
+      - name: best_patch
+        kind: references
+        target: patchback.patch.Patch
+        cardinality: one
+        via: best_patch_id
+      - name: best_render
+        kind: references
+        target: patchback.audio.Render
+        cardinality: one
+        via: best_render_id
+    lifecycle:
+      initial: Running
+      states: [Running, Completed, Failed]
+      terminal: [Completed, Failed]
+      transitions:
+        - name: complete
+          from: [Running]
+          to: Completed
+        - name: fail
+          from: [Running]
+          to: Failed
+
+  # DESIGN.md 5.4, 9.3, 13 Milestone D, ADR-003, ADR-009: candidate topologies rendered and
+  # ranked with an explicit complexity penalty, the ranking transparent.
+  # UNMAPPED: DESIGN.md 9.3 names the complexity penalty's inputs (nodes, edges, control routes)
+  # but not its formula or weight; the penalty is supplied by the optimizer and only its sum with
+  # the loss (score) is defined here.
+  # UNMAPPED: DESIGN.md 13 D says "bounded candidate topologies" and gives no count; no bound on
+  # candidates per run is modelled.
+  # UNMAPPED: tie-breaking between equal scores (fewer nodes first, or first proposed) is not
+  # settled; an equal score does not block selection here.
+  - name: patchback.fit.Candidate
+    naming:
+      summary: >-
+        One candidate topology of a fit run, with the loss of its best patch, its graph size and
+        the complexity penalty that biases the ranking towards simpler patches (DESIGN.md 9.3).
+    identity:
+      name: candidate_id
+      type: patchback.fit.CandidateId
+    fields:
+      - name: fit_run_id
+        type: patchback.fit.FitRunId
+      - name: topology_id
+        type: patchback.patch.TopologyId
+      - name: patch_id
+        type: patchback.patch.PatchId
+      - name: loss
+        type: Decimal
+      - name: node_count
+        type: Integer
+      - name: edge_count
+        type: Integer
+      - name: control_route_count
+        type: Integer
+      - name: complexity_penalty
+        type: Decimal
+      - name: score
+        type: Decimal
+        summary: loss + complexity_penalty; lower ranks first (DESIGN.md 9.3 audible match + simplicity).
+    invariants:
+      - node_count > 0
+      - edge_count >= 0
+      - control_route_count >= 0
+    relations:
+      - name: fit_run
+        kind: references
+        target: patchback.fit.FitRun
+        cardinality: one
+        via: fit_run_id
+      - name: topology
+        kind: references
+        target: patchback.patch.Topology
+        cardinality: one
+        via: topology_id
+      - name: patch
+        kind: references
+        target: patchback.patch.Patch
+        cardinality: one
+        via: patch_id
+    lifecycle:
+      initial: Proposed
+      states: [Proposed, Selected]
+      terminal: [Selected]
+      transitions:
+        - name: select
+          from: [Proposed]
+          to: Selected
+
+  # DESIGN.md 11 results/ (patch.patch, notes.events, reconstructed.wav, report.txt, run.meta)
+  # and 15 (recovered.patch + reconstructed.wav + report.txt).
+  # UNMAPPED: DESIGN.md 11 lists the files "produced per fit run" and does not say whether a run
+  # may write its results more than once (to a second --out); no uniqueness is modelled.
+  # UNMAPPED: whether a failed run writes a diagnostic report.txt (without patch.patch) is not
+  # settled; this model writes nothing for a failed run.
+  - name: patchback.fit.FitResults
+    naming:
+      summary: >-
+        The results directory a completed fit run writes: the recovered .patch, the reconstructed
+        WAV, notes.events, report.txt and run.meta (DESIGN.md 11, 15). The report's values are the
+        run's, read through the fit_run reference.
+    identity:
+      name: fit_results_id
+      type: patchback.fit.FitResultsId
+    fields:
+      - name: fit_run_id
+        type: patchback.fit.FitRunId
+      - name: out_dir
+        type: String
+      - name: recovered_patch_id
+        type: Optional<patchback.patch.PatchId>
+      - name: reconstructed_wav_id
+        type: patchback.audio.WavFileId
+      - name: warnings
+        type: List<String>
+        summary: Report warnings (DESIGN.md 11 report.txt), e.g. limiter engagement or clamped regressor outputs.
+    relations:
+      - name: fit_run
+        kind: references
+        target: patchback.fit.FitRun
+        cardinality: one
+        via: fit_run_id
+      - name: recovered_patch
+        kind: references
+        target: patchback.patch.Patch
+        cardinality: one
+        via: recovered_patch_id
+      - name: reconstructed_wav
+        kind: references
+        target: patchback.audio.WavFile
+        cardinality: one
+        via: reconstructed_wav_id
+    lifecycle:
+      initial: Written
+      states: [Written]
+      terminal: [Written]
+
+  # DESIGN.md 12.2 Sound matching, 13 A demo and B "Compare default vs ML-init vs
+  # ML-init-plus-search". One Benchmark is one holdout, so every arm it records ran on the same
+  # holdout by construction.
+  # UNMAPPED: Milestone A (13) runs before the dataset domain exists (Milestone B). The draft
+  # approval-record:engine-baseline-holdout makes the engine baseline's "seeded holdout set" (12.2)
+  # a set of synthesized reference clips, not a DatasetSplit; DESIGN.md does not say so yet. This
+  # model still references a DatasetSplit until the owner settles it (DESIGN.md section 17, OQ-28).
+  # UNMAPPED: the holdout split's role (test, not train or validation, DESIGN.md 7.1) is a fact of
+  # patchback.dataset; no guard reads it here.
+  - name: patchback.fit.Benchmark
+    naming:
+      summary: >-
+        One benchmark of the closed-loop optimizer over a seeded synthetic holdout, recording the
+        median audio loss of each arm and, for the engine baseline, whether the go/no-go target
+        was met (DESIGN.md 12.2).
+    identity:
+      name: benchmark_id
+      type: patchback.fit.BenchmarkId
+    fields:
+      - name: kind
+        type: patchback.fit.BenchmarkKind
+      - name: holdout_split_id
+        type: patchback.dataset.DatasetSplitId
+      - name: seed
+        type: Integer
+      - name: example_count
+        type: Integer
+      - name: weight_artifact_id
+        type: Optional<patchback.model.WeightArtifactId>
+      - name: default_median_loss
+        type: Optional<Decimal>
+      - name: default_search_median_loss
+        type: Optional<Decimal>
+      - name: raw_regressor_median_loss
+        type: Optional<Decimal>
+      - name: regressor_search_median_loss
+        type: Optional<Decimal>
+      - name: median_loss_reduction_percent
+        type: Optional<Decimal>
+      - name: target_verdict
+        type: Optional<patchback.fit.TargetVerdict>
+      - name: default_search_median_evaluations
+        type: Optional<Integer>
+      - name: regressor_search_median_evaluations
+        type: Optional<Integer>
+      - name: wall_time_ms
+        type: Optional<Integer>
+      - name: listening_examples
+        type: Optional<List<String>>
+        summary: Paths of listening examples recorded beside the metrics (DESIGN.md 12.2).
+    invariants:
+      - example_count > 0
+    relations:
+      - name: holdout
+        kind: references
+        target: patchback.dataset.DatasetSplit
+        cardinality: one
+        via: holdout_split_id
+      - name: weight_artifact
+        kind: references
+        target: patchback.model.WeightArtifact
+        cardinality: one
+        via: weight_artifact_id
+    lifecycle:
+      initial: Running
+      states: [Running, Completed]
+      terminal: [Completed]
+      transitions:
+        - name: complete
+          from: [Running]
+          to: Completed
+
+actors:
+  - name: patchback.fit.Operator
+    naming:
+      display: Operator
+      summary: The person running the patchback CLI (DESIGN.md 11).
+    may:
+      - patchback.fit.CompareAudio
+      - patchback.fit.StartFit
+      - patchback.fit.WriteFitResults
+      - patchback.fit.SelectCandidate
+      - patchback.fit.StartBenchmark
+      - patchback.fit.RecordBaselineResult
+      - patchback.fit.RecordMlInitResult
+
+  - name: patchback.fit.Optimizer
+    naming:
+      display: Optimizer
+      summary: >-
+        The derivative-free search loop inside `patchback fit` (DESIGN.md 9.2): it scores each
+        rendered candidate and ends the run at a bound.
+    may:
+      - patchback.fit.EvaluateCandidate
+      - patchback.fit.RejectCandidate
+      - patchback.fit.CompleteFit
+      - patchback.fit.FailFit
+      - patchback.fit.ProposeCandidate
+
+errors:
+  - name: patchback.fit.ClipNotFound
+    summary: No imported clip has this identity; nothing is fitted or compared.
+    fields:
+      - name: audio_clip_id
+        type: patchback.audio.AudioClipId
+
+  - name: patchback.fit.NoteSequenceNotFound
+    fields:
+      - name: note_sequence_id
+        type: patchback.score.NoteSequenceId
+
+  - name: patchback.fit.TopologyNotFound
+    fields:
+      - name: topology_id
+        type: patchback.patch.TopologyId
+
+  - name: patchback.fit.AnalysisNotFound
+    fields:
+      - name: analysis_id
+        type: Optional<patchback.analysis.AnalysisId>
+
+  - name: patchback.fit.InvalidSearchBound
+    summary: A search bound is not positive; a fit runs only within explicit bounds (DESIGN.md 9.2, 12.3).
+    fields:
+      - name: bound
+        type: patchback.fit.SearchBound
+      - name: value
+        type: Integer
+
+  - name: patchback.fit.NoteConfidenceMissing
+    summary: >-
+      An estimated note sequence was offered without its confidence; estimation uncertainty must
+      be carried, not dropped (DESIGN.md 6.1, 10, 13 Milestone C).
+    fields:
+      - name: note_sequence_id
+        type: patchback.score.NoteSequenceId
+
+  - name: patchback.fit.AnalysisRequired
+    summary: >-
+      A regressor-seeded fit names a weight artifact but no analysis to take the feature vector
+      from (DESIGN.md 6.3, 8.2).
+    fields:
+      - name: weight_artifact_id
+        type: patchback.model.WeightArtifactId
+
+  - name: patchback.fit.FeatureContractMismatch
+    summary: >-
+      The weight artifact was trained against another feature-contract version than the analysis
+      was computed with (DESIGN.md 6.3, 8.2 step 3).
+    fields:
+      - name: weight_artifact_id
+        type: Optional<patchback.model.WeightArtifactId>
+      - name: analysis_id
+        type: Optional<patchback.analysis.AnalysisId>
+
+  - name: patchback.fit.ReferenceSilent
+    summary: The reference holds no note above the silence threshold; nothing is fitted (DESIGN.md 6.2, 12.1).
+    fields:
+      - name: reference_clip_id
+        type: patchback.audio.AudioClipId
+
+  - name: patchback.fit.PitchAmbiguous
+    summary: >-
+      The fundamental of the reference cannot be estimated with enough confidence; the
+      limitation is surfaced rather than guessed away (DESIGN.md 6.2, 12.1).
+    fields:
+      - name: reference_clip_id
+        type: patchback.audio.AudioClipId
+
+  - name: patchback.fit.FitRunNotFound
+    summary: No fit run carries this identity.
+    fields:
+      - name: fit_run_id
+        type: patchback.fit.FitRunId
+
+  - name: patchback.fit.FitNotRunning
+    summary: The fit run has ended, so it takes no further candidate and no second ending.
+    fields:
+      - name: fit_run_id
+        type: patchback.fit.FitRunId
+      - name: state
+        type: patchback.fit.FitRun.State
+
+  - name: patchback.fit.RenderBudgetExhausted
+    summary: >-
+      The run has spent max_renders render evaluations; no further candidate is evaluated
+      (DESIGN.md 9.2 step 4, 12.1 bounded evaluations).
+    fields:
+      - name: fit_run_id
+        type: patchback.fit.FitRunId
+
+  - name: patchback.fit.NoValidCandidate
+    summary: >-
+      The run holds no valid candidate, so it cannot complete with a recovered patch; it can only
+      fail (DESIGN.md 9.2 step 5).
+    fields:
+      - name: fit_run_id
+        type: patchback.fit.FitRunId
+
+  - name: patchback.fit.FailedRunHasNoPatch
+    summary: A failed fit run writes no recovered patch and no reconstruction (DESIGN.md 9.2 step 5).
+    fields:
+      - name: fit_run_id
+        type: patchback.fit.FitRunId
+
+  - name: patchback.fit.FitStillRunning
+    summary: The fit run has not ended, so it has no final patch to write.
+    fields:
+      - name: fit_run_id
+        type: patchback.fit.FitRunId
+
+  - name: patchback.fit.InvalidCandidateGraph
+    summary: A candidate's graph counts are impossible (no node, or a negative count).
+    fields:
+      - name: node_count
+        type: Integer
+
+  - name: patchback.fit.CandidateNotFound
+    summary: No candidate carries this identity.
+    fields:
+      - name: candidate_id
+        type: patchback.fit.CandidateId
+
+  - name: patchback.fit.BetterCandidateExists
+    summary: >-
+      Another candidate of the same run ranks above this one (lower score), so this one cannot be
+      selected (DESIGN.md 9.3, ADR-009).
+    fields:
+      - name: candidate_id
+        type: patchback.fit.CandidateId
+
+  - name: patchback.fit.CandidateStateConflict
+    summary: The candidate is already selected.
+    fields:
+      - name: candidate_id
+        type: patchback.fit.CandidateId
+      - name: state
+        type: patchback.fit.Candidate.State
+
+  - name: patchback.fit.WeightArtifactRequired
+    summary: An ML-init benchmark names no weight artifact to predict from (DESIGN.md 13 B).
+    fields:
+      - name: holdout_split_id
+        type: patchback.dataset.DatasetSplitId
+
+  - name: patchback.fit.InvalidHoldoutSize
+    summary: The holdout set holds no example.
+    fields:
+      - name: example_count
+        type: Integer
+
+  - name: patchback.fit.BenchmarkNotFound
+    summary: No benchmark carries this identity.
+    fields:
+      - name: benchmark_id
+        type: patchback.fit.BenchmarkId
+
+  - name: patchback.fit.BenchmarkKindMismatch
+    summary: The result recorded is for the other kind of benchmark.
+    fields:
+      - name: benchmark_id
+        type: patchback.fit.BenchmarkId
+      - name: kind
+        type: patchback.fit.BenchmarkKind
+
+  - name: patchback.fit.BenchmarkStateConflict
+    summary: The benchmark already holds its result.
+    fields:
+      - name: benchmark_id
+        type: patchback.fit.BenchmarkId
+      - name: state
+        type: patchback.fit.Benchmark.State
+
+  - name: patchback.fit.SampleRateMismatch
+    summary: The reference and the candidate are not at the same sample rate (DESIGN.md 5.3, no silent conversion).
+    fields:
+      - name: reference_clip_id
+        type: patchback.audio.AudioClipId
+      - name: candidate_clip_id
+        type: patchback.audio.AudioClipId
+
+  - name: patchback.fit.LengthOutsideAlignment
+    summary: >-
+      The reference and the candidate differ in length by more than time alignment absorbs
+      (DESIGN.md 9.1: alignment before the losses).
+    fields:
+      - name: reference_clip_id
+        type: patchback.audio.AudioClipId
+      - name: candidate_clip_id
+        type: patchback.audio.AudioClipId
+
+commands:
+  - name: patchback.fit.CompareAudio
+    naming:
+      wire: compare
+      display: Compare audio
+      summary: >-
+        Align a candidate rendering with a reference and record the four loss components, their
+        weights and the weighted total (DESIGN.md 9.1, 11 `patchback compare`).
+    input:
+      - name: reference_clip_id
+        type: patchback.audio.AudioClipId
+      - name: candidate_clip_id
+        type: patchback.audio.AudioClipId
+      - name: weights
+        type: patchback.fit.LossWeights
+    # Both clips must exist (when_related). Their sample rates live on patchback.audio.AudioClip,
+    # whose invariant sample_rate_hz == 48000 means two imported clips never differ; a related
+    # predicate reads one row and cannot compare it with a second, so the mismatch stays external.
+    # UNMAPPED: whether the rate refusal is kept for a future second internal rate, or dropped as
+    # unreachable while every clip is 48 kHz, is the owner's call.
+    # UNMAPPED: DESIGN.md 9.1 says "Time alignment and note matching must be performed before
+    # computing these losses" and states no tolerance: how far two lengths may differ before
+    # alignment cannot absorb it (a fixed frame count, a fraction of the reference, or the note
+    # tail) is not settled. Open question for the owner.
+    outcomes:
+      - name: unknown-reference
+        when_related: {via: input.reference_clip_id, exists: false}
+        error: patchback.fit.ClipNotFound
+        payload:
+          patchback.fit.ClipNotFound: {audio_clip_id: input.reference_clip_id}
+
+      - name: unknown-candidate
+        when_related: {via: input.candidate_clip_id, exists: false}
+        error: patchback.fit.ClipNotFound
+        payload:
+          patchback.fit.ClipNotFound: {audio_clip_id: input.candidate_clip_id}
+
+      - name: sample-rate-mismatch
+        external: the reference and candidate clips carry different sample rates
+        error: patchback.fit.SampleRateMismatch
+        payload:
+          patchback.fit.SampleRateMismatch:
+            reference_clip_id: input.reference_clip_id
+            candidate_clip_id: input.candidate_clip_id
+        summary: Nothing is compared; no Comparison is recorded.
+
+      - name: length-outside-alignment
+        external: the clip lengths differ by more than the alignment rule absorbs
+        error: patchback.fit.LengthOutsideAlignment
+        payload:
+          patchback.fit.LengthOutsideAlignment:
+            reference_clip_id: input.reference_clip_id
+            candidate_clip_id: input.candidate_clip_id
+        summary: Nothing is compared; no Comparison is recorded.
+
+      - name: compared
+        creates: patchback.fit.Comparison
+        instance: comparison_id
+        sets:
+          reference_clip_id: input.reference_clip_id
+          candidate_clip_id: input.candidate_clip_id
+          components: {generated: true}
+          weights: input.weights
+          total_loss: {generated: true}
+        emits: [patchback.fit.AudioCompared]
+        payload:
+          patchback.fit.AudioCompared:
+            comparison_id: {generated: true}
+            reference_clip_id: input.reference_clip_id
+            candidate_clip_id: input.candidate_clip_id
+            weights: input.weights
+        summary: The Comparison records every component, the weights used and the weighted total.
+
+  - name: patchback.fit.StartFit
+    naming:
+      wire: fit
+      display: Start a fit
+      summary: >-
+        Start a bounded fit of a patch to a reference within one topology, seeded from a weight
+        artifact's prediction when one is named and from the safe default patch otherwise
+        (DESIGN.md 9.2, 11 `patchback fit`, 15).
+    input:
+      - name: reference_clip_id
+        type: patchback.audio.AudioClipId
+      - name: note_sequence_id
+        type: patchback.score.NoteSequenceId
+      - name: note_source
+        type: patchback.fit.NoteSource
+      - name: note_confidence
+        type: Optional<Decimal>
+      - name: scope
+        type: patchback.fit.FitScope
+      - name: topology_id
+        type: patchback.patch.TopologyId
+      - name: weight_artifact_id
+        type: Optional<patchback.model.WeightArtifactId>
+      - name: analysis_id
+        type: Optional<patchback.analysis.AnalysisId>
+      - name: seed
+        type: Integer
+      - name: max_renders
+        type: Integer
+      - name: max_wall_time_ms
+        type: Integer
+      - name: max_restarts
+        type: Integer
+      - name: improvement_threshold
+        type: Decimal
+    # The reference's origin and provenance are read from the clip (patchback.audio.AudioClip)
+    # and copied into the run for the report. The clip's own import refuses an external recording
+    # without provenance (patchback.audio.ImportWav provenance-missing), so every clip that exists
+    # carries it and the fit declares no second provenance refusal.
+    # UNMAPPED: the feature contract lives on patchback.model.WeightArtifact
+    # (feature_contract_id); patchback.analysis.Analysis records no feature contract, so the two
+    # cannot be compared by a when_related guard and the mismatch stays an external refusal until
+    # the owner decides whether an analysis is made under a contract.
+    # UNMAPPED: the weight artifact's existence and state are not guarded: patchback.model is
+    # still being drafted. Open question for the model owner.
+    # UNMAPPED: no section says whether the note sequence must be written for a patch of the
+    # fit's topology; the model checks only that each referenced row exists.
+    # UNMAPPED: DESIGN.md 10 and 13 C do not say whether a Phrase fit must use an Estimated note
+    # sequence or whether a SingleNote fit may; no combination of scope and note_source is refused.
+    outcomes:
+      - name: invalid-render-bound
+        when: max_renders <= 0
+        error: patchback.fit.InvalidSearchBound
+        payload:
+          patchback.fit.InvalidSearchBound: {bound: RenderEvaluations, value: input.max_renders}
+
+      - name: invalid-time-bound
+        when: max_wall_time_ms <= 0
+        error: patchback.fit.InvalidSearchBound
+        payload:
+          patchback.fit.InvalidSearchBound: {bound: WallTime, value: input.max_wall_time_ms}
+
+      - name: invalid-restart-bound
+        when: max_restarts <= 0
+        error: patchback.fit.InvalidSearchBound
+        payload:
+          patchback.fit.InvalidSearchBound: {bound: Restarts, value: input.max_restarts}
+
+      - name: note-confidence-missing
+        when:
+          all:
+            - note_source == Estimated
+            - not defined(note_confidence)
+        error: patchback.fit.NoteConfidenceMissing
+        payload:
+          patchback.fit.NoteConfidenceMissing: {note_sequence_id: input.note_sequence_id}
+
+      - name: analysis-required
+        when:
+          all:
+            - defined(weight_artifact_id)
+            - not defined(analysis_id)
+        error: patchback.fit.AnalysisRequired
+        payload:
+          patchback.fit.AnalysisRequired: {weight_artifact_id: input.weight_artifact_id}
+
+      - name: unknown-reference
+        when_related: {via: input.reference_clip_id, exists: false}
+        error: patchback.fit.ClipNotFound
+        payload:
+          patchback.fit.ClipNotFound: {audio_clip_id: input.reference_clip_id}
+        summary: The reference must be an imported clip; no run starts.
+
+      - name: unknown-note-sequence
+        when_related: {via: input.note_sequence_id, exists: false}
+        error: patchback.fit.NoteSequenceNotFound
+        payload:
+          patchback.fit.NoteSequenceNotFound: {note_sequence_id: input.note_sequence_id}
+
+      - name: unknown-topology
+        when_related: {via: input.topology_id, exists: false}
+        error: patchback.fit.TopologyNotFound
+        payload:
+          patchback.fit.TopologyNotFound: {topology_id: input.topology_id}
+
+      - name: unknown-analysis
+        when_related: {via: input.analysis_id, exists: false}
+        error: patchback.fit.AnalysisNotFound
+        payload:
+          patchback.fit.AnalysisNotFound: {analysis_id: input.analysis_id}
+
+      - name: feature-contract-mismatch
+        when: defined(weight_artifact_id)
+        external: the weight artifact's feature-contract version differs from the analysis's
+        error: patchback.fit.FeatureContractMismatch
+        payload:
+          patchback.fit.FeatureContractMismatch:
+            weight_artifact_id: input.weight_artifact_id
+            analysis_id: input.analysis_id
+        summary: A regressor-seeded fit across feature-contract versions is refused; no run starts.
+
+      - name: silent-reference
+        external: silence detection finds no note in the reference
+        error: patchback.fit.ReferenceSilent
+        payload:
+          patchback.fit.ReferenceSilent: {reference_clip_id: input.reference_clip_id}
+        summary: Silence is a typed outcome; no run starts and no patch is invented.
+
+      - name: pitch-ambiguous
+        external: the fundamental-frequency estimate falls below its confidence threshold
+        error: patchback.fit.PitchAmbiguous
+        payload:
+          patchback.fit.PitchAmbiguous: {reference_clip_id: input.reference_clip_id}
+        summary: Pitch ambiguity is a typed outcome; no run starts and no pitch is guessed.
+
+      - name: started-seeded
+        when: defined(weight_artifact_id)
+        creates: patchback.fit.FitRun
+        instance: fit_run_id
+        sets:
+          reference_clip_id: input.reference_clip_id
+          reference_origin: {related: {via: input.reference_clip_id, field: origin}}
+          reference_provenance: {related: {via: input.reference_clip_id, field: provenance}}
+          note_sequence_id: input.note_sequence_id
+          note_source: input.note_source
+          note_confidence: input.note_confidence
+          scope: input.scope
+          topology_id: input.topology_id
+          init: RegressorPrediction
+          weight_artifact_id: input.weight_artifact_id
+          analysis_id: input.analysis_id
+          seed: input.seed
+          max_renders: input.max_renders
+          max_wall_time_ms: input.max_wall_time_ms
+          max_restarts: input.max_restarts
+          improvement_threshold: input.improvement_threshold
+          evaluations: 0
+        emits: [patchback.fit.FitStarted]
+        payload:
+          patchback.fit.FitStarted:
+            fit_run_id: {generated: true}
+            reference_clip_id: input.reference_clip_id
+            init: RegressorPrediction
+        summary: The run starts Running from the weight artifact's predicted patch (DESIGN.md 9.2 step 1).
+
+      - name: started
+        creates: patchback.fit.FitRun
+        instance: fit_run_id
+        sets:
+          reference_clip_id: input.reference_clip_id
+          reference_origin: {related: {via: input.reference_clip_id, field: origin}}
+          reference_provenance: {related: {via: input.reference_clip_id, field: provenance}}
+          note_sequence_id: input.note_sequence_id
+          note_source: input.note_source
+          note_confidence: input.note_confidence
+          scope: input.scope
+          topology_id: input.topology_id
+          init: DefaultPatch
+          weight_artifact_id: input.weight_artifact_id
+          analysis_id: input.analysis_id
+          seed: input.seed
+          max_renders: input.max_renders
+          max_wall_time_ms: input.max_wall_time_ms
+          max_restarts: input.max_restarts
+          improvement_threshold: input.improvement_threshold
+          evaluations: 0
+        emits: [patchback.fit.FitStarted]
+        payload:
+          patchback.fit.FitStarted:
+            fit_run_id: {generated: true}
+            reference_clip_id: input.reference_clip_id
+            init: DefaultPatch
+        summary: With no weight artifact the run starts Running from the fixed safe default patch (DESIGN.md 9.2 step 1).
+
+  # The optimizer reports each rendered candidate's measured loss; the model decides what is
+  # retained. DESIGN.md 9.2 step 3 "retaining only improvements", step 5 "never replace it with a
+  # numerically invalid candidate", 12.1 "never worsens retained best candidate".
+  - name: patchback.fit.EvaluateCandidate
+    naming:
+      wire: evaluate-candidate
+      display: Evaluate a candidate
+      summary: >-
+        Count one render evaluation of a valid candidate and retain it only when it is the first
+        valid candidate or strictly better than the retained best (DESIGN.md 9.2, 12.1).
+    input:
+      - name: fit_run_id
+        type: patchback.fit.FitRunId
+      - name: patch_id
+        type: patchback.patch.PatchId
+      - name: render_id
+        type: patchback.audio.RenderId
+      - name: components
+        type: patchback.fit.LossComponents
+      - name: total_loss
+        type: Decimal
+    # UNMAPPED: DESIGN.md 9.2 step 4 stops "when improvement falls below a threshold" and does not
+    # say whether an improvement smaller than improvement_threshold is still retained; this model
+    # retains any strictly lower loss and leaves the threshold to the stop decision.
+    outcomes:
+      - name: no-such-run
+        unknown_instance: true
+        error: patchback.fit.FitRunNotFound
+        payload:
+          patchback.fit.FitRunNotFound: {fit_run_id: input.fit_run_id}
+
+      - name: not-running
+        when_subject:
+          predicate: state != Running
+        error: patchback.fit.FitNotRunning
+        payload:
+          patchback.fit.FitNotRunning: {fit_run_id: input.fit_run_id, state: {subject: state}}
+
+      - name: budget-exhausted
+        when_subject:
+          predicate: evaluations >= max_renders
+        error: patchback.fit.RenderBudgetExhausted
+        payload:
+          patchback.fit.RenderBudgetExhausted: {fit_run_id: input.fit_run_id}
+        summary: The evaluation bound holds; the candidate is not counted and the best is unchanged.
+
+      - name: first-retained
+        when_subject:
+          predicate: not defined(best_loss)
+        updates: patchback.fit.FitRun
+        instance: fit_run_id
+        sets:
+          evaluations: {increment: 1}
+          initial_loss: input.total_loss
+          best_loss: input.total_loss
+          best_patch_id: input.patch_id
+          best_render_id: input.render_id
+          best_components: input.components
+        emits: [patchback.fit.CandidateEvaluated]
+        payload:
+          patchback.fit.CandidateEvaluated:
+            fit_run_id: input.fit_run_id
+            patch_id: input.patch_id
+            components: input.components
+            total_loss: input.total_loss
+            retained: true
+        summary: The first valid candidate becomes both the loss before and the retained best.
+
+      - name: improved
+        when_subject:
+          predicate: best_loss > input.total_loss
+        updates: patchback.fit.FitRun
+        instance: fit_run_id
+        sets:
+          evaluations: {increment: 1}
+          best_loss: input.total_loss
+          best_patch_id: input.patch_id
+          best_render_id: input.render_id
+          best_components: input.components
+        emits: [patchback.fit.CandidateEvaluated]
+        payload:
+          patchback.fit.CandidateEvaluated:
+            fit_run_id: input.fit_run_id
+            patch_id: input.patch_id
+            components: input.components
+            total_loss: input.total_loss
+            retained: true
+        summary: A strictly lower loss replaces the retained best.
+
+      - name: not-improved
+        updates: patchback.fit.FitRun
+        instance: fit_run_id
+        sets:
+          evaluations: {increment: 1}
+        emits: [patchback.fit.CandidateEvaluated]
+        payload:
+          patchback.fit.CandidateEvaluated:
+            fit_run_id: input.fit_run_id
+            patch_id: input.patch_id
+            components: input.components
+            total_loss: input.total_loss
+            retained: false
+        summary: An equal or higher loss is counted and logged; the retained best is unchanged.
+
+  - name: patchback.fit.RejectCandidate
+    naming:
+      wire: reject-candidate
+      display: Reject an invalid candidate
+      summary: >-
+        Count one render evaluation of a numerically invalid candidate (a non-finite render or
+        loss); it never replaces the retained best (DESIGN.md 9.2 step 5, invariant 4).
+    input:
+      - name: fit_run_id
+        type: patchback.fit.FitRunId
+      - name: patch_id
+        type: patchback.patch.PatchId
+    outcomes:
+      - name: no-such-run
+        unknown_instance: true
+        error: patchback.fit.FitRunNotFound
+        payload:
+          patchback.fit.FitRunNotFound: {fit_run_id: input.fit_run_id}
+
+      - name: not-running
+        when_subject:
+          predicate: state != Running
+        error: patchback.fit.FitNotRunning
+        payload:
+          patchback.fit.FitNotRunning: {fit_run_id: input.fit_run_id, state: {subject: state}}
+
+      - name: budget-exhausted
+        when_subject:
+          predicate: evaluations >= max_renders
+        error: patchback.fit.RenderBudgetExhausted
+        payload:
+          patchback.fit.RenderBudgetExhausted: {fit_run_id: input.fit_run_id}
+
+      - name: rejected
+        updates: patchback.fit.FitRun
+        instance: fit_run_id
+        sets:
+          evaluations: {increment: 1}
+        emits: [patchback.fit.CandidateRejected]
+        payload:
+          patchback.fit.CandidateRejected:
+            fit_run_id: input.fit_run_id
+            patch_id: input.patch_id
+        summary: The invalid candidate is counted and logged; the retained best is unchanged.
+
+  - name: patchback.fit.CompleteFit
+    naming:
+      wire: complete-fit
+      display: Complete a fit
+      summary: >-
+        End a running fit at a bound with its retained best valid candidate, recording the stop
+        reason and the wall time (DESIGN.md 9.2 step 4, 12.2, 12.3).
+    input:
+      - name: fit_run_id
+        type: patchback.fit.FitRunId
+      - name: stop_reason
+        type: patchback.fit.StopReason
+      - name: wall_time_ms
+        type: Integer
+    # UNMAPPED: the stop reasons are reported by the optimizer; the model does not check that a
+    # RenderBudgetExhausted stop has evaluations == max_renders, nor the wall time against
+    # max_wall_time_ms. Whether such a mismatch is refused is not settled by DESIGN.md 9.2.
+    outcomes:
+      - name: no-such-run
+        unknown_instance: true
+        error: patchback.fit.FitRunNotFound
+        payload:
+          patchback.fit.FitRunNotFound: {fit_run_id: input.fit_run_id}
+
+      - name: no-valid-candidate
+        when_subject:
+          predicate:
+            all:
+              - state == Running
+              - not defined(best_loss)
+        error: patchback.fit.NoValidCandidate
+        payload:
+          patchback.fit.NoValidCandidate: {fit_run_id: input.fit_run_id}
+        summary: A run with no valid candidate cannot complete; it fails instead.
+
+      - name: completed
+        moves: patchback.fit.FitRun.complete
+        instance: fit_run_id
+        sets:
+          stop_reason: input.stop_reason
+          wall_time_ms: input.wall_time_ms
+        emits: [patchback.fit.FitCompleted]
+        payload:
+          patchback.fit.FitCompleted:
+            fit_run_id: input.fit_run_id
+            stop_reason: input.stop_reason
+            evaluations: {subject: evaluations}
+            wall_time_ms: input.wall_time_ms
+        summary: The run is Completed at its bound, with the reason recorded.
+
+      - name: wrong-state
+        wrong_state: true
+        error: patchback.fit.FitNotRunning
+        payload:
+          patchback.fit.FitNotRunning: {fit_run_id: input.fit_run_id, state: {subject: state}}
+
+  - name: patchback.fit.FailFit
+    naming:
+      wire: fail-fit
+      display: Fail a fit
+      summary: >-
+        End a running fit without a recovered patch (DESIGN.md 9.2 step 5); a failed run writes
+        no recovered patch.
+    input:
+      - name: fit_run_id
+        type: patchback.fit.FitRunId
+      - name: failure_reason
+        type: patchback.fit.FailureReason
+      - name: wall_time_ms
+        type: Integer
+    outcomes:
+      - name: no-such-run
+        unknown_instance: true
+        error: patchback.fit.FitRunNotFound
+        payload:
+          patchback.fit.FitRunNotFound: {fit_run_id: input.fit_run_id}
+
+      - name: failed
+        moves: patchback.fit.FitRun.fail
+        instance: fit_run_id
+        sets:
+          failure_reason: input.failure_reason
+          wall_time_ms: input.wall_time_ms
+        emits: [patchback.fit.FitFailed]
+        payload:
+          patchback.fit.FitFailed:
+            fit_run_id: input.fit_run_id
+            failure_reason: input.failure_reason
+        summary: The run is Failed with its reason recorded.
+
+      - name: wrong-state
+        wrong_state: true
+        error: patchback.fit.FitNotRunning
+        payload:
+          patchback.fit.FitNotRunning: {fit_run_id: input.fit_run_id, state: {subject: state}}
+
+  - name: patchback.fit.WriteFitResults
+    naming:
+      wire: write-fit-results
+      display: Write fit results
+      summary: >-
+        Write the results directory of a completed fit run: recovered .patch, reconstructed WAV,
+        notes.events, report.txt naming loss before and after, evaluations, wall time and
+        configuration, and run.meta (DESIGN.md 11, 15).
+    input:
+      - name: fit_run_id
+        type: patchback.fit.FitRunId
+      - name: out_dir
+        type: String
+      - name: reconstructed_wav_id
+        type: patchback.audio.WavFileId
+      - name: warnings
+        type: List<String>
+    # UNMAPPED: the reconstructed WAV is a patchback.audio.WavFile written by audio's ExportWav
+    # from the run's best render; nothing here checks that the named WAV is that render's (another
+    # domain's fields).
+    outcomes:
+      - name: no-such-run
+        when_related: {via: input.fit_run_id, exists: false}
+        error: patchback.fit.FitRunNotFound
+        payload:
+          patchback.fit.FitRunNotFound: {fit_run_id: input.fit_run_id}
+
+      - name: failed-run
+        when_related: {via: input.fit_run_id, predicate: state == Failed}
+        error: patchback.fit.FailedRunHasNoPatch
+        payload:
+          patchback.fit.FailedRunHasNoPatch: {fit_run_id: input.fit_run_id}
+        summary: A failed run writes no recovered patch; nothing is written.
+
+      - name: still-running
+        when_related: {via: input.fit_run_id, predicate: state == Running}
+        error: patchback.fit.FitStillRunning
+        payload:
+          patchback.fit.FitStillRunning: {fit_run_id: input.fit_run_id}
+
+      - name: written
+        creates: patchback.fit.FitResults
+        instance: fit_results_id
+        sets:
+          fit_run_id: input.fit_run_id
+          out_dir: input.out_dir
+          recovered_patch_id: {related: {via: input.fit_run_id, field: best_patch_id}}
+          reconstructed_wav_id: input.reconstructed_wav_id
+          warnings: input.warnings
+        emits: [patchback.fit.FitResultsWritten]
+        payload:
+          patchback.fit.FitResultsWritten:
+            fit_results_id: {generated: true}
+            fit_run_id: input.fit_run_id
+            out_dir: input.out_dir
+        summary: The results of the completed run are written, its best patch as the recovered patch.
+
+  - name: patchback.fit.ProposeCandidate
+    naming:
+      wire: propose-candidate
+      display: Propose a topology candidate
+      summary: >-
+        Record one candidate topology of a running fit with the loss of its best patch, its graph
+        size and its complexity penalty; its score is loss plus penalty (DESIGN.md 5.4, 9.3, 13 D).
+    input:
+      - name: fit_run_id
+        type: patchback.fit.FitRunId
+      - name: topology_id
+        type: patchback.patch.TopologyId
+      - name: patch_id
+        type: patchback.patch.PatchId
+      - name: loss
+        type: Decimal
+      - name: node_count
+        type: Integer
+      - name: edge_count
+        type: Integer
+      - name: control_route_count
+        type: Integer
+      - name: complexity_penalty
+        type: Decimal
+    # UNMAPPED: DESIGN.md 5.4 rejects graphs with zero-delay cycles; that is a validity fact of
+    # patchback.patch.Patch (another domain) and is not guarded here.
+    outcomes:
+      - name: invalid-graph
+        when:
+          any:
+            - node_count <= 0
+            - edge_count < 0
+            - control_route_count < 0
+        error: patchback.fit.InvalidCandidateGraph
+        payload:
+          patchback.fit.InvalidCandidateGraph: {node_count: input.node_count}
+
+      - name: no-such-run
+        when_related: {via: input.fit_run_id, exists: false}
+        error: patchback.fit.FitRunNotFound
+        payload:
+          patchback.fit.FitRunNotFound: {fit_run_id: input.fit_run_id}
+
+      - name: not-running
+        when_related: {via: input.fit_run_id, predicate: state != Running}
+        error: patchback.fit.FitNotRunning
+        payload:
+          patchback.fit.FitNotRunning:
+            fit_run_id: input.fit_run_id
+            state: {related: {via: input.fit_run_id, field: state}}
+
+      - name: proposed
+        creates: patchback.fit.Candidate
+        instance: candidate_id
+        sets:
+          fit_run_id: input.fit_run_id
+          topology_id: input.topology_id
+          patch_id: input.patch_id
+          loss: input.loss
+          node_count: input.node_count
+          edge_count: input.edge_count
+          control_route_count: input.control_route_count
+          complexity_penalty: input.complexity_penalty
+          score: {expr: "input.loss + input.complexity_penalty"}
+        emits: [patchback.fit.CandidateProposed]
+        payload:
+          patchback.fit.CandidateProposed:
+            candidate_id: {generated: true}
+            fit_run_id: input.fit_run_id
+            topology_id: input.topology_id
+            loss: input.loss
+            complexity_penalty: input.complexity_penalty
+            score: {expr: "input.loss + input.complexity_penalty"}
+        summary: The candidate is ranked by score; a simpler graph carries a smaller penalty.
+
+  - name: patchback.fit.SelectCandidate
+    naming:
+      wire: select-candidate
+      display: Select a topology candidate
+      summary: >-
+        Select the best-ranked candidate topology of a run; a candidate outranked by another of the
+        same run (lower score) is refused (DESIGN.md 9.3, 13 D, ADR-009).
+    input:
+      - name: candidate_id
+        type: patchback.fit.CandidateId
+    outcomes:
+      - name: no-such-candidate
+        unknown_instance: true
+        error: patchback.fit.CandidateNotFound
+        payload:
+          patchback.fit.CandidateNotFound: {candidate_id: input.candidate_id}
+
+      # The run and score compared are the stored candidate's own (subject.*), so the command
+      # takes only the candidate's identity and no input can disagree with the stored row.
+      - name: outranked
+        when_related:
+          entity: patchback.fit.Candidate
+          where:
+            all:
+              - fit_run_id == subject.fit_run_id
+              - score < subject.score
+          exists: true
+        error: patchback.fit.BetterCandidateExists
+        payload:
+          patchback.fit.BetterCandidateExists: {candidate_id: input.candidate_id}
+        summary: A candidate with a lower score in the same run outranks this one.
+
+      - name: selected
+        moves: patchback.fit.Candidate.select
+        instance: candidate_id
+        emits: [patchback.fit.CandidateSelected]
+        payload:
+          patchback.fit.CandidateSelected:
+            candidate_id: input.candidate_id
+            fit_run_id: {subject: fit_run_id}
+        summary: The best-ranked candidate is Selected.
+
+      - name: wrong-state
+        wrong_state: true
+        error: patchback.fit.CandidateStateConflict
+        payload:
+          patchback.fit.CandidateStateConflict: {candidate_id: input.candidate_id, state: {subject: state}}
+
+  - name: patchback.fit.StartBenchmark
+    naming:
+      wire: start-benchmark
+      display: Start a benchmark
+      summary: >-
+        Start a benchmark of the optimizer over a seeded synthetic holdout: the engine baseline
+        (default patch against default plus search, DESIGN.md 13 A) or the ML-init comparison
+        (DESIGN.md 13 B).
+    input:
+      - name: kind
+        type: patchback.fit.BenchmarkKind
+      - name: holdout_split_id
+        type: patchback.dataset.DatasetSplitId
+      - name: seed
+        type: Integer
+      - name: example_count
+        type: Integer
+      - name: weight_artifact_id
+        type: Optional<patchback.model.WeightArtifactId>
+    outcomes:
+      - name: invalid-holdout-size
+        when: example_count <= 0
+        error: patchback.fit.InvalidHoldoutSize
+        payload:
+          patchback.fit.InvalidHoldoutSize: {example_count: input.example_count}
+
+      - name: weight-artifact-required
+        when:
+          all:
+            - kind == MlInit
+            - not defined(weight_artifact_id)
+        error: patchback.fit.WeightArtifactRequired
+        payload:
+          patchback.fit.WeightArtifactRequired: {holdout_split_id: input.holdout_split_id}
+
+      - name: started
+        creates: patchback.fit.Benchmark
+        instance: benchmark_id
+        sets:
+          kind: input.kind
+          holdout_split_id: input.holdout_split_id
+          seed: input.seed
+          example_count: input.example_count
+          weight_artifact_id: input.weight_artifact_id
+        emits: [patchback.fit.BenchmarkStarted]
+        payload:
+          patchback.fit.BenchmarkStarted:
+            benchmark_id: {generated: true}
+            kind: input.kind
+            holdout_split_id: input.holdout_split_id
+            seed: input.seed
+
+  # DESIGN.md 12.2: the >=20% target is "a go/no-go experiment target, not a guaranteed result".
+  # Both answers complete the benchmark; neither is an error.
+  - name: patchback.fit.RecordBaselineResult
+    naming:
+      wire: record-baseline-result
+      display: Record the engine baseline result
+      summary: >-
+        Record the median audio loss of the default patch and of the closed-loop search over the
+        holdout, the median loss reduction, render evaluations, wall time and listening examples,
+        and whether the 20% go/no-go target was met (DESIGN.md 12.2, 13 A).
+    input:
+      - name: benchmark_id
+        type: patchback.fit.BenchmarkId
+      - name: default_median_loss
+        type: Decimal
+      - name: default_search_median_loss
+        type: Decimal
+      - name: median_loss_reduction_percent
+        type: Decimal
+      - name: default_search_median_evaluations
+        type: Integer
+      - name: wall_time_ms
+        type: Integer
+      - name: listening_examples
+        type: List<String>
+    outcomes:
+      - name: no-such-benchmark
+        unknown_instance: true
+        error: patchback.fit.BenchmarkNotFound
+        payload:
+          patchback.fit.BenchmarkNotFound: {benchmark_id: input.benchmark_id}
+
+      - name: kind-mismatch
+        when_subject:
+          predicate: kind != EngineBaseline
+        error: patchback.fit.BenchmarkKindMismatch
+        payload:
+          patchback.fit.BenchmarkKindMismatch: {benchmark_id: input.benchmark_id, kind: {subject: kind}}
+
+      - name: target-met
+        when: median_loss_reduction_percent >= 20
+        moves: patchback.fit.Benchmark.complete
+        instance: benchmark_id
+        sets:
+          default_median_loss: input.default_median_loss
+          default_search_median_loss: input.default_search_median_loss
+          median_loss_reduction_percent: input.median_loss_reduction_percent
+          default_search_median_evaluations: input.default_search_median_evaluations
+          wall_time_ms: input.wall_time_ms
+          listening_examples: input.listening_examples
+          target_verdict: Met
+        emits: [patchback.fit.BenchmarkCompleted]
+        payload:
+          patchback.fit.BenchmarkCompleted:
+            benchmark_id: input.benchmark_id
+            target_verdict: Met
+        summary: The benchmark completes and records the target as met.
+
+      - name: target-not-met
+        moves: patchback.fit.Benchmark.complete
+        instance: benchmark_id
+        sets:
+          default_median_loss: input.default_median_loss
+          default_search_median_loss: input.default_search_median_loss
+          median_loss_reduction_percent: input.median_loss_reduction_percent
+          default_search_median_evaluations: input.default_search_median_evaluations
+          wall_time_ms: input.wall_time_ms
+          listening_examples: input.listening_examples
+          target_verdict: NotMet
+        emits: [patchback.fit.BenchmarkCompleted]
+        payload:
+          patchback.fit.BenchmarkCompleted:
+            benchmark_id: input.benchmark_id
+            target_verdict: NotMet
+        summary: The benchmark completes and records the target as not met; this is a result, not a failure.
+
+      - name: wrong-state
+        wrong_state: true
+        error: patchback.fit.BenchmarkStateConflict
+        payload:
+          patchback.fit.BenchmarkStateConflict: {benchmark_id: input.benchmark_id, state: {subject: state}}
+
+  # DESIGN.md 13 B "Compare default vs ML-init vs ML-init-plus-search"; 12.2 "raw-model-only
+  # result is also reported"; 9.2 "benchmarked against both the default patch and the raw
+  # regressor prediction". Every arm is a required input, so none can be left out.
+  # UNMAPPED: DESIGN.md 13 B's exit ("genuinely reduces matching work or improves audio fit")
+  # sets no numeric target; no verdict is recorded for an ML-init benchmark.
+  - name: patchback.fit.RecordMlInitResult
+    naming:
+      wire: record-ml-init-result
+      display: Record the ML-init comparison
+      summary: >-
+        Record, over one holdout, the median audio loss of the default patch, the default plus
+        search, the raw regressor prediction and the regressor plus search, with the search arms'
+        median render evaluations (DESIGN.md 12.2, 13 B).
+    input:
+      - name: benchmark_id
+        type: patchback.fit.BenchmarkId
+      - name: default_median_loss
+        type: Decimal
+      - name: default_search_median_loss
+        type: Decimal
+      - name: raw_regressor_median_loss
+        type: Decimal
+      - name: regressor_search_median_loss
+        type: Decimal
+      - name: default_search_median_evaluations
+        type: Integer
+      - name: regressor_search_median_evaluations
+        type: Integer
+      - name: wall_time_ms
+        type: Integer
+      - name: listening_examples
+        type: List<String>
+    outcomes:
+      - name: no-such-benchmark
+        unknown_instance: true
+        error: patchback.fit.BenchmarkNotFound
+        payload:
+          patchback.fit.BenchmarkNotFound: {benchmark_id: input.benchmark_id}
+
+      - name: kind-mismatch
+        when_subject:
+          predicate: kind != MlInit
+        error: patchback.fit.BenchmarkKindMismatch
+        payload:
+          patchback.fit.BenchmarkKindMismatch: {benchmark_id: input.benchmark_id, kind: {subject: kind}}
+
+      - name: recorded
+        moves: patchback.fit.Benchmark.complete
+        instance: benchmark_id
+        sets:
+          default_median_loss: input.default_median_loss
+          default_search_median_loss: input.default_search_median_loss
+          raw_regressor_median_loss: input.raw_regressor_median_loss
+          regressor_search_median_loss: input.regressor_search_median_loss
+          default_search_median_evaluations: input.default_search_median_evaluations
+          regressor_search_median_evaluations: input.regressor_search_median_evaluations
+          wall_time_ms: input.wall_time_ms
+          listening_examples: input.listening_examples
+        emits: [patchback.fit.MlInitCompared]
+        payload:
+          patchback.fit.MlInitCompared:
+            benchmark_id: input.benchmark_id
+            default_median_loss: input.default_median_loss
+            default_search_median_loss: input.default_search_median_loss
+            raw_regressor_median_loss: input.raw_regressor_median_loss
+            regressor_search_median_loss: input.regressor_search_median_loss
+        summary: All four arms, the raw-model-only arm included, are recorded on the same holdout.
+
+      - name: wrong-state
+        wrong_state: true
+        error: patchback.fit.BenchmarkStateConflict
+        payload:
+          patchback.fit.BenchmarkStateConflict: {benchmark_id: input.benchmark_id, state: {subject: state}}
+
+events:
+  - name: patchback.fit.AudioCompared
+    fields:
+      - name: comparison_id
+        type: patchback.fit.ComparisonId
+      - name: reference_clip_id
+        type: patchback.audio.AudioClipId
+      - name: candidate_clip_id
+        type: patchback.audio.AudioClipId
+      - name: weights
+        type: patchback.fit.LossWeights
+
+  - name: patchback.fit.FitStarted
+    fields:
+      - name: fit_run_id
+        type: patchback.fit.FitRunId
+      - name: reference_clip_id
+        type: patchback.audio.AudioClipId
+      - name: init
+        type: patchback.fit.InitSource
+
+  # DESIGN.md 9.1: "The loss code must log its component values for every candidate."
+  - name: patchback.fit.CandidateEvaluated
+    fields:
+      - name: fit_run_id
+        type: patchback.fit.FitRunId
+      - name: patch_id
+        type: patchback.patch.PatchId
+      - name: components
+        type: patchback.fit.LossComponents
+      - name: total_loss
+        type: Decimal
+      - name: retained
+        type: Boolean
+
+  - name: patchback.fit.CandidateRejected
+    fields:
+      - name: fit_run_id
+        type: patchback.fit.FitRunId
+      - name: patch_id
+        type: patchback.patch.PatchId
+
+  - name: patchback.fit.FitCompleted
+    fields:
+      - name: fit_run_id
+        type: patchback.fit.FitRunId
+      - name: stop_reason
+        type: patchback.fit.StopReason
+      - name: evaluations
+        type: Integer
+      - name: wall_time_ms
+        type: Integer
+
+  - name: patchback.fit.FitFailed
+    fields:
+      - name: fit_run_id
+        type: patchback.fit.FitRunId
+      - name: failure_reason
+        type: patchback.fit.FailureReason
+
+  - name: patchback.fit.FitResultsWritten
+    fields:
+      - name: fit_results_id
+        type: patchback.fit.FitResultsId
+      - name: fit_run_id
+        type: patchback.fit.FitRunId
+      - name: out_dir
+        type: String
+
+  # DESIGN.md 13 D exit: "candidate ranking is transparent". The event carries loss, penalty
+  # and score, so every ranking can be recomputed from the log.
+  - name: patchback.fit.CandidateProposed
+    fields:
+      - name: candidate_id
+        type: patchback.fit.CandidateId
+      - name: fit_run_id
+        type: patchback.fit.FitRunId
+      - name: topology_id
+        type: patchback.patch.TopologyId
+      - name: loss
+        type: Decimal
+      - name: complexity_penalty
+        type: Decimal
+      - name: score
+        type: Decimal
+
+  - name: patchback.fit.CandidateSelected
+    fields:
+      - name: candidate_id
+        type: patchback.fit.CandidateId
+      - name: fit_run_id
+        type: patchback.fit.FitRunId
+
+  - name: patchback.fit.BenchmarkStarted
+    fields:
+      - name: benchmark_id
+        type: patchback.fit.BenchmarkId
+      - name: kind
+        type: patchback.fit.BenchmarkKind
+      - name: holdout_split_id
+        type: patchback.dataset.DatasetSplitId
+      - name: seed
+        type: Integer
+
+  - name: patchback.fit.BenchmarkCompleted
+    fields:
+      - name: benchmark_id
+        type: patchback.fit.BenchmarkId
+      - name: target_verdict
+        type: patchback.fit.TargetVerdict
+
+  - name: patchback.fit.MlInitCompared
+    fields:
+      - name: benchmark_id
+        type: patchback.fit.BenchmarkId
+      - name: default_median_loss
+        type: Decimal
+      - name: default_search_median_loss
+        type: Decimal
+      - name: raw_regressor_median_loss
+        type: Decimal
+      - name: regressor_search_median_loss
+        type: Decimal
+
+views:
+  # The run's Decimal values (note_confidence, improvement_threshold, initial_loss, best_loss,
+  # best_components) are stored but published by no view: ESS 0.67.0 synthesis refuses every
+  # refusal scenario of FitRun when a view of it publishes a Decimal ("Decimal and Binary64 replay
+  # results are unsupported"). The losses are observed through CandidateEvaluated and the branch
+  # each evaluation takes.
+  - name: patchback.fit.FitRuns
+    source: patchback.fit.FitRun
+    consistency: read_your_writes
+    fields:
+      - name: fit_run_id
+        type: patchback.fit.FitRunId
+      - name: state
+        type: patchback.fit.FitRun.State
+      - name: reference_clip_id
+        type: patchback.audio.AudioClipId
+      - name: reference_provenance
+        type: Optional<String>
+      - name: note_source
+        type: patchback.fit.NoteSource
+      - name: scope
+        type: patchback.fit.FitScope
+      - name: init
+        type: patchback.fit.InitSource
+      - name: seed
+        type: Integer
+      - name: max_renders
+        type: Integer
+      - name: max_wall_time_ms
+        type: Integer
+      - name: max_restarts
+        type: Integer
+      - name: evaluations
+        type: Integer
+      - name: best_patch_id
+        type: Optional<patchback.patch.PatchId>
+      - name: stop_reason
+        type: Optional<patchback.fit.StopReason>
+      - name: failure_reason
+        type: Optional<patchback.fit.FailureReason>
+      - name: wall_time_ms
+        type: Optional<Integer>
+    naming:
+      wire: fit-runs
+      display: Fit runs
+
+  - name: patchback.fit.Comparisons
+    source: patchback.fit.Comparison
+    consistency: read_your_writes
+    fields:
+      - name: comparison_id
+        type: patchback.fit.ComparisonId
+      - name: reference_clip_id
+        type: patchback.audio.AudioClipId
+      - name: candidate_clip_id
+        type: patchback.audio.AudioClipId
+      - name: components
+        type: patchback.fit.LossComponents
+      - name: weights
+        type: patchback.fit.LossWeights
+      - name: total_loss
+        type: Decimal
+    naming:
+      wire: comparisons
+      display: Comparisons
+
+  - name: patchback.fit.FitResultsDirectories
+    source: patchback.fit.FitResults
+    consistency: read_your_writes
+    fields:
+      - name: fit_results_id
+        type: patchback.fit.FitResultsId
+      - name: fit_run_id
+        type: patchback.fit.FitRunId
+      - name: out_dir
+        type: String
+      - name: recovered_patch_id
+        type: Optional<patchback.patch.PatchId>
+      - name: reconstructed_wav_id
+        type: patchback.audio.WavFileId
+      - name: warnings
+        type: List<String>
+    naming:
+      wire: fit-results
+      display: Fit results
+
+  # Loss, penalty and score are Decimal and published by CandidateProposed, not by this view
+  # (same ESS 0.67.0 synthesis limit as FitRuns).
+  - name: patchback.fit.Candidates
+    source: patchback.fit.Candidate
+    consistency: read_your_writes
+    fields:
+      - name: candidate_id
+        type: patchback.fit.CandidateId
+      - name: state
+        type: patchback.fit.Candidate.State
+      - name: fit_run_id
+        type: patchback.fit.FitRunId
+      - name: topology_id
+        type: patchback.patch.TopologyId
+      - name: patch_id
+        type: patchback.patch.PatchId
+      - name: node_count
+        type: Integer
+      - name: edge_count
+        type: Integer
+      - name: control_route_count
+        type: Integer
+    naming:
+      wire: candidates
+      display: Topology candidates
+
+  # Median losses are Decimal and published by MlInitCompared, not by this view (same limit).
+  - name: patchback.fit.Benchmarks
+    source: patchback.fit.Benchmark
+    consistency: read_your_writes
+    fields:
+      - name: benchmark_id
+        type: patchback.fit.BenchmarkId
+      - name: state
+        type: patchback.fit.Benchmark.State
+      - name: kind
+        type: patchback.fit.BenchmarkKind
+      - name: holdout_split_id
+        type: patchback.dataset.DatasetSplitId
+      - name: seed
+        type: Integer
+      - name: example_count
+        type: Integer
+      - name: target_verdict
+        type: Optional<patchback.fit.TargetVerdict>
+      - name: default_search_median_evaluations
+        type: Optional<Integer>
+      - name: regressor_search_median_evaluations
+        type: Optional<Integer>
+      - name: wall_time_ms
+        type: Optional<Integer>
+      - name: listening_examples
+        type: Optional<List<String>>
+    naming:
+      wire: benchmarks
+      display: Benchmarks

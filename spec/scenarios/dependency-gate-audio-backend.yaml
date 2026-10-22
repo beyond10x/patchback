@@ -1,0 +1,78 @@
+# DESIGN.md 3: "At most one external audio I/O backend (e.g. `cpal`), isolated behind an optional
+# feature"; "CI audits dependency changes and rejects unreviewed additions"; ADR-007. An unapproved
+# backend, one not behind a feature and a second backend are refused; one approved optional
+# backend is admitted and the audit passes.
+type: ess-scenario/1
+domain: patchback.dependency
+scenario: dependency-gate-audio-backend
+summary: An unapproved and a non-optional audio crate are refused, cpal behind a feature is admitted, a second backend is refused and the audit passes.
+
+arrange:
+  - instance: audit
+    entity: patchback.dependency.DependencyAudit
+
+timeline:
+  - at: 2026-10-22T14:20:00Z
+    command: patchback.dependency.StartDependencyAudit
+    actor: patchback.dependency.Auditor
+    input:
+      revision: rev-live-audio
+    outcome: started
+    capture: {instance: audit, event: patchback.dependency.DependencyAuditStarted, field: dependency_audit_id}
+
+  - at: 2026-10-22T14:20:01Z
+    command: patchback.dependency.RecordCrate
+    actor: patchback.dependency.Auditor
+    input:
+      dependency_audit_id: {$instance: audit}
+      crate_name: rodio
+      category: AudioIo
+      approved: false
+      behind_optional_feature: true
+    outcome: unapproved-crate
+    error:
+      name: patchback.dependency.UnapprovedCrate
+
+  - at: 2026-10-22T14:20:02Z
+    command: patchback.dependency.RecordCrate
+    actor: patchback.dependency.Auditor
+    input:
+      dependency_audit_id: {$instance: audit}
+      crate_name: cpal
+      category: AudioIo
+      approved: true
+      behind_optional_feature: false
+    outcome: not-optional
+    error:
+      name: patchback.dependency.AudioBackendNotOptional
+
+  - at: 2026-10-22T14:20:03Z
+    command: patchback.dependency.RecordCrate
+    actor: patchback.dependency.Auditor
+    input:
+      dependency_audit_id: {$instance: audit}
+      crate_name: cpal
+      category: AudioIo
+      approved: true
+      behind_optional_feature: true
+    outcome: audio-backend-admitted
+
+  - at: 2026-10-22T14:20:04Z
+    command: patchback.dependency.RecordCrate
+    actor: patchback.dependency.Auditor
+    input:
+      dependency_audit_id: {$instance: audit}
+      crate_name: portaudio
+      category: AudioIo
+      approved: true
+      behind_optional_feature: true
+    outcome: second-audio-backend
+    error:
+      name: patchback.dependency.SecondAudioBackend
+
+  - at: 2026-10-22T14:20:05Z
+    command: patchback.dependency.ConcludeDependencyAudit
+    actor: patchback.dependency.Auditor
+    input:
+      dependency_audit_id: {$instance: audit}
+    outcome: passed

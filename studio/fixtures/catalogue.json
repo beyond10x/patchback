@@ -1,0 +1,244 @@
+{
+  "note": "illustrative fixture data: hand-built for the studio prototype, not the output of a Patchback fit; port lists per kind are not settled by DESIGN.md (UNMAPPED in spec/domains/studio.yaml)",
+  "event": {
+    "catalogue_id": "5a0d0000-0000-4000-8000-000000000201",
+    "topology_id": "5a0d0000-0000-4000-8000-000000000101",
+    "modules": [
+      {
+        "kind": "NoteInput",
+        "ports": [
+          {
+            "name": "note",
+            "direction": "Output",
+            "rate": "Event",
+            "meaning": "note-on and note-off with MIDI pitch"
+          },
+          {
+            "name": "pitch",
+            "direction": "Output",
+            "rate": "Control",
+            "meaning": "oscillator frequency in Hz"
+          },
+          {
+            "name": "gate",
+            "direction": "Output",
+            "rate": "Event",
+            "meaning": "gate for the envelope"
+          }
+        ],
+        "parameters": []
+      },
+      {
+        "kind": "SawOscillator",
+        "ports": [
+          {
+            "name": "freq",
+            "direction": "Input",
+            "rate": "Control",
+            "meaning": "frequency in Hz"
+          },
+          {
+            "name": "out",
+            "direction": "Output",
+            "rate": "Audio",
+            "meaning": "band-limited saw"
+          }
+        ],
+        "parameters": []
+      },
+      {
+        "kind": "Drive",
+        "ports": [
+          {
+            "name": "in",
+            "direction": "Input",
+            "rate": "Audio",
+            "meaning": "signal"
+          },
+          {
+            "name": "out",
+            "direction": "Output",
+            "rate": "Audio",
+            "meaning": "saturated signal"
+          }
+        ],
+        "parameters": [
+          {
+            "path": "drive",
+            "index": 6,
+            "unit": "Decibels",
+            "mapping": "Linear",
+            "physical_at_zero": "0",
+            "physical_at_one": "24",
+            "default_normalized": "0.5",
+            "clamp": "ClampToUnitInterval"
+          }
+        ]
+      },
+      {
+        "kind": "LowpassFilter",
+        "ports": [
+          {
+            "name": "in",
+            "direction": "Input",
+            "rate": "Audio",
+            "meaning": "signal"
+          },
+          {
+            "name": "out",
+            "direction": "Output",
+            "rate": "Audio",
+            "meaning": "filtered signal"
+          }
+        ],
+        "parameters": [
+          {
+            "path": "filter_cutoff",
+            "index": 4,
+            "unit": "Hertz",
+            "mapping": "Exponential",
+            "physical_at_zero": "40",
+            "physical_at_one": "16000",
+            "default_normalized": "0.5",
+            "clamp": "ClampToUnitInterval"
+          },
+          {
+            "path": "resonance_q",
+            "index": 5,
+            "unit": "Dimensionless",
+            "mapping": "Linear",
+            "physical_at_zero": "0.5",
+            "physical_at_one": "12",
+            "default_normalized": "0.5",
+            "clamp": "ClampToUnitInterval"
+          }
+        ]
+      },
+      {
+        "kind": "AdsrEnvelope",
+        "ports": [
+          {
+            "name": "gate",
+            "direction": "Input",
+            "rate": "Event",
+            "meaning": "note gate"
+          },
+          {
+            "name": "env",
+            "direction": "Output",
+            "rate": "Control",
+            "meaning": "envelope level 0..1"
+          }
+        ],
+        "parameters": [
+          {
+            "path": "attack",
+            "index": 0,
+            "unit": "Seconds",
+            "mapping": "Exponential",
+            "physical_at_zero": "0.001",
+            "physical_at_one": "2",
+            "default_normalized": "0.5",
+            "clamp": "ClampToUnitInterval"
+          },
+          {
+            "path": "decay",
+            "index": 1,
+            "unit": "Seconds",
+            "mapping": "Exponential",
+            "physical_at_zero": "0.005",
+            "physical_at_one": "2",
+            "default_normalized": "0.5",
+            "clamp": "ClampToUnitInterval"
+          },
+          {
+            "path": "sustain",
+            "index": 2,
+            "unit": "LinearAmplitude",
+            "mapping": "Linear",
+            "physical_at_zero": "0",
+            "physical_at_one": "1",
+            "default_normalized": "0.5",
+            "clamp": "ClampToUnitInterval"
+          },
+          {
+            "path": "release",
+            "index": 3,
+            "unit": "Seconds",
+            "mapping": "Exponential",
+            "physical_at_zero": "0.005",
+            "physical_at_one": "2",
+            "default_normalized": "0.5",
+            "clamp": "ClampToUnitInterval"
+          }
+        ]
+      },
+      {
+        "kind": "Vca",
+        "ports": [
+          {
+            "name": "in",
+            "direction": "Input",
+            "rate": "Audio",
+            "meaning": "signal"
+          },
+          {
+            "name": "gain",
+            "direction": "Input",
+            "rate": "Control",
+            "meaning": "envelope gain"
+          },
+          {
+            "name": "out",
+            "direction": "Output",
+            "rate": "Audio",
+            "meaning": "amplified signal"
+          }
+        ],
+        "parameters": [
+          {
+            "path": "output_gain",
+            "index": 7,
+            "unit": "Decibels",
+            "mapping": "Linear",
+            "physical_at_zero": "-24",
+            "physical_at_one": "0",
+            "default_normalized": "0.5",
+            "clamp": "ClampToUnitInterval"
+          }
+        ]
+      },
+      {
+        "kind": "Output",
+        "ports": [
+          {
+            "name": "in",
+            "direction": "Input",
+            "rate": "Audio",
+            "meaning": "mono voice output"
+          }
+        ],
+        "parameters": []
+      },
+      {
+        "kind": "Delay",
+        "family": "Delay",
+        "ports": [
+          {
+            "name": "in",
+            "direction": "Input",
+            "rate": "Audio",
+            "meaning": "signal"
+          },
+          {
+            "name": "out",
+            "direction": "Output",
+            "rate": "Audio",
+            "meaning": "signal delayed by at least one sample"
+          }
+        ],
+        "parameters": []
+      }
+    ]
+  }
+}

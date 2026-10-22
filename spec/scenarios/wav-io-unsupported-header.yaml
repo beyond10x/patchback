@@ -1,0 +1,52 @@
+# DESIGN.md 5.3: "explicit rejection of unsupported sample rates (no silent conversion)";
+# 6.1: PCM16 or IEEE float32 only, one or two channels; 12.1: "unsupported format".
+type: ess-scenario/1
+domain: patchback.audio
+scenario: wav-io-unsupported-header
+summary: A 44.1 kHz file, a PCM24 file and a six-channel file are each refused and no clip is created.
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.audio.ImportWav
+    actor: patchback.audio.Operator
+    input:
+      path: cd-rate.wav
+      origin: PatchbackSynthesized
+      sample_rate_hz: 44100
+      channel_count: 1
+      format_tag: 1
+      bits_per_sample: 16
+      frame_count: 44100
+    outcome: unsupported-sample-rate
+    error:
+      name: patchback.audio.UnsupportedSampleRate
+
+  - at: 2026-10-22T09:00:01Z
+    command: patchback.audio.ImportWav
+    actor: patchback.audio.Operator
+    input:
+      path: pcm24.wav
+      origin: PatchbackSynthesized
+      sample_rate_hz: 48000
+      channel_count: 1
+      format_tag: 1
+      bits_per_sample: 24
+      frame_count: 48000
+    outcome: unsupported-sample-format
+    error:
+      name: patchback.audio.UnsupportedSampleFormat
+
+  - at: 2026-10-22T09:00:02Z
+    command: patchback.audio.ImportWav
+    actor: patchback.audio.Operator
+    input:
+      path: surround.wav
+      origin: PatchbackSynthesized
+      sample_rate_hz: 48000
+      channel_count: 6
+      format_tag: 3
+      bits_per_sample: 32
+      frame_count: 48000
+    outcome: unsupported-channel-count
+    error:
+      name: patchback.audio.UnsupportedChannelCount

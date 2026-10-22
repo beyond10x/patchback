@@ -1,0 +1,26 @@
+# DESIGN.md 8: the regressor's input is the analysis feature vector. A fit that names a weight
+# artifact but no analysis has nothing to predict from and is refused.
+type: ess-scenario/1
+domain: patchback.fit
+scenario: regressor-seeded-fit-analysis-required
+summary: A fit naming a weight artifact without an analysis is refused with AnalysisRequired; no run starts.
+
+timeline:
+  - at: 2026-10-22T15:20:00Z
+    command: patchback.fit.StartFit
+    actor: patchback.fit.Operator
+    input:
+      reference_clip_id: 4fa05d30-0000-4000-8000-000000000201
+      note_sequence_id: 4fa05d30-0000-4000-8000-000000000202
+      note_source: Known
+      scope: SingleNote
+      topology_id: 4fa05d30-0000-4000-8000-000000000203
+      weight_artifact_id: 4fa05d30-0000-4000-8000-000000000204
+      seed: 42
+      max_renders: 2000
+      max_wall_time_ms: 600000
+      max_restarts: 4
+      improvement_threshold: 0.001
+    outcome: analysis-required
+    error:
+      name: patchback.fit.AnalysisRequired

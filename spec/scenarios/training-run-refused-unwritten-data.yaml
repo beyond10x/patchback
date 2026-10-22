@@ -1,0 +1,175 @@
+# DESIGN.md 7.2 / 8.1: `--data` and `--eval` read written, verified dense data, and the `--eval`
+# count is a multiple of the batch size. A split still Open, an unknown split, an unwritten eval
+# split and an eval count that is not a batch multiple are refused; the last two are external
+# decisions (one related row per command, no modulo in ESS predicates).
+type: ess-scenario/1
+domain: patchback.model
+scenario: training-run-refused-unwritten-data
+summary: Starting a run on an Open train split or an unknown split, with an unwritten eval split, or an eval count off the batch size is refused.
+
+arrange:
+  - instance: pin
+    entity: patchback.model.ModelSpecPin
+  - instance: source
+    entity: patchback.model.ModelSource
+  - instance: dataset
+    entity: patchback.dataset.Dataset
+  - instance: train
+    entity: patchback.dataset.DatasetSplit
+  - instance: run
+    entity: patchback.model.TrainingRun
+
+timeline:
+  - at: 2026-10-22T12:20:00Z
+    command: patchback.model.PinModelSpec
+    actor: patchback.model.Operator
+    input:
+      version: pinned-release
+      commit: 0123456789abcdef0123456789abcdef01234567
+      vulkan_backend_shipped: false
+    outcome: pinned
+    capture: {instance: pin, event: patchback.model.ModelSpecPinned, field: model_spec_pin_id}
+
+  - at: 2026-10-22T12:20:01Z
+    command: patchback.model.RegisterModelSource
+    actor: patchback.model.Operator
+    input:
+      path: models/patch_regressor.mspec
+      model_name: PatchRegressor
+      batch_size: 16
+      model_spec_pin_id: {$instance: pin}
+    outcome: registered
+    capture: {instance: source, event: patchback.model.ModelSourceRegistered, field: model_source_id}
+
+  - at: 2026-10-22T12:20:02Z
+    command: patchback.model.CheckModelSource
+    actor: patchback.model.Operator
+    input:
+      model_source_id: {$instance: source}
+    outcome: checked
+
+  - at: 2026-10-22T12:20:03Z
+    command: patchback.dataset.GenerateDataset
+    actor: patchback.dataset.Operator
+    input:
+      seed: 42
+      prng_algorithm: std-only-generator
+      batch_size: 16
+      feature_contract_id: 6d000000-0000-4000-8000-000000000001
+      topology_id: 6d000000-0000-4000-8000-000000000002
+      out_dir: data/
+    outcome: generated
+    capture: {instance: dataset, event: patchback.dataset.DatasetGenerated, field: dataset_id}
+
+  - at: 2026-10-22T12:20:04Z
+    command: patchback.dataset.OpenSplit
+    actor: patchback.dataset.Operator
+    input:
+      dataset_id: {$instance: dataset}
+      role: Train
+      sample_count: 50016
+    outcome: opened
+    capture: {instance: train, event: patchback.dataset.SplitOpened, field: dataset_split_id}
+
+  - at: 2026-10-22T12:20:05Z
+    command: patchback.model.PlanTrainingRun
+    actor: patchback.model.Operator
+    input:
+      model_spec_pin_id: {$instance: pin}
+      backend: Cpu
+    outcome: planned
+    capture: {instance: run, event: patchback.model.TrainingRunPlanned, field: training_run_id}
+
+  - at: 2026-10-22T12:20:06Z
+    command: patchback.model.StartTrainingRun
+    actor: patchback.model.Operator
+    input:
+      training_run_id: {$instance: run}
+      data_split_id: {$instance: train}
+      eval_split_id: null
+    outcome: wrong-state
+    error:
+      name: patchback.model.TrainingRunNotReady
+
+  - at: 2026-10-22T12:20:07Z
+    command: patchback.model.BindModelSource
+    actor: patchback.model.Operator
+    input:
+      training_run_id: {$instance: run}
+      model_source_id: {$instance: source}
+    outcome: bound
+
+  - at: 2026-10-22T12:20:08Z
+    command: patchback.model.StartTrainingRun
+    actor: patchback.model.Operator
+    input:
+      training_run_id: {$instance: run}
+      data_split_id: {$instance: train}
+      eval_split_id: null
+    outcome: data-not-written
+    error:
+      name: patchback.model.DataNotWritten
+
+  - at: 2026-10-22T12:20:09Z
+    command: patchback.model.StartTrainingRun
+    actor: patchback.model.Operator
+    input:
+      training_run_id: {$instance: run}
+      data_split_id: 6d000000-0000-4000-8000-0000000000fe
+      eval_split_id: null
+    outcome: unknown-data
+    error:
+      name: patchback.model.UnknownDataSplit
+
+  - at: 2026-10-22T12:20:10Z
+    command: patchback.dataset.WriteDenseFile
+    actor: patchback.dataset.Operator
+    input:
+      dataset_split_id: {$instance: train}
+      kind: X
+      path: data/train/x.f32
+      rows: 50016
+      columns: 32
+      byte_count: 6402048
+    outcome: written
+
+  - at: 2026-10-22T12:20:11Z
+    command: patchback.dataset.WriteDenseFile
+    actor: patchback.dataset.Operator
+    input:
+      dataset_split_id: {$instance: train}
+      kind: Y
+      path: data/train/y.f32
+      rows: 50016
+      columns: 8
+      byte_count: 1600512
+    outcome: written
+
+  - at: 2026-10-22T12:20:12Z
+    command: patchback.dataset.FinishSplit
+    actor: patchback.dataset.Operator
+    input:
+      dataset_split_id: {$instance: train}
+    outcome: written
+
+  - at: 2026-10-22T12:20:13Z
+    command: patchback.model.StartTrainingRun
+    actor: patchback.model.Operator
+    input:
+      training_run_id: {$instance: run}
+      data_split_id: {$instance: train}
+      eval_split_id: 6d000000-0000-4000-8000-0000000000fd
+    outcome: eval-not-written
+    error:
+      name: patchback.model.EvalNotWritten
+
+  - at: 2026-10-22T12:20:14Z
+    command: patchback.model.StartTrainingRun
+    actor: patchback.model.Operator
+    input:
+      training_run_id: {$instance: run}
+      data_split_id: {$instance: train}
+      eval_split_id: 6d000000-0000-4000-8000-0000000000fc
+    outcome: eval-count-not-batch-multiple
+    error:
+      name: patchback.model.EvalCountNotBatchMultiple

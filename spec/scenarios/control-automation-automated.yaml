@@ -1,0 +1,87 @@
+# DESIGN.md section 10 / Milestone D: control events address stable parameter paths and carry
+# normalized values p. Automation is accepted on a loaded sequence; a value outside [0,1] is
+# clamped with a warning (section 5.2 "clamp p to [0,1]"); automation for a sequence that does
+# not exist is refused.
+# UNMAPPED: the parameter path syntax (filter.cutoff here) is not fixed in DESIGN.md.
+# UNMAPPED: whether the clamp rewrites the stored value or applies at render (OQ-27).
+type: ess-scenario/1
+domain: patchback.score
+scenario: control-automation-automated
+summary: In-range automation on a loaded sequence is accepted; an out-of-range value is clamped with a warning; an unknown sequence is refused.
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.patch.DeclareTopology
+    actor: patchback.patch.Operator
+    input:
+      topology_id: 7f0c0000-0000-4000-8000-000000000061
+      name: subtractive-mono/1
+      parameters: []
+    outcome: declared
+
+  - at: 2026-10-22T09:00:01Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000161
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 7f0c0000-0000-4000-8000-000000000061
+      nodes:
+        - {id: 4, kind: LowpassFilter, parameters: []}
+      edges: []
+    outcome: loaded
+
+  - at: 2026-10-22T09:00:02Z
+    command: patchback.score.LoadNoteSequence
+    actor: patchback.score.Operator
+    input:
+      note_sequence_id: 7f0c0000-0000-4000-8000-000000000261
+      format_version: 1
+      sample_rate_hz: 48000
+      patch_id: 7f0c0000-0000-4000-8000-000000000161
+      notes:
+        - {start_sample: 0, end_sample: 48000, midi_note: 45, velocity: 0.8}
+    outcome: loaded
+
+  - at: 2026-10-22T09:00:03Z
+    command: patchback.score.AutomateParameters
+    actor: patchback.score.Operator
+    input:
+      note_sequence_id: 7f0c0000-0000-4000-8000-000000000261
+      controls:
+        - {sample: 0, parameter_path: filter.cutoff, normalized_value: 0.2}
+        - {sample: 24000, parameter_path: filter.cutoff, normalized_value: 0.9}
+    outcome: automated
+    events:
+      - event: patchback.score.ParametersAutomated
+        payload:
+          note_sequence_id: 7f0c0000-0000-4000-8000-000000000261
+
+  - at: 2026-10-22T09:00:04Z
+    command: patchback.score.AutomateParameters
+    actor: patchback.score.Operator
+    input:
+      note_sequence_id: 7f0c0000-0000-4000-8000-000000000261
+      controls:
+        - {sample: 0, parameter_path: filter.cutoff, normalized_value: 1.3}
+    outcome: clamped
+    events:
+      - event: patchback.score.ParametersAutomated
+        payload:
+          note_sequence_id: 7f0c0000-0000-4000-8000-000000000261
+      - event: patchback.score.ControlValuesClamped
+        payload:
+          note_sequence_id: 7f0c0000-0000-4000-8000-000000000261
+
+  - at: 2026-10-22T09:00:05Z
+    command: patchback.score.AutomateParameters
+    actor: patchback.score.Operator
+    input:
+      note_sequence_id: 7f0c0000-0000-4000-8000-000000000299
+      controls:
+        - {sample: 0, parameter_path: filter.cutoff, normalized_value: 0.5}
+    outcome: no-such-sequence
+    error:
+      name: patchback.score.NoteSequenceNotFound
+    no_events: [patchback.score.ParametersAutomated]

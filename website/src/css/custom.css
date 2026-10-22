@@ -1,0 +1,285 @@
+/*
+ * Patchback documentation theme: the landing page's signal palette (cyan, magenta, amber on deep
+ * indigo) carried onto the docs-system product theme. Only docs-system custom properties and
+ * Docusaurus class names are overridden; selectors start at :root to outrank the package's layer
+ * whatever the stylesheet order. Text colours are checked for WCAG AA on their grounds.
+ */
+
+:root {
+  --pb-cyan: #2de2e6;
+  --pb-magenta: #ff4fd8;
+  --pb-amber: #ffd23f;
+  --pb-violet: #7c8cff;
+  --pb-ink: #07051a;
+  --pb-signal: linear-gradient(90deg, var(--pb-cyan), var(--pb-magenta) 55%, var(--pb-amber));
+  --pb-signal-v: linear-gradient(180deg, var(--pb-cyan), var(--pb-magenta) 55%, var(--pb-amber));
+}
+
+:root[data-theme='light'] {
+  --b10x-color-canvas: #f7f5ff;
+  --b10x-color-surface: #ffffff;
+  --b10x-color-surface-muted: #efebfd;
+  --b10x-color-panel: #ffffff;
+  --b10x-color-heading: #120e2c;
+  --b10x-color-text: #1d1838;
+  --b10x-color-muted: #555176;
+  --b10x-color-line: #8b86ae;
+  --b10x-color-hairline: #e2ddf4;
+  --b10x-color-link: #6a2fd8;
+  --b10x-color-focus: #c021b5;
+  --b10x-color-accent: #6a2fd8;
+  --b10x-color-accent-strong: #4f1fb3;
+  --b10x-color-on-accent: #ffffff;
+  --b10x-color-amber: #8a4f00;
+  --b10x-color-rose: #b0185f;
+  --b10x-color-sky: #0b6c82;
+  --b10x-color-success: #3b6e00;
+  --b10x-color-warning: #8a4f00;
+  --b10x-color-danger: #b0185f;
+  --b10x-color-cyan: #0b6c82;
+  --b10x-color-lime: #3b6e00;
+  --b10x-code-chrome: #efebfd;
+  --b10x-code-control: #ffffff;
+  --b10x-code-control-text: #1d1838;
+  --b10x-code-selection: #e1d7ff;
+  --b10x-code-border: #dcd5f3;
+  --b10x-inline-code: #efe9ff;
+  --b10x-notice: #fff6dc;
+  --b10x-product-hue: #c021b5;
+  --b10x-product-ink: #a3168f;
+  --pb-inline-code-ink: #a3168f;
+  --pb-link-hover: #a3168f;
+  --pb-glow-a: rgb(45 226 230 / 14%);
+  --pb-glow-b: rgb(255 79 216 / 12%);
+}
+
+:root[data-theme='dark'] {
+  --b10x-color-canvas: #0a0818;
+  --b10x-color-surface: #120f2a;
+  --b10x-color-surface-muted: #0e0b22;
+  --b10x-color-panel: #120f2a;
+  --b10x-color-heading: #f7f5ff;
+  --b10x-color-text: #e9e6ff;
+  --b10x-color-muted: #aaa6cf;
+  --b10x-color-line: #6a63a0;
+  --b10x-color-hairline: #241e4a;
+  --b10x-color-link: #5fe6ea;
+  --b10x-color-focus: #ffd23f;
+  --b10x-color-accent: #5fe6ea;
+  --b10x-color-accent-strong: #a5f3f5;
+  --b10x-color-on-accent: #07051a;
+  --b10x-color-amber: #ffd23f;
+  --b10x-color-rose: #ff7ab8;
+  --b10x-color-sky: #5fe6ea;
+  --b10x-color-success: #b6ff4a;
+  --b10x-color-warning: #ffd23f;
+  --b10x-color-danger: #ff7ab8;
+  --b10x-color-cyan: #5fe6ea;
+  --b10x-color-lime: #b6ff4a;
+  --b10x-code-chrome: #15112f;
+  --b10x-code-control: #120f2a;
+  --b10x-code-control-text: #e9e6ff;
+  --b10x-code-selection: #2e2560;
+  --b10x-code-border: #2a2356;
+  --b10x-inline-code: #1d1742;
+  --b10x-notice: #221c10;
+  --b10x-product-hue: #ff4fd8;
+  --b10x-product-ink: #ff8ae2;
+  --pb-inline-code-ink: #ff8ae2;
+  --pb-link-hover: #ff8ae2;
+  --pb-glow-a: rgb(45 226 230 / 12%);
+  --pb-glow-b: rgb(255 79 216 / 14%);
+}
+
+:root[data-theme] {
+  --ifm-link-hover-color: var(--pb-link-hover);
+  --ifm-menu-color-background-active: color-mix(in srgb, var(--b10x-color-accent) 11%, transparent);
+  --ifm-menu-color-background-hover: color-mix(in srgb, var(--b10x-product-hue) 7%, transparent);
+  --docusaurus-highlighted-code-line-bg: color-mix(in srgb, var(--b10x-product-hue) 14%, transparent);
+}
+
+:root ::selection { background: color-mix(in srgb, var(--b10x-product-hue) 26%, transparent); }
+
+/* Navbar: the landing mark, a signal line under the bar, a gradient underline on the active link. */
+
+:root .navbar__brand::before {
+  border: 0;
+  border-radius: 0.55rem;
+  background: url('../../static/img/mark.svg') center / contain no-repeat;
+  box-shadow: 0 0 0.9rem rgb(255 79 216 / 28%);
+  content: '';
+}
+:root .navbar__inner { position: relative; }
+:root .navbar__inner::after {
+  position: absolute;
+  inset: auto 0 -1px;
+  block-size: 1px;
+  background: linear-gradient(90deg, transparent, var(--pb-cyan) 18%, var(--pb-magenta) 55%, var(--pb-amber) 82%, transparent);
+  content: '';
+  opacity: 0.55;
+}
+:root[data-theme='dark'] .navbar { background: rgb(10 8 24 / 94%); }
+:root .navbar__link--active {
+  box-shadow: none;
+  background: var(--pb-signal) left bottom / 100% 2px no-repeat;
+}
+:root .navbar__link:hover { color: var(--b10x-color-heading); }
+
+/* Links in prose. */
+
+:root .markdown a:not(.card) {
+  text-decoration-color: color-mix(in srgb, var(--b10x-color-link) 40%, transparent);
+  text-decoration-thickness: 1px;
+}
+:root .markdown a:not(.card):hover { text-decoration-color: currentColor; }
+
+/* Headings: a short signal accent leads the section rule. */
+
+:root .markdown h2 {
+  border-top: 1px solid;
+  border-image: linear-gradient(90deg, var(--pb-cyan), var(--pb-magenta) 7%, var(--pb-amber) 14%, var(--b10x-color-hairline) 14%) 1;
+}
+:root .markdown h3::before {
+  display: inline-block;
+  inline-size: 0.42rem;
+  block-size: 0.42rem;
+  margin-right: 0.6rem;
+  border-radius: 50%;
+  background: var(--b10x-product-hue);
+  box-shadow: 0 0 0.6rem color-mix(in srgb, var(--b10x-product-hue) 60%, transparent);
+  content: '';
+  vertical-align: 0.2em;
+}
+
+/* Page header card ("REFERENCE · 1 OF 4"). */
+
+:root .b10x-doc-header {
+  position: relative;
+  overflow: hidden;
+  border-color: var(--b10x-code-border);
+  background:
+    radial-gradient(28rem 14rem at 0% 0%, var(--pb-glow-a), transparent 70%),
+    radial-gradient(30rem 16rem at 100% 0%, var(--pb-glow-b), transparent 70%),
+    var(--b10x-color-surface);
+}
+:root .b10x-doc-header::before {
+  position: absolute;
+  inset: 0 0 auto;
+  block-size: 3px;
+  background: var(--pb-signal);
+  content: '';
+}
+:root .b10x-kicker__dot {
+  background: var(--pb-signal);
+  box-shadow: 0 0 0.5rem color-mix(in srgb, var(--b10x-product-hue) 70%, transparent);
+}
+
+/* Sidebar: a signal bar on the active page, a tint on hover. */
+
+:root .menu__link--active:not(.menu__link--sublist) {
+  background:
+    var(--pb-signal-v) left / 2px 100% no-repeat,
+    color-mix(in srgb, var(--b10x-color-accent) 11%, transparent);
+  box-shadow: none;
+}
+:root .menu__link:hover { color: var(--b10x-color-heading); }
+:root .menu__caret:hover,
+:root .menu__link--sublist-caret:hover { background-color: var(--ifm-menu-color-background-hover); }
+
+/* Table of contents. */
+
+:root .table-of-contents__link:hover { color: var(--b10x-color-heading); }
+:root .table-of-contents__link--active {
+  color: var(--b10x-product-ink);
+  font-weight: 560;
+}
+
+/* Inline code and code blocks. */
+
+:root :not(pre) > code {
+  border: 1px solid color-mix(in srgb, var(--b10x-product-hue) 18%, transparent);
+  background: var(--b10x-inline-code);
+  color: var(--pb-inline-code-ink);
+}
+:root .markdown a code { color: inherit; }
+:root .theme-code-block {
+  border-color: var(--b10x-code-border);
+  box-shadow: 0 0.8rem 2rem color-mix(in srgb, var(--b10x-product-hue) 8%, transparent);
+}
+:root .theme-code-block[class*='language-']::before,
+:root .theme-code-block > [class*='codeBlockTitle'] {
+  background:
+    var(--pb-signal) left top / 100% 2px no-repeat,
+    linear-gradient(90deg, color-mix(in srgb, var(--pb-cyan) 9%, var(--b10x-code-chrome)), color-mix(in srgb, var(--pb-magenta) 7%, var(--b10x-code-chrome)) 60%, var(--b10x-code-chrome));
+  color: var(--b10x-product-ink);
+}
+:root .theme-code-block > [class*='codeBlockTitle']::after { color: var(--b10x-product-ink); }
+:root .theme-code-block-highlighted-line { box-shadow: inset 2px 0 0 var(--b10x-product-hue); }
+
+/* Tables. */
+
+:root .markdown table th {
+  border-bottom: 2px solid;
+  border-image: var(--pb-signal) 1;
+  color: var(--b10x-product-ink);
+}
+:root .markdown table tbody tr:hover { background: color-mix(in srgb, var(--b10x-color-accent) 5%, transparent); }
+
+/* Admonitions take the signal hues. */
+
+:root .alert--info { --b10x-admonition: var(--b10x-color-sky); }
+:root .alert--secondary { --b10x-admonition: var(--b10x-color-accent); }
+:root .alert--success { --b10x-admonition: var(--b10x-color-lime); }
+:root .alert--warning { --b10x-admonition: var(--b10x-color-amber); }
+:root .alert--danger { --b10x-admonition: var(--b10x-color-rose); }
+:root .theme-admonition {
+  background:
+    radial-gradient(24rem 8rem at 0% 0%, color-mix(in srgb, var(--b10x-admonition, var(--b10x-color-amber)) 12%, transparent), transparent 70%),
+    color-mix(in srgb, var(--b10x-admonition, var(--b10x-color-amber)) 6%, var(--b10x-color-surface));
+}
+
+/* Pagination. */
+
+:root .pagination-nav__link {
+  border-color: var(--b10x-code-border);
+  background: var(--b10x-color-surface);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+:root .pagination-nav__link:hover {
+  border-color: var(--b10x-product-hue);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--b10x-product-hue) 30%, transparent), 0 0.8rem 2rem color-mix(in srgb, var(--b10x-product-hue) 14%, transparent);
+}
+:root .pagination-nav__sublabel { color: var(--b10x-product-ink); }
+:root .pagination-nav__label { color: var(--b10x-color-heading); }
+
+/* Footer: the hero's night sky in both modes. */
+
+:root .footer,
+:root .footer--dark {
+  --ifm-footer-background-color: var(--pb-ink);
+  --ifm-footer-color: #b9b5dc;
+  --ifm-footer-link-color: #c9c5ea;
+  --ifm-footer-link-hover-color: #5fe6ea;
+  --ifm-footer-title-color: #f7f5ff;
+  position: relative;
+  border-top: 0;
+  background:
+    radial-gradient(40rem 16rem at 10% 0%, rgb(45 226 230 / 10%), transparent 70%),
+    radial-gradient(40rem 18rem at 90% 0%, rgb(255 79 216 / 12%), transparent 70%),
+    var(--pb-ink);
+  color: #b9b5dc;
+}
+:root .footer::before {
+  position: absolute;
+  inset: 0 0 auto;
+  block-size: 2px;
+  background: var(--pb-signal);
+  content: '';
+}
+:root .footer__title { color: #f7f5ff; }
+:root .footer__link-item { color: #c9c5ea; }
+:root .footer__link-item:hover { color: #5fe6ea; }
+:root .footer__copyright,
+:root .footer .b10x-footer__bottom,
+:root .footer .b10x-footer__bottom * { color: #a9a5cf; }
+:root .footer a:hover { color: #5fe6ea; }

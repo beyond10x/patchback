@@ -1,0 +1,93 @@
+# DESIGN.md 7.2: x.f32 has 32 columns and y.f32 has 8; the data loader verifies "byte counts,
+# matching sample counts". Rows other than the split's sample count, and the wrong column count,
+# are refused; nothing is written.
+type: ess-scenario/1
+domain: patchback.dataset
+scenario: dense-data-files-shape-mismatch
+summary: An x.f32 with 31 columns, a y.f32 with 32 columns and an x.f32 of 4,991 rows for a 4,992-sample split are refused.
+
+arrange:
+  - instance: dataset
+    entity: patchback.dataset.Dataset
+  - instance: validation
+    entity: patchback.dataset.DatasetSplit
+
+timeline:
+  - at: 2026-10-22T10:40:00Z
+    command: patchback.dataset.GenerateDataset
+    actor: patchback.dataset.Operator
+    input:
+      seed: 42
+      prng_algorithm: std-only-generator
+      batch_size: 16
+      feature_contract_id: 5a000000-0000-4000-8000-000000000001
+      topology_id: 5a000000-0000-4000-8000-000000000002
+      out_dir: data/
+    outcome: generated
+    capture: {instance: dataset, event: patchback.dataset.DatasetGenerated, field: dataset_id}
+
+  - at: 2026-10-22T10:40:01Z
+    command: patchback.dataset.OpenSplit
+    actor: patchback.dataset.Operator
+    input:
+      dataset_id: {$instance: dataset}
+      role: Validation
+      sample_count: 4992
+    outcome: opened
+    capture: {instance: validation, event: patchback.dataset.SplitOpened, field: dataset_split_id}
+
+  - at: 2026-10-22T10:40:02Z
+    command: patchback.dataset.WriteDenseFile
+    actor: patchback.dataset.Operator
+    input:
+      dataset_split_id: {$instance: validation}
+      kind: X
+      path: data/val/x.f32
+      rows: 4992
+      columns: 31
+      byte_count: 618984
+    outcome: wrong-column-count
+    error:
+      name: patchback.dataset.WrongColumnCount
+
+  - at: 2026-10-22T10:40:03Z
+    command: patchback.dataset.WriteDenseFile
+    actor: patchback.dataset.Operator
+    input:
+      dataset_split_id: {$instance: validation}
+      kind: Y
+      path: data/val/y.f32
+      rows: 4992
+      columns: 32
+      byte_count: 638976
+    outcome: wrong-column-count
+    error:
+      name: patchback.dataset.WrongColumnCount
+
+  - at: 2026-10-22T10:40:04Z
+    command: patchback.dataset.WriteDenseFile
+    actor: patchback.dataset.Operator
+    input:
+      dataset_split_id: {$instance: validation}
+      kind: X
+      path: data/val/x.f32
+      rows: 4991
+      columns: 32
+      byte_count: 638848
+    outcome: sample-count-mismatch
+    error:
+      name: patchback.dataset.SampleCountMismatch
+
+  - at: 2026-10-22T10:40:05Z
+    command: patchback.dataset.WriteDenseFile
+    actor: patchback.dataset.Operator
+    input:
+      dataset_split_id: 5a000000-0000-4000-8000-0000000000fd
+      kind: X
+      path: data/val/x.f32
+      rows: 4992
+      columns: 32
+      byte_count: 638976
+    outcome: unknown-split
+    error:
+      name: patchback.dataset.UnknownSplit

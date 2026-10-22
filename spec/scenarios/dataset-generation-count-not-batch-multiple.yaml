@@ -1,0 +1,48 @@
+# DESIGN.md 7.1: "Choose counts so validation can be supplied to `modelspec train --eval`: e.g.
+# 50,016 train / 4,992 validation / 4,992 test, each divisible by batch size 16." A count that is
+# not a multiple of the dataset's batch size is refused (an external decision: ESS has no modulo).
+type: ess-scenario/1
+domain: patchback.dataset
+scenario: dataset-generation-count-not-batch-multiple
+summary: A split of 50,000 samples at batch size 16 is refused with SplitCountNotBatchMultiple; 50,016 opens.
+
+arrange:
+  - instance: dataset
+    entity: patchback.dataset.Dataset
+  - instance: train
+    entity: patchback.dataset.DatasetSplit
+
+timeline:
+  - at: 2026-10-22T10:00:00Z
+    command: patchback.dataset.GenerateDataset
+    actor: patchback.dataset.Operator
+    input:
+      seed: 42
+      prng_algorithm: std-only-generator
+      batch_size: 16
+      feature_contract_id: 5a000000-0000-4000-8000-000000000001
+      topology_id: 5a000000-0000-4000-8000-000000000002
+      out_dir: data/
+    outcome: generated
+    capture: {instance: dataset, event: patchback.dataset.DatasetGenerated, field: dataset_id}
+
+  - at: 2026-10-22T10:00:01Z
+    command: patchback.dataset.OpenSplit
+    actor: patchback.dataset.Operator
+    input:
+      dataset_id: {$instance: dataset}
+      role: Train
+      sample_count: 50000
+    outcome: count-not-batch-multiple
+    error:
+      name: patchback.dataset.SplitCountNotBatchMultiple
+
+  - at: 2026-10-22T10:00:02Z
+    command: patchback.dataset.OpenSplit
+    actor: patchback.dataset.Operator
+    input:
+      dataset_id: {$instance: dataset}
+      role: Train
+      sample_count: 50016
+    outcome: opened
+    capture: {instance: train, event: patchback.dataset.SplitOpened, field: dataset_split_id}

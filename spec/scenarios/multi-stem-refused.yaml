@@ -1,0 +1,104 @@
+# DESIGN.md section 10 V3: a stem pairs a patch with the note sequence written for it. A sequence
+# written for another patch, an unknown arrangement and an unknown sequence are refused.
+# UNMAPPED: whether one sequence may drive several patches (fit candidates, shared stems) is open.
+type: ess-scenario/1
+domain: patchback.score
+scenario: multi-stem-refused
+summary: A stem whose sequence was written for another patch, or that names an unknown arrangement or sequence, is refused.
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.patch.DeclareTopology
+    actor: patchback.patch.Operator
+    input:
+      topology_id: 7f0c0000-0000-4000-8000-000000000072
+      name: subtractive-mono/1
+      parameters: []
+    outcome: declared
+
+  - at: 2026-10-22T09:00:01Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000173
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 7f0c0000-0000-4000-8000-000000000072
+      nodes:
+        - {id: 2, kind: SawOscillator, parameters: []}
+      edges: []
+    outcome: loaded
+
+  - at: 2026-10-22T09:00:02Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000174
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 7f0c0000-0000-4000-8000-000000000072
+      nodes:
+        - {id: 4, kind: LowpassFilter, parameters: []}
+      edges: []
+    outcome: loaded
+
+  - at: 2026-10-22T09:00:03Z
+    command: patchback.score.LoadNoteSequence
+    actor: patchback.score.Operator
+    input:
+      note_sequence_id: 7f0c0000-0000-4000-8000-000000000273
+      format_version: 1
+      sample_rate_hz: 48000
+      patch_id: 7f0c0000-0000-4000-8000-000000000173
+      notes:
+        - {start_sample: 0, end_sample: 24000, midi_note: 33, velocity: 0.9}
+    outcome: loaded
+
+  - at: 2026-10-22T09:00:04Z
+    command: patchback.score.CreateArrangement
+    actor: patchback.score.Operator
+    input:
+      arrangement_id: 7f0c0000-0000-4000-8000-000000000372
+    outcome: created
+
+  - at: 2026-10-22T09:00:05Z
+    command: patchback.score.AddStem
+    actor: patchback.score.Operator
+    input:
+      stem_id: 7f0c0000-0000-4000-8000-000000000473
+      arrangement_id: 7f0c0000-0000-4000-8000-000000000372
+      patch_id: 7f0c0000-0000-4000-8000-000000000174
+      note_sequence_id: 7f0c0000-0000-4000-8000-000000000273
+    outcome: sequence-for-another-patch
+    error:
+      name: patchback.score.SequenceForAnotherPatch
+      fields:
+        stem_id: 7f0c0000-0000-4000-8000-000000000473
+        note_sequence_id: 7f0c0000-0000-4000-8000-000000000273
+    no_events: [patchback.score.StemAdded]
+
+  - at: 2026-10-22T09:00:06Z
+    command: patchback.score.AddStem
+    actor: patchback.score.Operator
+    input:
+      stem_id: 7f0c0000-0000-4000-8000-000000000473
+      arrangement_id: 7f0c0000-0000-4000-8000-000000000398
+      patch_id: 7f0c0000-0000-4000-8000-000000000173
+      note_sequence_id: 7f0c0000-0000-4000-8000-000000000273
+    outcome: no-such-arrangement
+    error:
+      name: patchback.score.ArrangementNotFound
+    no_events: [patchback.score.StemAdded]
+
+  - at: 2026-10-22T09:00:07Z
+    command: patchback.score.AddStem
+    actor: patchback.score.Operator
+    input:
+      stem_id: 7f0c0000-0000-4000-8000-000000000473
+      arrangement_id: 7f0c0000-0000-4000-8000-000000000372
+      patch_id: 7f0c0000-0000-4000-8000-000000000173
+      note_sequence_id: 7f0c0000-0000-4000-8000-000000000298
+    outcome: no-such-sequence
+    error:
+      name: patchback.score.NoteSequenceNotFound
+    no_events: [patchback.score.StemAdded]

@@ -1,0 +1,25 @@
+# epic:patch-studio, fit evolution view, live. A stream frame for a trace that was never opened
+# is refused; the view does not invent a run around it.
+type: ess-scenario/1
+domain: patchback.studio
+scenario: studio-fit-live-unknown-trace
+summary: A frame for a trace that was never opened is refused.
+
+timeline:
+  - at: 2026-10-22T14:20:00Z
+    command: patchback.studio.AppendFrame
+    actor: patchback.studio.FitStream
+    input:
+      frame_id: 5a0d0000-0000-4000-8000-000000000661
+      trace_id: 5a0d0000-0000-4000-8000-000000000499
+      sequence: 0
+      evaluation: 1
+      outcome: FirstRetained
+      topology_id: 5a0d0000-0000-4000-8000-000000000101
+      total_loss: 0.645
+      best_loss: 0.645
+      parameters: [{path: cutoff, normalized_value: 0.5}]
+    outcome: unknown-trace
+    error:
+      name: patchback.studio.TraceNotFound
+    no_events: [patchback.studio.FrameAppended]

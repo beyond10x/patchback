@@ -1,0 +1,64 @@
+# DESIGN.md section 11: the parser refuses malformed numbers and unbounded lengths. Both are the
+# parser's verdict on the raw text (grammar and bounds are UNMAPPED), so each is selected as an
+# external outcome; an unknown topology reference is refused too.
+type: ess-scenario/1
+domain: patchback.patch
+scenario: patch-file-format-parser
+summary: A malformed number, an over-long line and an unknown topology reference make the .patch file refused.
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.patch.DeclareTopology
+    actor: patchback.patch.Operator
+    input:
+      topology_id: 7f0c0000-0000-4000-8000-000000000023
+      name: subtractive-mono/1
+      parameters: []
+    outcome: declared
+
+  - at: 2026-10-22T09:00:01Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000123
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 7f0c0000-0000-4000-8000-000000000023
+      nodes: []
+      edges: []
+    outcome: malformed-number
+    error:
+      name: patchback.patch.MalformedNumber
+    no_events: [patchback.patch.PatchLoaded]
+
+  - at: 2026-10-22T09:00:02Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000123
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 7f0c0000-0000-4000-8000-000000000023
+      nodes: []
+      edges: []
+    outcome: unbounded-length
+    error:
+      name: patchback.patch.LengthBoundExceeded
+    no_events: [patchback.patch.PatchLoaded]
+
+  - at: 2026-10-22T09:00:03Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000123
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 7f0c0000-0000-4000-8000-000000000098
+      nodes: []
+      edges: []
+    outcome: unknown-topology
+    error:
+      name: patchback.patch.UnknownTopology
+      fields:
+        topology_id: 7f0c0000-0000-4000-8000-000000000098
+    no_events: [patchback.patch.PatchLoaded]

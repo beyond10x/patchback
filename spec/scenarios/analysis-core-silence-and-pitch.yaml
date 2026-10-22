@@ -1,0 +1,39 @@
+# DESIGN.md 6.2: silence detection, and f0 estimation "with low-confidence refusal"; a pitch that
+# cannot be identified "must be surfaced rather than guessed away". Whether silence refuses the
+# analysis is UNMAPPED (spec/domains/analysis.yaml, AnalyzeAudio); this model reports it as a
+# typed refusal.
+type: ess-scenario/1
+domain: patchback.analysis
+scenario: analysis-core-silence-and-pitch
+summary: A silent clip and a clip with an ambiguous pitch are each answered with a typed diagnostic and no analysis.
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.analysis.AnalyzeAudio
+    actor: patchback.analysis.Operator
+    input:
+      audio_clip_id: 0a1b2c3d-0000-4000-8000-000000000007
+      out_dir: analysis/
+      sample_rate_hz: 48000
+      frame_count: 48000
+      fft_lengths: [512, 2048, 8192]
+      hop_length: 512
+      window: Hann
+    outcome: silent
+    error:
+      name: patchback.analysis.SilentInput
+
+  - at: 2026-10-22T09:00:01Z
+    command: patchback.analysis.AnalyzeAudio
+    actor: patchback.analysis.Operator
+    input:
+      audio_clip_id: 0a1b2c3d-0000-4000-8000-000000000008
+      out_dir: analysis/
+      sample_rate_hz: 48000
+      frame_count: 48000
+      fft_lengths: [512, 2048, 8192]
+      hop_length: 512
+      window: Hann
+    outcome: pitch-ambiguous
+    error:
+      name: patchback.analysis.PitchAmbiguous

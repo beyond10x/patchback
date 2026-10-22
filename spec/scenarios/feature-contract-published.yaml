@@ -1,0 +1,41 @@
+# DESIGN.md 6.3: `features/1` is a fixed-size 32-element vector: 24 band energies (eight
+# logarithmic bands for attack, body and release) then 8 scalars in the listed order; FFT lengths
+# 512, 2048, 8192; frozen as a versioned spec before dataset generation (Milestone B "Freeze
+# feature spec features/1").
+type: ess-scenario/1
+domain: patchback.analysis
+scenario: feature-contract-published
+summary: "`features/1` is defined with 32 values, eight bands over three windows and the eight scalars in order, then published."
+
+arrange:
+  - instance: contract
+    entity: patchback.analysis.FeatureContract
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.analysis.DefineFeatureContract
+    actor: patchback.analysis.Operator
+    input:
+      version: features/1
+      value_count: 32
+      band_count: 8
+      band_windows: [Attack, Body, Release]
+      scalar_features:
+        - Rms
+        - Peak
+        - SpectralCentroid
+        - Rolloff
+        - SpectralFlatness
+        - ZeroCrossingRate
+        - AttackEnvelopeSlope
+        - NormalizedMidiPitch
+      fft_lengths: [512, 2048, 8192]
+    outcome: defined
+    capture: {instance: contract, event: patchback.analysis.FeatureContractDefined, field: feature_contract_id}
+
+  - at: 2026-10-22T09:00:01Z
+    command: patchback.analysis.PublishFeatureContract
+    actor: patchback.analysis.Operator
+    input:
+      feature_contract_id: {$instance: contract}
+    outcome: published

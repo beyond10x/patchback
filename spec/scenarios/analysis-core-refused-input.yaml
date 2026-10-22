@@ -1,0 +1,52 @@
+# DESIGN.md 12.3: "Reject ... impossible sample rates, empty audio"; 5.3 and 6.1: 48 kHz only,
+# no silent conversion; 2 invariant 4 and 6.1: non-finite samples are rejected.
+type: ess-scenario/1
+domain: patchback.analysis
+scenario: analysis-core-refused-input
+summary: Empty audio, a 44.1 kHz clip and a clip with a non-finite sample are each refused and no analysis exists.
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.analysis.AnalyzeAudio
+    actor: patchback.analysis.Operator
+    input:
+      audio_clip_id: 0a1b2c3d-0000-4000-8000-000000000002
+      out_dir: analysis/
+      sample_rate_hz: 48000
+      frame_count: 0
+      fft_lengths: [512, 2048, 8192]
+      hop_length: 512
+      window: Hann
+    outcome: empty
+    error:
+      name: patchback.analysis.EmptyAudio
+
+  - at: 2026-10-22T09:00:01Z
+    command: patchback.analysis.AnalyzeAudio
+    actor: patchback.analysis.Operator
+    input:
+      audio_clip_id: 0a1b2c3d-0000-4000-8000-000000000003
+      out_dir: analysis/
+      sample_rate_hz: 44100
+      frame_count: 44100
+      fft_lengths: [512, 2048, 8192]
+      hop_length: 512
+      window: Hann
+    outcome: unsupported-sample-rate
+    error:
+      name: patchback.analysis.UnsupportedSampleRate
+
+  - at: 2026-10-22T09:00:02Z
+    command: patchback.analysis.AnalyzeAudio
+    actor: patchback.analysis.Operator
+    input:
+      audio_clip_id: 0a1b2c3d-0000-4000-8000-000000000004
+      out_dir: analysis/
+      sample_rate_hz: 48000
+      frame_count: 48000
+      fft_lengths: [512, 2048, 8192]
+      hop_length: 512
+      window: Hann
+    outcome: non-finite
+    error:
+      name: patchback.analysis.NonFiniteSamples

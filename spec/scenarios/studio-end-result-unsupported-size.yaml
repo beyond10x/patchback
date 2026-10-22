@@ -1,0 +1,24 @@
+# epic:patch-studio, end-result view. Spectra are drawn at the analysis FFT lengths of DESIGN.md
+# 6.3 (512, 2048, 8192), so the view compares what the loss compares; 1024 is refused.
+type: ess-scenario/1
+domain: patchback.studio
+scenario: studio-end-result-unsupported-size
+summary: A spectrum at an FFT length outside 512, 2048 and 8192 is refused.
+
+timeline:
+  - at: 2026-10-22T14:30:00Z
+    command: patchback.studio.ComposeResultView
+    actor: patchback.studio.Studio
+    input:
+      result_view_id: 5a0d0000-0000-4000-8000-000000000803
+      fit_run_id: 5a0d0000-0000-4000-8000-000000000501
+      best_patch_id: 5a0d0000-0000-4000-8000-000000000702
+      reference_clip_id: 5a0d0000-0000-4000-8000-000000000901
+      best_render_id: 5a0d0000-0000-4000-8000-000000000902
+      spectra:
+        - {source: Reference, fft_size: 1024}
+        - {source: Render, fft_size: 1024}
+    outcome: unsupported-size
+    error:
+      name: patchback.studio.UnsupportedSpectrumSize
+    no_events: [patchback.studio.ResultComposed]

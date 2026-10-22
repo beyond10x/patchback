@@ -1,0 +1,21 @@
+# epic:patch-studio, end-result view. A run that retained no valid patch (DESIGN.md 9.2 step 5,
+# a failed run writes no patch) has no end result; the view says so instead of showing a default.
+type: ess-scenario/1
+domain: patchback.studio
+scenario: studio-end-result-no-retained-patch
+summary: A run with no retained patch has no end-result view.
+
+timeline:
+  - at: 2026-10-22T14:30:00Z
+    command: patchback.studio.ComposeResultView
+    actor: patchback.studio.Studio
+    input:
+      result_view_id: 5a0d0000-0000-4000-8000-000000000802
+      fit_run_id: 5a0d0000-0000-4000-8000-000000000505
+      reference_clip_id: 5a0d0000-0000-4000-8000-000000000901
+      spectra:
+        - {source: Reference, fft_size: 2048}
+    outcome: no-retained-patch
+    error:
+      name: patchback.studio.NoRetainedPatch
+    no_events: [patchback.studio.ResultComposed]

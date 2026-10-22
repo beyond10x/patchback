@@ -1,0 +1,300 @@
+domain: patchback.dependency
+
+summary: >-
+  The dependency gate (DESIGN.md § 3, § 12.2, invariant 7): an audit of the application-level crates
+  of one revision. External audio I/O is the only permitted category, as at most one approved
+  backend behind an optional feature; every other third-party application crate is refused.
+
+# UNMAPPED: § 3 applies the rule to "application-level dependencies" and exempts the upstream and
+# transitive build requirements of ModelSpec and the audio backend, without saying how the audit
+# tells them apart (direct `[dependencies]` of workspace crates, or the resolved graph minus those
+# subtrees). Each recorded crate is taken as application-level. Open question.
+# UNMAPPED: § 12.2 admits "pinned ModelSpec tooling" beside the audio backend. § 8.2 runs ModelSpec
+# as a subprocess, so it is not modelled as a crate; whether a ModelSpec crate may ever appear in
+# the audit is unsettled. Open question.
+
+types:
+  - name: patchback.dependency.DependencyAuditId
+    kind: newtype
+    of: Uuid
+
+  - name: patchback.dependency.CrateName
+    kind: newtype
+    of: String
+    naming:
+      summary: A crates.io package name as it appears in the dependency graph.
+
+  # The § 3 table's categories; § 1 "External audio I/O is the only permitted application
+  # dependency category".
+  - name: patchback.dependency.CrateCategory
+    kind: enum
+    variants:
+      - AudioIo
+      - MachineLearning
+      - Tensor
+      - Numerical
+      - Dsp
+      - Mathematics
+      - Serialization
+      - Prng
+      - Testing
+      - ApplicationFramework
+      - Other
+    naming:
+      summary: What a crate is for, as the reviewer classified it (§ 3).
+
+entities:
+  - name: patchback.dependency.DependencyAudit
+    naming:
+      summary: >-
+        The dependency audit of one revision (§ 12.2 "Dependency gate"). Open while crates are
+        recorded; Passed when it concludes with no refused crate.
+    identity:
+      name: dependency_audit_id
+      type: patchback.dependency.DependencyAuditId
+    fields:
+      - name: revision
+        type: String
+        summary: The source revision the audit reads.
+      - name: audio_backend
+        type: Optional<patchback.dependency.CrateName>
+        summary: The one admitted audio I/O backend, if any (§ 3, ADR-007).
+      - name: audio_backend_count
+        type: Integer
+        summary: How many audio I/O backends the audit has admitted; at most one (§ 3).
+    # UNMAPPED: § 3 "CI audits dependency changes and rejects unreviewed additions" and ADR-007
+    # "approve at most one backend for live audio later" do not say where an approval is recorded
+    # (an allow-list file, an ADR, a reviewer sign-off). The approval arrives as an input flag
+    # here. Open question.
+    lifecycle:
+      initial: Open
+      states: [Open, Passed]
+      terminal: [Passed]
+      transitions:
+        - name: pass
+          from: [Open]
+          to: Passed
+
+actors:
+  - name: patchback.dependency.Auditor
+    naming:
+      display: Auditor
+      summary: The CI job or reviewer running the dependency audit (§ 3, § 12.2).
+    may:
+      - patchback.dependency.StartDependencyAudit
+      - patchback.dependency.RecordCrate
+      - patchback.dependency.ConcludeDependencyAudit
+
+errors:
+  - name: patchback.dependency.UnknownAudit
+    summary: No dependency audit carries this identity.
+    fields:
+      - name: dependency_audit_id
+        type: patchback.dependency.DependencyAuditId
+
+  - name: patchback.dependency.ForbiddenCrate
+    summary: >-
+      A third-party application crate outside the audio I/O category: ML, tensor, numerical, DSP,
+      mathematics, serialization, PRNG, test or application-framework crates are internal Rust
+      modules or `std` only (§ 1, § 3, invariant 7).
+    fields:
+      - name: crate_name
+        type: patchback.dependency.CrateName
+      - name: category
+        type: patchback.dependency.CrateCategory
+
+  - name: patchback.dependency.UnapprovedCrate
+    summary: An audio I/O crate that is not explicitly approved; CI rejects unreviewed additions (§ 3, § 12.2).
+    fields:
+      - name: crate_name
+        type: patchback.dependency.CrateName
+
+  - name: patchback.dependency.AudioBackendNotOptional
+    summary: The audio I/O backend is not isolated behind an optional feature (§ 3).
+    fields:
+      - name: crate_name
+        type: patchback.dependency.CrateName
+
+  - name: patchback.dependency.SecondAudioBackend
+    summary: The audit already admitted an audio I/O backend; at most one is allowed (§ 3).
+    fields:
+      - name: crate_name
+        type: patchback.dependency.CrateName
+      - name: audio_backend
+        type: Optional<patchback.dependency.CrateName>
+
+  - name: patchback.dependency.AuditConcluded
+    summary: The audit has passed, so it takes no more crates and nothing changed.
+    fields:
+      - name: state
+        type: patchback.dependency.DependencyAudit.State
+
+commands:
+  - name: patchback.dependency.StartDependencyAudit
+    naming:
+      wire: start-dependency-audit
+      display: Start a dependency audit
+      summary: Open the dependency audit of one revision.
+    input:
+      - name: revision
+        type: String
+    outcomes:
+      - name: started
+        creates: patchback.dependency.DependencyAudit
+        instance: dependency_audit_id
+        sets:
+          revision: input.revision
+          audio_backend: {cleared: true}
+          audio_backend_count: 0
+        emits: [patchback.dependency.DependencyAuditStarted]
+        payload:
+          patchback.dependency.DependencyAuditStarted:
+            dependency_audit_id: {generated: true}
+            revision: input.revision
+        summary: The audit is open with no crate admitted.
+
+  - name: patchback.dependency.RecordCrate
+    naming:
+      wire: record-crate
+      display: Record a crate
+      summary: >-
+        Record one third-party application crate of the revision; only one approved audio I/O
+        backend behind an optional feature is admitted.
+    input:
+      - name: dependency_audit_id
+        type: patchback.dependency.DependencyAuditId
+      - name: crate_name
+        type: patchback.dependency.CrateName
+      - name: category
+        type: patchback.dependency.CrateCategory
+        example: AudioIo
+      - name: approved
+        type: Boolean
+        example: true
+      - name: behind_optional_feature
+        type: Boolean
+        example: true
+    outcomes:
+      - name: forbidden-crate
+        when: category != AudioIo
+        error: patchback.dependency.ForbiddenCrate
+        payload:
+          patchback.dependency.ForbiddenCrate:
+            crate_name: input.crate_name
+            category: input.category
+      - name: unapproved-crate
+        when: approved == false
+        error: patchback.dependency.UnapprovedCrate
+        payload:
+          patchback.dependency.UnapprovedCrate:
+            crate_name: input.crate_name
+      - name: not-optional
+        when: behind_optional_feature == false
+        error: patchback.dependency.AudioBackendNotOptional
+        payload:
+          patchback.dependency.AudioBackendNotOptional:
+            crate_name: input.crate_name
+      - name: unknown-audit
+        unknown_instance: true
+        error: patchback.dependency.UnknownAudit
+        payload:
+          patchback.dependency.UnknownAudit:
+            dependency_audit_id: input.dependency_audit_id
+      - name: audit-concluded
+        when_subject:
+          predicate: state == Passed
+        error: patchback.dependency.AuditConcluded
+        payload:
+          patchback.dependency.AuditConcluded:
+            state: {subject: state}
+      - name: second-audio-backend
+        when_subject:
+          predicate: audio_backend_count >= 1
+        error: patchback.dependency.SecondAudioBackend
+        payload:
+          patchback.dependency.SecondAudioBackend:
+            crate_name: input.crate_name
+            audio_backend: {subject: audio_backend}
+      - name: audio-backend-admitted
+        updates: patchback.dependency.DependencyAudit
+        instance: dependency_audit_id
+        sets:
+          audio_backend: input.crate_name
+          audio_backend_count: {increment: 1}
+        emits: [patchback.dependency.AudioBackendAdmitted]
+        payload:
+          patchback.dependency.AudioBackendAdmitted:
+            dependency_audit_id: input.dependency_audit_id
+            crate_name: input.crate_name
+        summary: The approved, optional audio I/O backend is admitted.
+
+  - name: patchback.dependency.ConcludeDependencyAudit
+    naming:
+      wire: conclude-dependency-audit
+      display: Conclude the dependency audit
+      summary: >-
+        Pass the audit: every recorded crate was admitted, so the revision has no third-party
+        application crate beyond at most one approved optional audio I/O backend.
+    input:
+      - name: dependency_audit_id
+        type: patchback.dependency.DependencyAuditId
+    outcomes:
+      - name: unknown-audit
+        unknown_instance: true
+        error: patchback.dependency.UnknownAudit
+        payload:
+          patchback.dependency.UnknownAudit:
+            dependency_audit_id: input.dependency_audit_id
+      - name: passed
+        moves: patchback.dependency.DependencyAudit.pass
+        instance: dependency_audit_id
+        emits: [patchback.dependency.DependencyAuditPassed]
+        payload:
+          patchback.dependency.DependencyAuditPassed:
+            dependency_audit_id: input.dependency_audit_id
+        summary: The gate passes; the admitted backend, if any, is published by the view.
+      - name: wrong-state
+        wrong_state: true
+        error: patchback.dependency.AuditConcluded
+        payload:
+          patchback.dependency.AuditConcluded:
+            state: {subject: state}
+
+events:
+  - name: patchback.dependency.DependencyAuditStarted
+    fields:
+      - name: dependency_audit_id
+        type: patchback.dependency.DependencyAuditId
+      - name: revision
+        type: String
+
+  - name: patchback.dependency.AudioBackendAdmitted
+    fields:
+      - name: dependency_audit_id
+        type: patchback.dependency.DependencyAuditId
+      - name: crate_name
+        type: patchback.dependency.CrateName
+
+  - name: patchback.dependency.DependencyAuditPassed
+    fields:
+      - name: dependency_audit_id
+        type: patchback.dependency.DependencyAuditId
+
+views:
+  - name: patchback.dependency.DependencyAudits
+    source: patchback.dependency.DependencyAudit
+    consistency: read_your_writes
+    fields:
+      - name: dependency_audit_id
+        type: patchback.dependency.DependencyAuditId
+      - name: state
+        type: patchback.dependency.DependencyAudit.State
+      - name: revision
+        type: String
+      - name: audio_backend
+        type: Optional<patchback.dependency.CrateName>
+      - name: audio_backend_count
+        type: Integer
+    naming:
+      wire: dependency-audits
+      display: Dependency audits

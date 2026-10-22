@@ -1,0 +1,30 @@
+# epic:patch-studio, end-result view. A completed run's retained patch is shown beside the
+# reference and best-render spectra at two of the analysis FFT lengths of DESIGN.md 6.3.
+type: ess-scenario/1
+domain: patchback.studio
+scenario: studio-end-result-composed
+summary: The end result of a run with a retained patch is composed with reference and render spectra.
+
+timeline:
+  - at: 2026-10-22T14:30:00Z
+    command: patchback.studio.ComposeResultView
+    actor: patchback.studio.Studio
+    input:
+      result_view_id: 5a0d0000-0000-4000-8000-000000000801
+      fit_run_id: 5a0d0000-0000-4000-8000-000000000501
+      best_patch_id: 5a0d0000-0000-4000-8000-000000000702
+      reference_clip_id: 5a0d0000-0000-4000-8000-000000000901
+      best_render_id: 5a0d0000-0000-4000-8000-000000000902
+      spectra:
+        - {source: Reference, fft_size: 2048}
+        - {source: Render, fft_size: 2048}
+        - {source: Reference, fft_size: 8192}
+        - {source: Render, fft_size: 8192}
+    outcome: composed
+
+assert:
+  - view: patchback.studio.ResultViews
+    contains:
+      result_view_id: 5a0d0000-0000-4000-8000-000000000801
+      state: Composed
+      best_patch_id: 5a0d0000-0000-4000-8000-000000000702

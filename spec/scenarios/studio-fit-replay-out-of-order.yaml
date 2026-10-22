@@ -1,0 +1,52 @@
+# epic:patch-studio, fit evolution view, replay. Frames arrive in strictly increasing sequence;
+# a frame that repeats a sequence the trace already holds is refused, so the scrubber's positions
+# are the evaluations in run order.
+type: ess-scenario/1
+domain: patchback.studio
+scenario: studio-fit-replay-out-of-order
+summary: A frame that repeats sequence 0 after it was appended is refused.
+
+timeline:
+  - at: 2026-10-22T13:40:00Z
+    command: patchback.studio.OpenTrace
+    actor: patchback.studio.Studio
+    input:
+      trace_id: 5a0d0000-0000-4000-8000-000000000403
+      fit_run_id: 5a0d0000-0000-4000-8000-000000000503
+      source: Replay
+      topology_id: 5a0d0000-0000-4000-8000-000000000101
+      parameter_paths: [cutoff]
+    outcome: opened
+
+  - at: 2026-10-22T13:40:01Z
+    command: patchback.studio.AppendFrame
+    actor: patchback.studio.Studio
+    input:
+      frame_id: 5a0d0000-0000-4000-8000-000000000621
+      trace_id: 5a0d0000-0000-4000-8000-000000000403
+      sequence: 0
+      evaluation: 1
+      outcome: FirstRetained
+      topology_id: 5a0d0000-0000-4000-8000-000000000101
+      total_loss: 0.645
+      best_loss: 0.645
+      parameters: [{path: cutoff, normalized_value: 0.5}]
+    outcome: appended
+
+  - at: 2026-10-22T13:40:02Z
+    command: patchback.studio.AppendFrame
+    actor: patchback.studio.Studio
+    input:
+      frame_id: 5a0d0000-0000-4000-8000-000000000622
+      trace_id: 5a0d0000-0000-4000-8000-000000000403
+      sequence: 0
+      evaluation: 2
+      outcome: Improved
+      topology_id: 5a0d0000-0000-4000-8000-000000000101
+      total_loss: 0.43
+      best_loss: 0.43
+      parameters: [{path: cutoff, normalized_value: 0.25}]
+    outcome: out-of-order
+    error:
+      name: patchback.studio.FrameOutOfOrder
+    no_events: [patchback.studio.FrameAppended]

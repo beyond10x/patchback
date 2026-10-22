@@ -1,0 +1,14 @@
+format: ess/29
+system: patchback
+version: v1
+
+domains:
+  - patchback.patch
+  - patchback.score
+  - patchback.audio
+  - patchback.analysis
+  - patchback.dataset
+  - patchback.model
+  - patchback.fit
+  - patchback.dependency
+  - patchback.studio

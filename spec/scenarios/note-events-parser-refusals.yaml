@@ -1,0 +1,62 @@
+# DESIGN.md 11: the .events parser rejects malformed numbers and unbounded lengths; 12.3 bounds the
+# note count. Both are the parser's findings (external in score.yaml, UNMAPPED: no grammar or
+# bound value is given), reached once the patch exists at the sequence's rate.
+type: ess-scenario/1
+domain: patchback.score
+scenario: note-events-parser-refusals
+summary: A .events file with a malformed number and one past the parser's length bound are each refused and load no sequence.
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.patch.DeclareTopology
+    actor: patchback.patch.Operator
+    input:
+      topology_id: 7f0c0000-0000-4000-8000-000000000971
+      name: subtractive-mono/1
+      parameters: []
+    outcome: declared
+
+  - at: 2026-10-22T09:00:01Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000972
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 7f0c0000-0000-4000-8000-000000000971
+      nodes:
+        - {id: 2, kind: SawOscillator, parameters: []}
+      edges: []
+    outcome: loaded
+
+  - at: 2026-10-22T09:00:02Z
+    command: patchback.score.LoadNoteSequence
+    actor: patchback.score.Operator
+    input:
+      note_sequence_id: 7f0c0000-0000-4000-8000-000000000973
+      format_version: 1
+      sample_rate_hz: 48000
+      patch_id: 7f0c0000-0000-4000-8000-000000000972
+      notes:
+        - {start_sample: 0, end_sample: 24000, midi_note: 45, velocity: 0.8}
+    outcome: malformed-number
+    error:
+      name: patchback.score.MalformedNumber
+      fields:
+        note_sequence_id: 7f0c0000-0000-4000-8000-000000000973
+    no_events: [patchback.score.NoteSequenceLoaded]
+
+  - at: 2026-10-22T09:00:03Z
+    command: patchback.score.LoadNoteSequence
+    actor: patchback.score.Operator
+    input:
+      note_sequence_id: 7f0c0000-0000-4000-8000-000000000973
+      format_version: 1
+      sample_rate_hz: 48000
+      patch_id: 7f0c0000-0000-4000-8000-000000000972
+      notes:
+        - {start_sample: 0, end_sample: 24000, midi_note: 45, velocity: 0.8}
+    outcome: unbounded-length
+    error:
+      name: patchback.score.LengthBoundExceeded
+    no_events: [patchback.score.NoteSequenceLoaded]

@@ -1,0 +1,83 @@
+# DESIGN.md 13 A and 13 B are different experiments. An ML-init result recorded against an engine
+# baseline (and the reverse) is refused, so neither benchmark can lose an arm.
+type: ess-scenario/1
+domain: patchback.fit
+scenario: ml-init-benchmark-kind-mismatch
+summary: An ML-init result for an engine baseline and a baseline result for an ML-init benchmark are both refused with BenchmarkKindMismatch; a result for an unknown benchmark with BenchmarkNotFound.
+
+arrange:
+  - instance: baseline
+    entity: patchback.fit.Benchmark
+  - instance: mlinit
+    entity: patchback.fit.Benchmark
+
+timeline:
+  - at: 2026-10-22T14:00:00Z
+    command: patchback.fit.StartBenchmark
+    actor: patchback.fit.Operator
+    input:
+      kind: EngineBaseline
+      holdout_split_id: 3e9a4c20-0000-4000-8000-000000000201
+      seed: 1234
+      example_count: 200
+    outcome: started
+    capture: {instance: baseline, event: patchback.fit.BenchmarkStarted, field: benchmark_id}
+
+  - at: 2026-10-22T14:00:01Z
+    command: patchback.fit.StartBenchmark
+    actor: patchback.fit.Operator
+    input:
+      kind: MlInit
+      holdout_split_id: 3e9a4c20-0000-4000-8000-000000000201
+      seed: 1234
+      example_count: 200
+      weight_artifact_id: 3e9a4c20-0000-4000-8000-000000000202
+    outcome: started
+    capture: {instance: mlinit, event: patchback.fit.BenchmarkStarted, field: benchmark_id}
+
+  - at: 2026-10-22T14:40:00Z
+    command: patchback.fit.RecordMlInitResult
+    actor: patchback.fit.Operator
+    input:
+      benchmark_id: {$instance: baseline}
+      default_median_loss: 0.8
+      default_search_median_loss: 0.58
+      raw_regressor_median_loss: 0.62
+      regressor_search_median_loss: 0.5
+      default_search_median_evaluations: 1400
+      regressor_search_median_evaluations: 600
+      wall_time_ms: 2400000
+      listening_examples: []
+    outcome: kind-mismatch
+    error:
+      name: patchback.fit.BenchmarkKindMismatch
+
+  - at: 2026-10-22T14:40:01Z
+    command: patchback.fit.RecordBaselineResult
+    actor: patchback.fit.Operator
+    input:
+      benchmark_id: {$instance: mlinit}
+      default_median_loss: 0.8
+      default_search_median_loss: 0.58
+      median_loss_reduction_percent: 27.5
+      default_search_median_evaluations: 1400
+      wall_time_ms: 1800000
+      listening_examples: []
+    outcome: kind-mismatch
+    error:
+      name: patchback.fit.BenchmarkKindMismatch
+
+  - at: 2026-10-22T14:40:02Z
+    command: patchback.fit.RecordBaselineResult
+    actor: patchback.fit.Operator
+    input:
+      benchmark_id: 3e9a7c20-0000-4000-8000-000000000999
+      default_median_loss: 0.8
+      default_search_median_loss: 0.58
+      median_loss_reduction_percent: 27.5
+      default_search_median_evaluations: 1400
+      wall_time_ms: 1800000
+      listening_examples: []
+    outcome: no-such-benchmark
+    error:
+      name: patchback.fit.BenchmarkNotFound

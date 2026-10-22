@@ -1,0 +1,75 @@
+# DESIGN.md 7.2: the loader verifies byte counts and "finite values". A byte count that is not
+# rows × columns × 4, and a NaN or Infinity in the data, are refused (external decisions: ESS
+# predicates have no multiplication and cannot read the file). A split with no x/y file cannot be
+# finished (external).
+type: ess-scenario/1
+domain: patchback.dataset
+scenario: dense-data-files-content-refused
+summary: A truncated x.f32, a y.f32 holding NaN and finishing a split with no dense file are refused.
+
+arrange:
+  - instance: dataset
+    entity: patchback.dataset.Dataset
+  - instance: validation
+    entity: patchback.dataset.DatasetSplit
+
+timeline:
+  - at: 2026-10-22T10:50:00Z
+    command: patchback.dataset.GenerateDataset
+    actor: patchback.dataset.Operator
+    input:
+      seed: 42
+      prng_algorithm: std-only-generator
+      batch_size: 16
+      feature_contract_id: 5a000000-0000-4000-8000-000000000001
+      topology_id: 5a000000-0000-4000-8000-000000000002
+      out_dir: data/
+    outcome: generated
+    capture: {instance: dataset, event: patchback.dataset.DatasetGenerated, field: dataset_id}
+
+  - at: 2026-10-22T10:50:01Z
+    command: patchback.dataset.OpenSplit
+    actor: patchback.dataset.Operator
+    input:
+      dataset_id: {$instance: dataset}
+      role: Validation
+      sample_count: 4992
+    outcome: opened
+    capture: {instance: validation, event: patchback.dataset.SplitOpened, field: dataset_split_id}
+
+  - at: 2026-10-22T10:50:02Z
+    command: patchback.dataset.WriteDenseFile
+    actor: patchback.dataset.Operator
+    input:
+      dataset_split_id: {$instance: validation}
+      kind: X
+      path: data/val/x.f32
+      rows: 4992
+      columns: 32
+      byte_count: 638975
+    outcome: byte-count-mismatch
+    error:
+      name: patchback.dataset.ByteCountMismatch
+
+  - at: 2026-10-22T10:50:03Z
+    command: patchback.dataset.WriteDenseFile
+    actor: patchback.dataset.Operator
+    input:
+      dataset_split_id: {$instance: validation}
+      kind: Y
+      path: data/val/y.f32
+      rows: 4992
+      columns: 8
+      byte_count: 159744
+    outcome: non-finite-value
+    error:
+      name: patchback.dataset.NonFiniteValue
+
+  - at: 2026-10-22T10:50:04Z
+    command: patchback.dataset.FinishSplit
+    actor: patchback.dataset.Operator
+    input:
+      dataset_split_id: {$instance: validation}
+    outcome: missing-dense-file
+    error:
+      name: patchback.dataset.MissingDenseFile

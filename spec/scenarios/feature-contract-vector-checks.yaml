@@ -1,0 +1,82 @@
+# DESIGN.md 6.3 (fixed 32-element `features/1`), 7.2 (the data writer verifies exact counts and
+# no NaNs/Infinities), 12.1 ("feature version pinning") and 12.3 ("Reject ... non-finite
+# features"). A vector of another version or length is refused.
+type: ess-scenario/1
+domain: patchback.analysis
+scenario: feature-contract-vector-checks
+summary: A 32-value `features/1` vector is admitted; one of version `features/2`, one of 31 values and one with a NaN are refused.
+
+arrange:
+  - instance: contract
+    entity: patchback.analysis.FeatureContract
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.analysis.DefineFeatureContract
+    actor: patchback.analysis.Operator
+    input:
+      version: features/1
+      value_count: 32
+      band_count: 8
+      band_windows: [Attack, Body, Release]
+      scalar_features:
+        - Rms
+        - Peak
+        - SpectralCentroid
+        - Rolloff
+        - SpectralFlatness
+        - ZeroCrossingRate
+        - AttackEnvelopeSlope
+        - NormalizedMidiPitch
+      fft_lengths: [512, 2048, 8192]
+    outcome: defined
+    capture: {instance: contract, event: patchback.analysis.FeatureContractDefined, field: feature_contract_id}
+
+  - at: 2026-10-22T09:00:01Z
+    command: patchback.analysis.PublishFeatureContract
+    actor: patchback.analysis.Operator
+    input:
+      feature_contract_id: {$instance: contract}
+    outcome: published
+
+  - at: 2026-10-22T09:00:02Z
+    command: patchback.analysis.CheckFeatureVector
+    actor: patchback.analysis.Operator
+    input:
+      feature_contract_id: {$instance: contract}
+      version: features/1
+      value_count: 32
+    outcome: admitted
+
+  - at: 2026-10-22T09:00:03Z
+    command: patchback.analysis.CheckFeatureVector
+    actor: patchback.analysis.Operator
+    input:
+      feature_contract_id: {$instance: contract}
+      version: features/2
+      value_count: 32
+    outcome: wrong-version
+    error:
+      name: patchback.analysis.FeatureVersionMismatch
+
+  - at: 2026-10-22T09:00:04Z
+    command: patchback.analysis.CheckFeatureVector
+    actor: patchback.analysis.Operator
+    input:
+      feature_contract_id: {$instance: contract}
+      version: features/1
+      value_count: 31
+    outcome: wrong-length
+    error:
+      name: patchback.analysis.FeatureLengthMismatch
+
+  - at: 2026-10-22T09:00:05Z
+    command: patchback.analysis.CheckFeatureVector
+    actor: patchback.analysis.Operator
+    input:
+      feature_contract_id: {$instance: contract}
+      version: features/1
+      value_count: 32
+    outcome: non-finite
+    error:
+      name: patchback.analysis.NonFiniteFeature

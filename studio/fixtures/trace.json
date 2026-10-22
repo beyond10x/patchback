@@ -1,0 +1,1037 @@
+{
+  "note": "illustrative fixture data: hand-built for the studio prototype, not the output of a Patchback fit; a coordinate search over the eight normalized parameters (DESIGN.md 9.2), loss values from a made-up distance to a hidden target",
+  "opened": {
+    "trace_id": "5a0d0000-0000-4000-8000-000000000401",
+    "fit_run_id": "5a0d0000-0000-4000-8000-000000000501",
+    "source": "Replay",
+    "topology_id": "5a0d0000-0000-4000-8000-000000000101",
+    "parameter_paths": [
+      "attack",
+      "decay",
+      "sustain",
+      "release",
+      "filter_cutoff",
+      "resonance_q",
+      "drive",
+      "output_gain"
+    ]
+  },
+  "frames": [
+    {
+      "frame_id": "5a0d0000-0000-4000-8000-000000000601",
+      "trace_id": "5a0d0000-0000-4000-8000-000000000401",
+      "sequence": 0,
+      "evaluation": 1,
+      "topology_id": "5a0d0000-0000-4000-8000-000000000101",
+      "parameters": [
+        {
+          "path": "attack",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "decay",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "sustain",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "release",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "filter_cutoff",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "resonance_q",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "drive",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "output_gain",
+          "normalized_value": "0.5000"
+        }
+      ],
+      "outcome": "FirstRetained",
+      "patch_id": "5a0d0000-0000-4000-8000-000000000701",
+      "total_loss": "0.4897",
+      "components": {
+        "log_spectral": "0.4567",
+        "envelope": "0.4699",
+        "transient": "0.5715",
+        "band_energy": "0.4607"
+      },
+      "best_loss": "0.4897"
+    },
+    {
+      "frame_id": "5a0d0000-0000-4000-8000-000000000602",
+      "trace_id": "5a0d0000-0000-4000-8000-000000000401",
+      "sequence": 1,
+      "evaluation": 2,
+      "topology_id": "5a0d0000-0000-4000-8000-000000000101",
+      "parameters": [
+        {
+          "path": "attack",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "decay",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "sustain",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "release",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "filter_cutoff",
+          "normalized_value": "0.7500"
+        },
+        {
+          "path": "resonance_q",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "drive",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "output_gain",
+          "normalized_value": "0.5000"
+        }
+      ],
+      "outcome": "Improved",
+      "patch_id": "5a0d0000-0000-4000-8000-000000000702",
+      "total_loss": "0.4273",
+      "components": {
+        "log_spectral": "0.3611",
+        "envelope": "0.4699",
+        "transient": "0.5715",
+        "band_energy": "0.3066"
+      },
+      "best_loss": "0.4273"
+    },
+    {
+      "frame_id": "5a0d0000-0000-4000-8000-000000000603",
+      "trace_id": "5a0d0000-0000-4000-8000-000000000401",
+      "sequence": 2,
+      "evaluation": 3,
+      "topology_id": "5a0d0000-0000-4000-8000-000000000101",
+      "parameters": [
+        {
+          "path": "attack",
+          "normalized_value": "0.7500"
+        },
+        {
+          "path": "decay",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "sustain",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "release",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "filter_cutoff",
+          "normalized_value": "0.7500"
+        },
+        {
+          "path": "resonance_q",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "drive",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "output_gain",
+          "normalized_value": "0.5000"
+        }
+      ],
+      "outcome": "NotImproved",
+      "patch_id": "5a0d0000-0000-4000-8000-000000000703",
+      "total_loss": "0.5839",
+      "components": {
+        "log_spectral": "0.3611",
+        "envelope": "0.7175",
+        "transient": "0.9503",
+        "band_energy": "0.3066"
+      },
+      "best_loss": "0.4273"
+    },
+    {
+      "frame_id": "5a0d0000-0000-4000-8000-000000000604",
+      "trace_id": "5a0d0000-0000-4000-8000-000000000401",
+      "sequence": 3,
+      "evaluation": 4,
+      "topology_id": "5a0d0000-0000-4000-8000-000000000101",
+      "parameters": [
+        {
+          "path": "attack",
+          "normalized_value": "0.2500"
+        },
+        {
+          "path": "decay",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "sustain",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "release",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "filter_cutoff",
+          "normalized_value": "0.7500"
+        },
+        {
+          "path": "resonance_q",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "drive",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "output_gain",
+          "normalized_value": "0.5000"
+        }
+      ],
+      "outcome": "Improved",
+      "patch_id": "5a0d0000-0000-4000-8000-000000000704",
+      "total_loss": "0.2998",
+      "components": {
+        "log_spectral": "0.3611",
+        "envelope": "0.2915",
+        "transient": "0.2399",
+        "band_energy": "0.3066"
+      },
+      "best_loss": "0.2998"
+    },
+    {
+      "frame_id": "5a0d0000-0000-4000-8000-000000000605",
+      "trace_id": "5a0d0000-0000-4000-8000-000000000401",
+      "sequence": 4,
+      "evaluation": 5,
+      "topology_id": "5a0d0000-0000-4000-8000-000000000101",
+      "parameters": [
+        {
+          "path": "attack",
+          "normalized_value": "0.2500"
+        },
+        {
+          "path": "decay",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "sustain",
+          "normalized_value": "0.7500"
+        },
+        {
+          "path": "release",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "filter_cutoff",
+          "normalized_value": "0.7500"
+        },
+        {
+          "path": "resonance_q",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "drive",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "output_gain",
+          "normalized_value": "0.5000"
+        }
+      ],
+      "outcome": "NotImproved",
+      "patch_id": "5a0d0000-0000-4000-8000-000000000705",
+      "total_loss": "0.3013",
+      "components": {
+        "log_spectral": "0.3611",
+        "envelope": "0.2977",
+        "transient": "0.2399",
+        "band_energy": "0.3066"
+      },
+      "best_loss": "0.2998"
+    },
+    {
+      "frame_id": "5a0d0000-0000-4000-8000-000000000606",
+      "trace_id": "5a0d0000-0000-4000-8000-000000000401",
+      "sequence": 5,
+      "evaluation": 6,
+      "topology_id": "5a0d0000-0000-4000-8000-000000000101",
+      "parameters": [
+        {
+          "path": "attack",
+          "normalized_value": "0.2500"
+        },
+        {
+          "path": "decay",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "sustain",
+          "normalized_value": "0.2500"
+        },
+        {
+          "path": "release",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "filter_cutoff",
+          "normalized_value": "0.7500"
+        },
+        {
+          "path": "resonance_q",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "drive",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "output_gain",
+          "normalized_value": "0.5000"
+        }
+      ],
+      "outcome": "NotImproved",
+      "patch_id": "5a0d0000-0000-4000-8000-000000000706",
+      "total_loss": "0.3530",
+      "components": {
+        "log_spectral": "0.3611",
+        "envelope": "0.5045",
+        "transient": "0.2399",
+        "band_energy": "0.3066"
+      },
+      "best_loss": "0.2998"
+    },
+    {
+      "frame_id": "5a0d0000-0000-4000-8000-000000000607",
+      "trace_id": "5a0d0000-0000-4000-8000-000000000401",
+      "sequence": 6,
+      "evaluation": 7,
+      "topology_id": "5a0d0000-0000-4000-8000-000000000101",
+      "parameters": [
+        {
+          "path": "attack",
+          "normalized_value": "0.2500"
+        },
+        {
+          "path": "decay",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "sustain",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "release",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "filter_cutoff",
+          "normalized_value": "0.7500"
+        },
+        {
+          "path": "resonance_q",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "drive",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "output_gain",
+          "normalized_value": "0.7500"
+        }
+      ],
+      "outcome": "Improved",
+      "patch_id": "5a0d0000-0000-4000-8000-000000000707",
+      "total_loss": "0.2739",
+      "components": {
+        "log_spectral": "0.3611",
+        "envelope": "0.2915",
+        "transient": "0.2399",
+        "band_energy": "0.2032"
+      },
+      "best_loss": "0.2739"
+    },
+    {
+      "frame_id": "5a0d0000-0000-4000-8000-000000000608",
+      "trace_id": "5a0d0000-0000-4000-8000-000000000401",
+      "sequence": 7,
+      "evaluation": 8,
+      "topology_id": "5a0d0000-0000-4000-8000-000000000101",
+      "parameters": [
+        {
+          "path": "attack",
+          "normalized_value": "0.2500"
+        },
+        {
+          "path": "decay",
+          "normalized_value": "0.7500"
+        },
+        {
+          "path": "sustain",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "release",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "filter_cutoff",
+          "normalized_value": "0.7500"
+        },
+        {
+          "path": "resonance_q",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "drive",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "output_gain",
+          "normalized_value": "0.7500"
+        }
+      ],
+      "outcome": "NotImproved",
+      "patch_id": "5a0d0000-0000-4000-8000-000000000708",
+      "total_loss": "0.3203",
+      "components": {
+        "log_spectral": "0.3611",
+        "envelope": "0.4770",
+        "transient": "0.2399",
+        "band_energy": "0.2032"
+      },
+      "best_loss": "0.2739"
+    },
+    {
+      "frame_id": "5a0d0000-0000-4000-8000-000000000609",
+      "trace_id": "5a0d0000-0000-4000-8000-000000000401",
+      "sequence": 8,
+      "evaluation": 9,
+      "topology_id": "5a0d0000-0000-4000-8000-000000000101",
+      "parameters": [
+        {
+          "path": "attack",
+          "normalized_value": "0.2500"
+        },
+        {
+          "path": "decay",
+          "normalized_value": "0.2500"
+        },
+        {
+          "path": "sustain",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "release",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "filter_cutoff",
+          "normalized_value": "0.7500"
+        },
+        {
+          "path": "resonance_q",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "drive",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "output_gain",
+          "normalized_value": "0.7500"
+        }
+      ],
+      "outcome": "NotImproved",
+      "patch_id": "5a0d0000-0000-4000-8000-000000000709",
+      "total_loss": "0.2867",
+      "components": {
+        "log_spectral": "0.3611",
+        "envelope": "0.3425",
+        "transient": "0.2399",
+        "band_energy": "0.2032"
+      },
+      "best_loss": "0.2739"
+    },
+    {
+      "frame_id": "5a0d0000-0000-4000-8000-000000000610",
+      "trace_id": "5a0d0000-0000-4000-8000-000000000401",
+      "sequence": 9,
+      "evaluation": 10,
+      "topology_id": "5a0d0000-0000-4000-8000-000000000101",
+      "parameters": [
+        {
+          "path": "attack",
+          "normalized_value": "0.2500"
+        },
+        {
+          "path": "decay",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "sustain",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "release",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "filter_cutoff",
+          "normalized_value": "0.7500"
+        },
+        {
+          "path": "resonance_q",
+          "normalized_value": "1.0000"
+        },
+        {
+          "path": "drive",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "output_gain",
+          "normalized_value": "0.7500"
+        }
+      ],
+      "outcome": "Rejected",
+      "best_loss": "0.2739"
+    },
+    {
+      "frame_id": "5a0d0000-0000-4000-8000-000000000611",
+      "trace_id": "5a0d0000-0000-4000-8000-000000000401",
+      "sequence": 10,
+      "evaluation": 11,
+      "topology_id": "5a0d0000-0000-4000-8000-000000000101",
+      "parameters": [
+        {
+          "path": "attack",
+          "normalized_value": "0.2500"
+        },
+        {
+          "path": "decay",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "sustain",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "release",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "filter_cutoff",
+          "normalized_value": "0.7500"
+        },
+        {
+          "path": "resonance_q",
+          "normalized_value": "0.2500"
+        },
+        {
+          "path": "drive",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "output_gain",
+          "normalized_value": "0.7500"
+        }
+      ],
+      "outcome": "Improved",
+      "patch_id": "5a0d0000-0000-4000-8000-000000000711",
+      "total_loss": "0.2317",
+      "components": {
+        "log_spectral": "0.1920",
+        "envelope": "0.2915",
+        "transient": "0.2399",
+        "band_energy": "0.2032"
+      },
+      "best_loss": "0.2317"
+    },
+    {
+      "frame_id": "5a0d0000-0000-4000-8000-000000000612",
+      "trace_id": "5a0d0000-0000-4000-8000-000000000401",
+      "sequence": 11,
+      "evaluation": 12,
+      "topology_id": "5a0d0000-0000-4000-8000-000000000101",
+      "parameters": [
+        {
+          "path": "attack",
+          "normalized_value": "0.2500"
+        },
+        {
+          "path": "decay",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "sustain",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "release",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "filter_cutoff",
+          "normalized_value": "0.7500"
+        },
+        {
+          "path": "resonance_q",
+          "normalized_value": "0.2500"
+        },
+        {
+          "path": "drive",
+          "normalized_value": "0.7500"
+        },
+        {
+          "path": "output_gain",
+          "normalized_value": "0.7500"
+        }
+      ],
+      "outcome": "NotImproved",
+      "patch_id": "5a0d0000-0000-4000-8000-000000000712",
+      "total_loss": "0.3998",
+      "components": {
+        "log_spectral": "0.4991",
+        "envelope": "0.2915",
+        "transient": "0.6053",
+        "band_energy": "0.2032"
+      },
+      "best_loss": "0.2317"
+    },
+    {
+      "frame_id": "5a0d0000-0000-4000-8000-000000000613",
+      "trace_id": "5a0d0000-0000-4000-8000-000000000401",
+      "sequence": 12,
+      "evaluation": 13,
+      "topology_id": "5a0d0000-0000-4000-8000-000000000101",
+      "parameters": [
+        {
+          "path": "attack",
+          "normalized_value": "0.2500"
+        },
+        {
+          "path": "decay",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "sustain",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "release",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "filter_cutoff",
+          "normalized_value": "0.7500"
+        },
+        {
+          "path": "resonance_q",
+          "normalized_value": "0.2500"
+        },
+        {
+          "path": "drive",
+          "normalized_value": "0.2500"
+        },
+        {
+          "path": "output_gain",
+          "normalized_value": "0.7500"
+        }
+      ],
+      "outcome": "NotImproved",
+      "patch_id": "5a0d0000-0000-4000-8000-000000000713",
+      "total_loss": "0.2633",
+      "components": {
+        "log_spectral": "0.2508",
+        "envelope": "0.2915",
+        "transient": "0.3075",
+        "band_energy": "0.2032"
+      },
+      "best_loss": "0.2317"
+    },
+    {
+      "frame_id": "5a0d0000-0000-4000-8000-000000000614",
+      "trace_id": "5a0d0000-0000-4000-8000-000000000401",
+      "sequence": 13,
+      "evaluation": 14,
+      "topology_id": "5a0d0000-0000-4000-8000-000000000101",
+      "parameters": [
+        {
+          "path": "attack",
+          "normalized_value": "0.2500"
+        },
+        {
+          "path": "decay",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "sustain",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "release",
+          "normalized_value": "0.7500"
+        },
+        {
+          "path": "filter_cutoff",
+          "normalized_value": "0.7500"
+        },
+        {
+          "path": "resonance_q",
+          "normalized_value": "0.2500"
+        },
+        {
+          "path": "drive",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "output_gain",
+          "normalized_value": "0.7500"
+        }
+      ],
+      "outcome": "NotImproved",
+      "patch_id": "5a0d0000-0000-4000-8000-000000000714",
+      "total_loss": "0.2898",
+      "components": {
+        "log_spectral": "0.1920",
+        "envelope": "0.5240",
+        "transient": "0.2399",
+        "band_energy": "0.2032"
+      },
+      "best_loss": "0.2317"
+    },
+    {
+      "frame_id": "5a0d0000-0000-4000-8000-000000000615",
+      "trace_id": "5a0d0000-0000-4000-8000-000000000401",
+      "sequence": 14,
+      "evaluation": 15,
+      "topology_id": "5a0d0000-0000-4000-8000-000000000101",
+      "parameters": [
+        {
+          "path": "attack",
+          "normalized_value": "0.2500"
+        },
+        {
+          "path": "decay",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "sustain",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "release",
+          "normalized_value": "0.2500"
+        },
+        {
+          "path": "filter_cutoff",
+          "normalized_value": "0.7500"
+        },
+        {
+          "path": "resonance_q",
+          "normalized_value": "0.2500"
+        },
+        {
+          "path": "drive",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "output_gain",
+          "normalized_value": "0.7500"
+        }
+      ],
+      "outcome": "Improved",
+      "patch_id": "5a0d0000-0000-4000-8000-000000000715",
+      "total_loss": "0.2232",
+      "components": {
+        "log_spectral": "0.1920",
+        "envelope": "0.2578",
+        "transient": "0.2399",
+        "band_energy": "0.2032"
+      },
+      "best_loss": "0.2232"
+    },
+    {
+      "frame_id": "5a0d0000-0000-4000-8000-000000000616",
+      "trace_id": "5a0d0000-0000-4000-8000-000000000401",
+      "sequence": 15,
+      "evaluation": 16,
+      "topology_id": "5a0d0000-0000-4000-8000-000000000101",
+      "parameters": [
+        {
+          "path": "attack",
+          "normalized_value": "0.2500"
+        },
+        {
+          "path": "decay",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "sustain",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "release",
+          "normalized_value": "0.2500"
+        },
+        {
+          "path": "filter_cutoff",
+          "normalized_value": "0.8750"
+        },
+        {
+          "path": "resonance_q",
+          "normalized_value": "0.2500"
+        },
+        {
+          "path": "drive",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "output_gain",
+          "normalized_value": "0.7500"
+        }
+      ],
+      "outcome": "NotImproved",
+      "patch_id": "5a0d0000-0000-4000-8000-000000000716",
+      "total_loss": "0.2845",
+      "components": {
+        "log_spectral": "0.2980",
+        "envelope": "0.2578",
+        "transient": "0.2399",
+        "band_energy": "0.3424"
+      },
+      "best_loss": "0.2232"
+    },
+    {
+      "frame_id": "5a0d0000-0000-4000-8000-000000000617",
+      "trace_id": "5a0d0000-0000-4000-8000-000000000401",
+      "sequence": 16,
+      "evaluation": 17,
+      "topology_id": "5a0d0000-0000-4000-8000-000000000101",
+      "parameters": [
+        {
+          "path": "attack",
+          "normalized_value": "0.2500"
+        },
+        {
+          "path": "decay",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "sustain",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "release",
+          "normalized_value": "0.2500"
+        },
+        {
+          "path": "filter_cutoff",
+          "normalized_value": "0.6250"
+        },
+        {
+          "path": "resonance_q",
+          "normalized_value": "0.2500"
+        },
+        {
+          "path": "drive",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "output_gain",
+          "normalized_value": "0.7500"
+        }
+      ],
+      "outcome": "NotImproved",
+      "patch_id": "5a0d0000-0000-4000-8000-000000000717",
+      "total_loss": "0.2403",
+      "components": {
+        "log_spectral": "0.2210",
+        "envelope": "0.2578",
+        "transient": "0.2399",
+        "band_energy": "0.2426"
+      },
+      "best_loss": "0.2232"
+    },
+    {
+      "frame_id": "5a0d0000-0000-4000-8000-000000000618",
+      "trace_id": "5a0d0000-0000-4000-8000-000000000401",
+      "sequence": 17,
+      "evaluation": 18,
+      "topology_id": "5a0d0000-0000-4000-8000-000000000101",
+      "parameters": [
+        {
+          "path": "attack",
+          "normalized_value": "0.3750"
+        },
+        {
+          "path": "decay",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "sustain",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "release",
+          "normalized_value": "0.2500"
+        },
+        {
+          "path": "filter_cutoff",
+          "normalized_value": "0.7500"
+        },
+        {
+          "path": "resonance_q",
+          "normalized_value": "0.2500"
+        },
+        {
+          "path": "drive",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "output_gain",
+          "normalized_value": "0.7500"
+        }
+      ],
+      "outcome": "NotImproved",
+      "patch_id": "5a0d0000-0000-4000-8000-000000000718",
+      "total_loss": "0.2812",
+      "components": {
+        "log_spectral": "0.1920",
+        "envelope": "0.3386",
+        "transient": "0.3909",
+        "band_energy": "0.2032"
+      },
+      "best_loss": "0.2232"
+    },
+    {
+      "frame_id": "5a0d0000-0000-4000-8000-000000000619",
+      "trace_id": "5a0d0000-0000-4000-8000-000000000401",
+      "sequence": 18,
+      "evaluation": 19,
+      "topology_id": "5a0d0000-0000-4000-8000-000000000101",
+      "parameters": [
+        {
+          "path": "attack",
+          "normalized_value": "0.1250"
+        },
+        {
+          "path": "decay",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "sustain",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "release",
+          "normalized_value": "0.2500"
+        },
+        {
+          "path": "filter_cutoff",
+          "normalized_value": "0.7500"
+        },
+        {
+          "path": "resonance_q",
+          "normalized_value": "0.2500"
+        },
+        {
+          "path": "drive",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "output_gain",
+          "normalized_value": "0.7500"
+        }
+      ],
+      "outcome": "Improved",
+      "patch_id": "5a0d0000-0000-4000-8000-000000000719",
+      "total_loss": "0.2188",
+      "components": {
+        "log_spectral": "0.1920",
+        "envelope": "0.2523",
+        "transient": "0.2275",
+        "band_energy": "0.2032"
+      },
+      "best_loss": "0.2188"
+    },
+    {
+      "frame_id": "5a0d0000-0000-4000-8000-000000000620",
+      "trace_id": "5a0d0000-0000-4000-8000-000000000401",
+      "sequence": 19,
+      "evaluation": 20,
+      "topology_id": "5a0d0000-0000-4000-8000-000000000101",
+      "parameters": [
+        {
+          "path": "attack",
+          "normalized_value": "0.1250"
+        },
+        {
+          "path": "decay",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "sustain",
+          "normalized_value": "0.6250"
+        },
+        {
+          "path": "release",
+          "normalized_value": "0.2500"
+        },
+        {
+          "path": "filter_cutoff",
+          "normalized_value": "0.7500"
+        },
+        {
+          "path": "resonance_q",
+          "normalized_value": "0.2500"
+        },
+        {
+          "path": "drive",
+          "normalized_value": "0.5000"
+        },
+        {
+          "path": "output_gain",
+          "normalized_value": "0.7500"
+        }
+      ],
+      "outcome": "Improved",
+      "patch_id": "5a0d0000-0000-4000-8000-000000000720",
+      "total_loss": "0.2065",
+      "components": {
+        "log_spectral": "0.1920",
+        "envelope": "0.2034",
+        "transient": "0.2275",
+        "band_energy": "0.2032"
+      },
+      "best_loss": "0.2065"
+    }
+  ],
+  "closed": {
+    "trace_id": "5a0d0000-0000-4000-8000-000000000401",
+    "ended": "Completed"
+  }
+}

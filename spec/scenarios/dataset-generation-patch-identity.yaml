@@ -1,0 +1,119 @@
+# DESIGN.md 7.1: "Split by patch identity, not by individual rendered note, so near-duplicate
+# renders cannot leak across train/validation/test." A patch drawn into one split cannot be drawn
+# again into any split of the same dataset; its renders all stay with it.
+type: ess-scenario/1
+domain: patchback.dataset
+scenario: dataset-generation-patch-identity
+summary: Patch seed 7 drawn into train cannot be drawn into validation (PatchAlreadyDrawn); its notes are added under the one drawn patch.
+
+arrange:
+  - instance: dataset
+    entity: patchback.dataset.Dataset
+  - instance: train
+    entity: patchback.dataset.DatasetSplit
+  - instance: validation
+    entity: patchback.dataset.DatasetSplit
+  - instance: patch
+    entity: patchback.dataset.SampledPatch
+  - instance: other
+    entity: patchback.dataset.SampledPatch
+  - instance: c4
+    entity: patchback.dataset.Sample
+  - instance: c5
+    entity: patchback.dataset.Sample
+
+timeline:
+  - at: 2026-10-22T10:10:00Z
+    command: patchback.dataset.GenerateDataset
+    actor: patchback.dataset.Operator
+    input:
+      seed: 42
+      prng_algorithm: std-only-generator
+      batch_size: 16
+      feature_contract_id: 5a000000-0000-4000-8000-000000000001
+      topology_id: 5a000000-0000-4000-8000-000000000002
+      out_dir: data/
+    outcome: generated
+    capture: {instance: dataset, event: patchback.dataset.DatasetGenerated, field: dataset_id}
+
+  - at: 2026-10-22T10:10:01Z
+    command: patchback.dataset.OpenSplit
+    actor: patchback.dataset.Operator
+    input:
+      dataset_id: {$instance: dataset}
+      role: Train
+      sample_count: 50016
+    outcome: opened
+    capture: {instance: train, event: patchback.dataset.SplitOpened, field: dataset_split_id}
+
+  - at: 2026-10-22T10:10:02Z
+    command: patchback.dataset.OpenSplit
+    actor: patchback.dataset.Operator
+    input:
+      dataset_id: {$instance: dataset}
+      role: Validation
+      sample_count: 4992
+    outcome: opened
+    capture: {instance: validation, event: patchback.dataset.SplitOpened, field: dataset_split_id}
+
+  - at: 2026-10-22T10:10:03Z
+    command: patchback.dataset.DrawPatch
+    actor: patchback.dataset.Operator
+    input:
+      dataset_id: {$instance: dataset}
+      dataset_split_id: {$instance: train}
+      patch_seed: 7
+    outcome: drawn
+    capture: {instance: patch, event: patchback.dataset.PatchDrawn, field: sampled_patch_id}
+
+  - at: 2026-10-22T10:10:04Z
+    command: patchback.dataset.AddSample
+    actor: patchback.dataset.Operator
+    input:
+      sampled_patch_id: {$instance: patch}
+      midi_note: 60
+      gate_samples: 24000
+    outcome: added
+    capture: {instance: c4, event: patchback.dataset.SampleAdded, field: sample_id}
+
+  - at: 2026-10-22T10:10:05Z
+    command: patchback.dataset.AddSample
+    actor: patchback.dataset.Operator
+    input:
+      sampled_patch_id: {$instance: patch}
+      midi_note: 72
+      gate_samples: 24000
+    outcome: added
+    capture: {instance: c5, event: patchback.dataset.SampleAdded, field: sample_id}
+
+  - at: 2026-10-22T10:10:06Z
+    command: patchback.dataset.DrawPatch
+    actor: patchback.dataset.Operator
+    input:
+      dataset_id: {$instance: dataset}
+      dataset_split_id: {$instance: validation}
+      patch_seed: 7
+    outcome: patch-already-drawn
+    error:
+      name: patchback.dataset.PatchAlreadyDrawn
+
+  - at: 2026-10-22T10:10:07Z
+    command: patchback.dataset.DrawPatch
+    actor: patchback.dataset.Operator
+    input:
+      dataset_id: {$instance: dataset}
+      dataset_split_id: {$instance: validation}
+      patch_seed: 8
+    outcome: drawn
+    capture: {instance: other, event: patchback.dataset.PatchDrawn, field: sampled_patch_id}
+
+  - at: 2026-10-22T10:10:08Z
+    command: patchback.dataset.AddSample
+    actor: patchback.dataset.Operator
+    input:
+      sampled_patch_id: 5a000000-0000-4000-8000-0000000000ff
+      midi_note: 60
+      gate_samples: 24000
+    outcome: unknown-patch
+    error:
+      name: patchback.dataset.UnknownPatch

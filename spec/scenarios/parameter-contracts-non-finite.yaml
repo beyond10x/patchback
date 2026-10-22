@@ -1,0 +1,55 @@
+# DESIGN.md section 5.2: "reject NaN/Infinity". A non-finite value cannot be written in the
+# model's Decimal, so the refusal is the implementation's (external): the scenario names it.
+# A path that names no contract of the patch's topology is refused (section 5.1 identifier checks).
+type: ess-scenario/1
+domain: patchback.patch
+scenario: parameter-contracts-non-finite
+summary: A NaN or infinite normalized value, and a path outside the topology's contracts, are refused.
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.patch.DeclareTopology
+    actor: patchback.patch.Operator
+    input:
+      topology_id: 7f0c0000-0000-4000-8000-000000000004
+      name: subtractive-mono/1
+      parameters:
+        - {path: attack, index: 0, unit: Seconds, mapping: Exponential, physical_at_zero: 0.001, physical_at_one: 2, default_normalized: 0.5, clamp: ClampToUnitInterval}
+    outcome: declared
+
+  - at: 2026-10-22T09:00:01Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000104
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 7f0c0000-0000-4000-8000-000000000004
+      nodes:
+        - {id: 5, kind: AdsrEnvelope, parameters: [{name: attack, value: 0.01}]}
+      edges: []
+    outcome: loaded
+
+  - at: 2026-10-22T09:00:02Z
+    command: patchback.patch.SetParameter
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000104
+      path: attack
+      normalized_value: 0.5
+    outcome: non-finite
+    error:
+      name: patchback.patch.NonFiniteParameterValue
+    no_events: [patchback.patch.ParameterSet, patchback.patch.ParameterClamped]
+
+  - at: 2026-10-22T09:00:03Z
+    command: patchback.patch.SetParameter
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000104
+      path: lfo_rate
+      normalized_value: 0.5
+    outcome: unknown-path
+    error:
+      name: patchback.patch.UnknownParameterPath
+    no_events: [patchback.patch.ParameterSet, patchback.patch.ParameterClamped]

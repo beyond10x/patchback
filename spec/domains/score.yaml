@@ -1,0 +1,589 @@
+domain: patchback.score
+
+summary: >-
+  The score that drives a patch: versioned, sample-timed note events and control automation
+  (DESIGN.md sections 10 and 11), and, later, an arrangement of several instrument stems
+  (section 10 V3, Milestone E).
+
+types:
+  - name: patchback.score.NoteSequenceId
+    kind: newtype
+    of: Uuid
+
+  - name: patchback.score.ArrangementId
+    kind: newtype
+    of: Uuid
+
+  - name: patchback.score.StemId
+    kind: newtype
+    of: Uuid
+
+  - name: patchback.score.NoteEvent
+    kind: struct
+    naming:
+      summary: One note (section 10), timed in samples at the patch sample rate.
+    fields:
+      - name: start_sample
+        type: Integer
+      - name: end_sample
+        type: Integer
+      - name: midi_note
+        type: Integer
+      # UNMAPPED: section 10 types velocity as f32 and gives no range. This draft refuses a
+      # velocity outside [0,1] (normalized); the alternative is the MIDI range 0 to 127.
+      # Open question.
+      - name: velocity
+        type: Decimal
+
+  - name: patchback.score.ControlEvent
+    kind: struct
+    naming:
+      summary: One automation point (section 10) on a stable parameter path, as a normalized value.
+    fields:
+      - name: sample
+        type: Integer
+      - name: parameter_path
+        type: patchback.patch.ParameterPath
+      - name: normalized_value
+        type: Decimal
+
+entities:
+  - name: patchback.score.NoteSequence
+    naming:
+      summary: >-
+        The note events of one .events file (section 11), written for one patch: their timing is in
+        samples at that patch's sample rate (section 10).
+    identity:
+      name: note_sequence_id
+      type: patchback.score.NoteSequenceId
+    fields:
+      - name: format_version
+        type: Integer
+      - name: sample_rate_hz
+        type: Integer
+      # DESIGN.md 0.3 section 10: a sequence is bound to a sample rate, not to one patch; it
+      # records the patch it was written for, and any patch at the same rate may render it.
+      - name: patch_id
+        type: patchback.patch.PatchId
+      - name: notes
+        type: List<patchback.score.NoteEvent>
+      # UNMAPPED: section 11 lists one notes.events file; it does not say whether control
+      # automation (section 10 ControlEvent) shares that file or has its own. Open question.
+      - name: controls
+        type: List<patchback.score.ControlEvent>
+      # Section 10 V1 estimates "an event sequence" from audio; the score keeps the sequence and
+      # records the estimation it was written from. A hand-written .events file names none.
+      - name: note_estimation_id
+        type: Optional<patchback.analysis.NoteEstimationId>
+    relations:
+      - name: patch
+        kind: references
+        target: patchback.patch.Patch
+        cardinality: one
+        via: patch_id
+      - name: estimation
+        kind: references
+        target: patchback.analysis.NoteEstimation
+        cardinality: one
+        via: note_estimation_id
+    # UNMAPPED: no section says whether the notes of a sequence written from an estimation must
+    # equal the estimation's notes (EstimatedNote carries confidence, NoteEvent does not). The
+    # model records the link and does not compare the notes.
+    lifecycle:
+      initial: Loaded
+      states: [Loaded]
+      terminal: [Loaded]
+
+  # Milestone E and section 10 V3. Kept small on purpose; see the UNMAPPED markers.
+  - name: patchback.score.Arrangement
+    naming:
+      summary: Several instrument stems played together (section 10 V3, Milestone E).
+    identity:
+      name: arrangement_id
+      type: patchback.score.ArrangementId
+    fields: []
+    relations:
+      - name: stems
+        kind: owns
+        target: patchback.score.Stem
+        cardinality: many
+        via: arrangement_id
+    # UNMAPPED: Milestone E names "arrangement events" and "repeated-pattern analysis" without a
+    # shape; how stems are mixed (gain, pan, sum, limiting), whether stems must have equal length,
+    # and a cap on the stem count are not settled. Open questions.
+    lifecycle:
+      initial: Open
+      states: [Open]
+      terminal: [Open]
+
+  - name: patchback.score.Stem
+    naming:
+      summary: One instrument of an arrangement, with its own patch and its own note sequence.
+    identity:
+      name: stem_id
+      type: patchback.score.StemId
+    fields:
+      - name: arrangement_id
+        type: patchback.score.ArrangementId
+      - name: patch_id
+        type: patchback.patch.PatchId
+      - name: note_sequence_id
+        type: patchback.score.NoteSequenceId
+    relations:
+      - name: patch
+        kind: references
+        target: patchback.patch.Patch
+        cardinality: one
+        via: patch_id
+      - name: notes
+        kind: references
+        target: patchback.score.NoteSequence
+        cardinality: one
+        via: note_sequence_id
+    # UNMAPPED: Milestone E says "monophonic/polyphonic instrument stems"; whether a stem may be
+    # polyphonic (section 10 V2 "simple polyphony") and whether two stems may share one patch are
+    # not settled. This draft refuses neither. Open questions.
+    lifecycle:
+      initial: Added
+      states: [Added]
+      terminal: [Added]
+
+actors:
+  - name: patchback.score.Operator
+    naming:
+      summary: The person or program running the patchback CLI (section 11).
+    may:
+      - patchback.score.LoadNoteSequence
+      - patchback.score.AutomateParameters
+      - patchback.score.CreateArrangement
+      - patchback.score.AddStem
+
+errors:
+  - name: patchback.score.UnknownFormatVersion
+    summary: The .events file declares a format version this parser does not read (section 11).
+    fields:
+      - name: format_version
+        type: Integer
+
+  - name: patchback.score.MalformedNumber
+    summary: A numeric token of the .events file does not parse as a finite number (section 11).
+    fields:
+      - name: note_sequence_id
+        type: patchback.score.NoteSequenceId
+
+  - name: patchback.score.LengthBoundExceeded
+    summary: The .events file exceeds a parser length bound, such as the note count (sections 11, 12.3).
+    fields:
+      - name: note_sequence_id
+        type: patchback.score.NoteSequenceId
+
+  - name: patchback.score.InvalidNoteTiming
+    summary: A note starts before sample 0 or does not end after it starts (section 10).
+    fields:
+      - name: note_sequence_id
+        type: patchback.score.NoteSequenceId
+
+  - name: patchback.score.MidiNoteOutOfRange
+    summary: A note's MIDI number is outside 0 to 127 (section 10, u8 MIDI note).
+    fields:
+      - name: note_sequence_id
+        type: patchback.score.NoteSequenceId
+
+  - name: patchback.score.VelocityOutOfRange
+    fields:
+      - name: note_sequence_id
+        type: patchback.score.NoteSequenceId
+
+  - name: patchback.score.OverlappingNotes
+    summary: Two notes sound at once in a monophonic sequence (sections 5.2, 10 V0 and V1).
+    fields:
+      - name: note_sequence_id
+        type: patchback.score.NoteSequenceId
+
+  - name: patchback.score.PatchNotFound
+    fields:
+      - name: patch_id
+        type: patchback.patch.PatchId
+
+  - name: patchback.score.NoteEstimationNotFound
+    summary: The sequence names a note estimation that does not exist; no sequence is loaded.
+    fields:
+      - name: note_estimation_id
+        type: Optional<patchback.analysis.NoteEstimationId>
+
+  - name: patchback.score.SampleRateMismatch
+    summary: The sequence's sample rate is not its patch's (section 10).
+    fields:
+      - name: note_sequence_id
+        type: patchback.score.NoteSequenceId
+      - name: sample_rate_hz
+        type: Integer
+
+  - name: patchback.score.NoteSequenceNotFound
+    fields:
+      - name: note_sequence_id
+        type: patchback.score.NoteSequenceId
+
+  - name: patchback.score.NonFiniteControlValue
+    summary: A control event's normalized value is NaN or infinite (section 5.2).
+    fields:
+      - name: note_sequence_id
+        type: patchback.score.NoteSequenceId
+
+  - name: patchback.score.UnknownParameterPath
+    summary: A control event names a path that is no parameter of the patch's topology (section 10).
+    fields:
+      - name: note_sequence_id
+        type: patchback.score.NoteSequenceId
+
+  - name: patchback.score.ArrangementNotFound
+    fields:
+      - name: arrangement_id
+        type: patchback.score.ArrangementId
+
+  - name: patchback.score.SequenceForAnotherPatch
+    summary: The stem's note sequence was written for a different patch than the stem's.
+    fields:
+      - name: stem_id
+        type: patchback.score.StemId
+      - name: note_sequence_id
+        type: patchback.score.NoteSequenceId
+
+commands:
+  - name: patchback.score.LoadNoteSequence
+    naming:
+      summary: >-
+        Parse a line-oriented, versioned .events file of note events for one patch (sections 10,
+        11). The input is what the parser read.
+    input:
+      - name: note_sequence_id
+        type: patchback.score.NoteSequenceId
+      - name: format_version
+        type: Integer
+      - name: sample_rate_hz
+        type: Integer
+      - name: patch_id
+        type: patchback.patch.PatchId
+      - name: notes
+        type: List<patchback.score.NoteEvent>
+      - name: note_estimation_id
+        type: Optional<patchback.analysis.NoteEstimationId>
+    outcomes:
+      - name: unknown-version
+        when: format_version != 1
+        error: patchback.score.UnknownFormatVersion
+        payload:
+          patchback.score.UnknownFormatVersion:
+            format_version: input.format_version
+      - name: invalid-timing
+        when:
+          exists:
+            in: notes
+            as: n
+            that:
+              any:
+                - n.start_sample < 0
+                - n.end_sample <= n.start_sample
+        error: patchback.score.InvalidNoteTiming
+        payload:
+          patchback.score.InvalidNoteTiming:
+            note_sequence_id: input.note_sequence_id
+      - name: midi-out-of-range
+        when:
+          exists:
+            in: notes
+            as: n
+            that:
+              any:
+                - n.midi_note < 0
+                - n.midi_note > 127
+        error: patchback.score.MidiNoteOutOfRange
+        payload:
+          patchback.score.MidiNoteOutOfRange:
+            note_sequence_id: input.note_sequence_id
+      - name: velocity-out-of-range
+        when:
+          exists:
+            in: notes
+            as: n
+            that:
+              any:
+                - n.velocity < 0
+                - n.velocity > 1
+        error: patchback.score.VelocityOutOfRange
+        payload:
+          patchback.score.VelocityOutOfRange:
+            note_sequence_id: input.note_sequence_id
+      # Monophonic (section 5.2, section 10 V0 and V1): no note starts while another sounds, and
+      # no two notes start on one sample. A note may start on the sample the previous one ends.
+      - name: overlap
+        when:
+          any:
+            - not: {distinct: {in: notes, as: n, by: n.start_sample}}
+            - exists:
+                in: notes
+                as: a
+                that:
+                  exists:
+                    in: notes
+                    as: b
+                    that:
+                      all:
+                        - b.start_sample > a.start_sample
+                        - b.start_sample < a.end_sample
+        error: patchback.score.OverlappingNotes
+        payload:
+          patchback.score.OverlappingNotes:
+            note_sequence_id: input.note_sequence_id
+      - name: unknown-patch
+        when_related:
+          via: input.patch_id
+          exists: false
+        error: patchback.score.PatchNotFound
+        payload:
+          patchback.score.PatchNotFound:
+            patch_id: input.patch_id
+      - name: unknown-estimation
+        when_related:
+          via: input.note_estimation_id
+          exists: false
+        error: patchback.score.NoteEstimationNotFound
+        payload:
+          patchback.score.NoteEstimationNotFound:
+            note_estimation_id: input.note_estimation_id
+      - name: rate-mismatch
+        when_related:
+          via: input.patch_id
+          predicate: sample_rate_hz != input.sample_rate_hz
+        error: patchback.score.SampleRateMismatch
+        payload:
+          patchback.score.SampleRateMismatch:
+            note_sequence_id: input.note_sequence_id
+            sample_rate_hz: input.sample_rate_hz
+      # UNMAPPED: section 11 names malformed numbers and unbounded lengths, section 12.3 a bound on
+      # the note count; no grammar or bound value is given. Both are the parser's.
+      - name: malformed-number
+        external: a numeric token does not parse as a finite decimal number
+        error: patchback.score.MalformedNumber
+        payload:
+          patchback.score.MalformedNumber:
+            note_sequence_id: input.note_sequence_id
+      - name: unbounded-length
+        external: a line, token or the note count exceeds the parser's bound
+        error: patchback.score.LengthBoundExceeded
+        payload:
+          patchback.score.LengthBoundExceeded:
+            note_sequence_id: input.note_sequence_id
+      - name: loaded
+        creates: patchback.score.NoteSequence
+        instance: note_sequence_id
+        sets:
+          format_version: input.format_version
+          sample_rate_hz: input.sample_rate_hz
+          patch_id: input.patch_id
+          notes: input.notes
+          note_estimation_id: input.note_estimation_id
+        emits: [patchback.score.NoteSequenceLoaded]
+        payload:
+          patchback.score.NoteSequenceLoaded:
+            note_sequence_id: input.note_sequence_id
+            patch_id: input.patch_id
+
+  - name: patchback.score.AutomateParameters
+    naming:
+      summary: >-
+        Give a note sequence its control automation (section 10, Milestone D): sample-timed
+        normalized values on stable parameter paths, replacing any it had.
+    input:
+      - name: note_sequence_id
+        type: patchback.score.NoteSequenceId
+      - name: controls
+        type: List<patchback.score.ControlEvent>
+    outcomes:
+      - name: no-such-sequence
+        unknown_instance: true
+        error: patchback.score.NoteSequenceNotFound
+        payload:
+          patchback.score.NoteSequenceNotFound:
+            note_sequence_id: input.note_sequence_id
+      - name: non-finite
+        external: a control event's normalized value is NaN or infinite
+        error: patchback.score.NonFiniteControlValue
+        payload:
+          patchback.score.NonFiniteControlValue:
+            note_sequence_id: input.note_sequence_id
+      # The topology's parameter contracts are two rows away (sequence, patch, topology) and a
+      # list against a list; the path lookup is the validator's (section 5.1 identifier checks).
+      - name: unknown-path
+        external: a control event names a path that is no parameter contract of the patch's topology
+        error: patchback.score.UnknownParameterPath
+        payload:
+          patchback.score.UnknownParameterPath:
+            note_sequence_id: input.note_sequence_id
+      # DESIGN.md 0.3 sections 5.2 and 10: a control value is a normalized p, so a value outside
+      # [0,1] is clamped, not refused, and the clamp is reported as a warning (as SetParameter).
+      # UNMAPPED: whether the sequence stores the submitted value and the renderer clamps, or
+      # the load rewrites it to the clamped value, is open (DESIGN.md section 17, OQ-27). This
+      # draft stores the submitted list; the clamp to [0,1] at render is a numeric obligation.
+      - name: clamped
+        when:
+          exists:
+            in: controls
+            as: c
+            that:
+              any:
+                - c.normalized_value < 0
+                - c.normalized_value > 1
+        updates: patchback.score.NoteSequence
+        instance: note_sequence_id
+        sets:
+          controls: input.controls
+        emits: [patchback.score.ParametersAutomated, patchback.score.ControlValuesClamped]
+        payload:
+          patchback.score.ParametersAutomated:
+            note_sequence_id: input.note_sequence_id
+          patchback.score.ControlValuesClamped:
+            note_sequence_id: input.note_sequence_id
+      - name: automated
+        updates: patchback.score.NoteSequence
+        instance: note_sequence_id
+        sets:
+          controls: input.controls
+        emits: [patchback.score.ParametersAutomated]
+        payload:
+          patchback.score.ParametersAutomated:
+            note_sequence_id: input.note_sequence_id
+
+  - name: patchback.score.CreateArrangement
+    input:
+      - name: arrangement_id
+        type: patchback.score.ArrangementId
+    outcomes:
+      - name: created
+        creates: patchback.score.Arrangement
+        instance: arrangement_id
+        emits: [patchback.score.ArrangementCreated]
+        payload:
+          patchback.score.ArrangementCreated:
+            arrangement_id: input.arrangement_id
+
+  - name: patchback.score.AddStem
+    naming:
+      summary: Add one instrument stem, a patch and the note sequence written for it, to an arrangement.
+    input:
+      - name: stem_id
+        type: patchback.score.StemId
+      - name: arrangement_id
+        type: patchback.score.ArrangementId
+      - name: patch_id
+        type: patchback.patch.PatchId
+      - name: note_sequence_id
+        type: patchback.score.NoteSequenceId
+    outcomes:
+      - name: no-such-arrangement
+        when_related:
+          via: input.arrangement_id
+          exists: false
+        error: patchback.score.ArrangementNotFound
+        payload:
+          patchback.score.ArrangementNotFound:
+            arrangement_id: input.arrangement_id
+      - name: no-such-sequence
+        when_related:
+          via: input.note_sequence_id
+          exists: false
+        error: patchback.score.NoteSequenceNotFound
+        payload:
+          patchback.score.NoteSequenceNotFound:
+            note_sequence_id: input.note_sequence_id
+      - name: sequence-for-another-patch
+        when_related:
+          via: input.note_sequence_id
+          predicate: patch_id != input.patch_id
+        error: patchback.score.SequenceForAnotherPatch
+        payload:
+          patchback.score.SequenceForAnotherPatch:
+            stem_id: input.stem_id
+            note_sequence_id: input.note_sequence_id
+      - name: added
+        creates: patchback.score.Stem
+        instance: stem_id
+        sets:
+          arrangement_id: input.arrangement_id
+          patch_id: input.patch_id
+          note_sequence_id: input.note_sequence_id
+        emits: [patchback.score.StemAdded]
+        payload:
+          patchback.score.StemAdded:
+            stem_id: input.stem_id
+            arrangement_id: input.arrangement_id
+
+events:
+  - name: patchback.score.NoteSequenceLoaded
+    fields:
+      - name: note_sequence_id
+        type: patchback.score.NoteSequenceId
+      - name: patch_id
+        type: patchback.patch.PatchId
+
+  - name: patchback.score.ParametersAutomated
+    fields:
+      - name: note_sequence_id
+        type: patchback.score.NoteSequenceId
+
+  - name: patchback.score.ControlValuesClamped
+    naming:
+      summary: >-
+        The warning that at least one control value lay outside [0,1] and is clamped
+        (sections 5.2 and 8.1).
+    fields:
+      - name: note_sequence_id
+        type: patchback.score.NoteSequenceId
+
+  - name: patchback.score.ArrangementCreated
+    fields:
+      - name: arrangement_id
+        type: patchback.score.ArrangementId
+
+  - name: patchback.score.StemAdded
+    fields:
+      - name: stem_id
+        type: patchback.score.StemId
+      - name: arrangement_id
+        type: patchback.score.ArrangementId
+
+views:
+  - name: patchback.score.NoteSequences
+    source: patchback.score.NoteSequence
+    consistency: read_your_writes
+    fields:
+      - name: note_sequence_id
+        type: patchback.score.NoteSequenceId
+      - name: state
+        type: patchback.score.NoteSequence.State
+      - name: format_version
+        type: Integer
+      - name: sample_rate_hz
+        type: Integer
+      - name: patch_id
+        type: patchback.patch.PatchId
+      - name: note_estimation_id
+        type: Optional<patchback.analysis.NoteEstimationId>
+      # `notes` and `controls` are read back (DESIGN.md 10 renders from them) but not published:
+      # NoteEvent.velocity and ControlEvent.normalized_value are Decimal, and ESS 0.67.0 refuses
+      # Decimal replay results in a view. The completeness note on them stands for that ESS gap.
+
+  - name: patchback.score.Stems
+    source: patchback.score.Stem
+    consistency: read_your_writes
+    fields:
+      - name: stem_id
+        type: patchback.score.StemId
+      - name: state
+        type: patchback.score.Stem.State
+      - name: arrangement_id
+        type: patchback.score.ArrangementId
+      - name: patch_id
+        type: patchback.patch.PatchId
+      - name: note_sequence_id
+        type: patchback.score.NoteSequenceId

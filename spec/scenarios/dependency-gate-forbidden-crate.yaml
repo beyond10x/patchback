@@ -1,0 +1,85 @@
+# DESIGN.md 3: ML / tensor / numerical crates are forbidden (e.g. ndarray, rustfft, tch, burn);
+# DSP, serialization and PRNG are internal modules; invariant 7: no hidden third-party ML/DSP
+# stack. Every category but audio I/O is refused, and an unknown audit is refused.
+type: ess-scenario/1
+domain: patchback.dependency
+scenario: dependency-gate-forbidden-crate
+summary: ndarray (tensor), rustfft (DSP), burn (ML) and serde (serialization) are refused with ForbiddenCrate.
+
+arrange:
+  - instance: audit
+    entity: patchback.dependency.DependencyAudit
+
+timeline:
+  - at: 2026-10-22T14:10:00Z
+    command: patchback.dependency.StartDependencyAudit
+    actor: patchback.dependency.Auditor
+    input:
+      revision: rev-with-additions
+    outcome: started
+    capture: {instance: audit, event: patchback.dependency.DependencyAuditStarted, field: dependency_audit_id}
+
+  - at: 2026-10-22T14:10:01Z
+    command: patchback.dependency.RecordCrate
+    actor: patchback.dependency.Auditor
+    input:
+      dependency_audit_id: {$instance: audit}
+      crate_name: ndarray
+      category: Tensor
+      approved: false
+      behind_optional_feature: false
+    outcome: forbidden-crate
+    error:
+      name: patchback.dependency.ForbiddenCrate
+
+  - at: 2026-10-22T14:10:02Z
+    command: patchback.dependency.RecordCrate
+    actor: patchback.dependency.Auditor
+    input:
+      dependency_audit_id: {$instance: audit}
+      crate_name: rustfft
+      category: Dsp
+      approved: false
+      behind_optional_feature: false
+    outcome: forbidden-crate
+    error:
+      name: patchback.dependency.ForbiddenCrate
+
+  - at: 2026-10-22T14:10:03Z
+    command: patchback.dependency.RecordCrate
+    actor: patchback.dependency.Auditor
+    input:
+      dependency_audit_id: {$instance: audit}
+      crate_name: burn
+      category: MachineLearning
+      approved: true
+      behind_optional_feature: true
+    outcome: forbidden-crate
+    error:
+      name: patchback.dependency.ForbiddenCrate
+
+  - at: 2026-10-22T14:10:04Z
+    command: patchback.dependency.RecordCrate
+    actor: patchback.dependency.Auditor
+    input:
+      dependency_audit_id: {$instance: audit}
+      crate_name: serde
+      category: Serialization
+      approved: false
+      behind_optional_feature: false
+    outcome: forbidden-crate
+    error:
+      name: patchback.dependency.ForbiddenCrate
+
+  - at: 2026-10-22T14:10:05Z
+    command: patchback.dependency.RecordCrate
+    actor: patchback.dependency.Auditor
+    input:
+      dependency_audit_id: 7a000000-0000-4000-8000-0000000000ff
+      crate_name: cpal
+      category: AudioIo
+      approved: true
+      behind_optional_feature: true
+    outcome: unknown-audit
+    error:
+      name: patchback.dependency.UnknownAudit

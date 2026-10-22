@@ -1,0 +1,52 @@
+# DESIGN.md 13 Milestone E / ADR-010: GPU training is adopted only once the pinned release ships
+# the Vulkan backend and CPU/GPU equivalence is recorded. A shipped backend alone is not enough,
+# and a failed equivalence run records nothing.
+type: ess-scenario/1
+domain: patchback.model
+scenario: gpu-training-adoption-awaiting-equivalence
+summary: With Vulkan shipped but no equivalence recorded, a Vulkan run is refused; a non-equivalent result is refused and records nothing.
+
+arrange:
+  - instance: pin
+    entity: patchback.model.ModelSpecPin
+
+timeline:
+  - at: 2026-10-22T13:10:00Z
+    command: patchback.model.PinModelSpec
+    actor: patchback.model.Operator
+    input:
+      version: pinned-release-with-vulkan
+      commit: 89abcdef0123456789abcdef0123456789abcdef
+      vulkan_backend_shipped: true
+    outcome: pinned
+    capture: {instance: pin, event: patchback.model.ModelSpecPinned, field: model_spec_pin_id}
+
+  - at: 2026-10-22T13:10:01Z
+    command: patchback.model.PlanTrainingRun
+    actor: patchback.model.Operator
+    input:
+      model_spec_pin_id: {$instance: pin}
+      backend: Vulkan
+    outcome: gpu-equivalence-not-recorded
+    error:
+      name: patchback.model.GpuEquivalenceNotRecorded
+
+  - at: 2026-10-22T13:10:02Z
+    command: patchback.model.RecordGpuEquivalence
+    actor: patchback.model.Operator
+    input:
+      model_spec_pin_id: {$instance: pin}
+      equivalent: false
+    outcome: not-equivalent
+    error:
+      name: patchback.model.GpuNotEquivalent
+
+  - at: 2026-10-22T13:10:03Z
+    command: patchback.model.PlanTrainingRun
+    actor: patchback.model.Operator
+    input:
+      model_spec_pin_id: {$instance: pin}
+      backend: Vulkan
+    outcome: gpu-equivalence-not-recorded
+    error:
+      name: patchback.model.GpuEquivalenceNotRecorded

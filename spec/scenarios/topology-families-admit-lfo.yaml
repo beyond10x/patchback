@@ -1,0 +1,90 @@
+# DESIGN.md section 5.4 / Milestone D: module families are added one at a time behind the
+# topology catalogue. Before the LFO family is admitted, a patch with an Lfo node is refused;
+# after admission the same patch loads. Other families stay outside.
+# UNMAPPED: whether admitting a family changes the topology version (subtractive-mono/1 -> /2)
+# and which parameter contracts the family brings are not settled in DESIGN.md.
+type: ess-scenario/1
+domain: patchback.patch
+scenario: topology-families-admit-lfo
+summary: An Lfo node is refused until the LFO family is admitted to the topology, then accepted; a Noise node stays refused.
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.patch.DeclareTopology
+    actor: patchback.patch.Operator
+    input:
+      topology_id: 7f0c0000-0000-4000-8000-000000000031
+      name: subtractive-mono/1
+      parameters: []
+    outcome: declared
+
+  - at: 2026-10-22T09:00:01Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000131
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 7f0c0000-0000-4000-8000-000000000031
+      nodes:
+        - {id: 8, kind: Lfo, parameters: []}
+      edges: []
+    outcome: lfo-outside-catalogue
+    error:
+      name: patchback.patch.KindOutsideCatalogue
+      fields:
+        patch_id: 7f0c0000-0000-4000-8000-000000000131
+        topology_id: 7f0c0000-0000-4000-8000-000000000031
+        kind_family: Lfo
+    no_events: [patchback.patch.PatchLoaded]
+
+  - at: 2026-10-22T09:00:02Z
+    command: patchback.patch.AdmitModuleFamily
+    actor: patchback.patch.Operator
+    input:
+      topology_id: 7f0c0000-0000-4000-8000-000000000031
+      family: Lfo
+    outcome: lfo
+    events:
+      - event: patchback.patch.ModuleFamilyAdmitted
+        payload:
+          topology_id: 7f0c0000-0000-4000-8000-000000000031
+          family: Lfo
+
+  - at: 2026-10-22T09:00:03Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000131
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 7f0c0000-0000-4000-8000-000000000031
+      nodes:
+        - {id: 8, kind: Lfo, parameters: []}
+      edges: []
+    outcome: loaded
+
+  - at: 2026-10-22T09:00:04Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000132
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 7f0c0000-0000-4000-8000-000000000031
+      nodes:
+        - {id: 9, kind: Noise, parameters: []}
+      edges: []
+    outcome: noise-outside-catalogue
+    error:
+      name: patchback.patch.KindOutsideCatalogue
+      fields:
+        kind_family: Noise
+    no_events: [patchback.patch.PatchLoaded]
+
+assert:
+  - view: patchback.patch.Topologies
+    contains:
+      topology_id: 7f0c0000-0000-4000-8000-000000000031
+      admits_lfo: true
+      admits_noise: false

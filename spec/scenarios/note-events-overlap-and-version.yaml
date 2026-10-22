@@ -1,0 +1,57 @@
+# DESIGN.md sections 5.2 and 10 (V0, V1): the voice is monophonic, so a note that starts while
+# another sounds is refused; section 11: an unknown .events version is refused.
+type: ess-scenario/1
+domain: patchback.score
+scenario: note-events-overlap-and-version
+summary: Overlapping notes and an unknown .events format version are refused.
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.score.LoadNoteSequence
+    actor: patchback.score.Operator
+    input:
+      note_sequence_id: 7f0c0000-0000-4000-8000-000000000254
+      format_version: 1
+      sample_rate_hz: 48000
+      patch_id: 7f0c0000-0000-4000-8000-000000000153
+      notes:
+        - {start_sample: 0, end_sample: 24000, midi_note: 45, velocity: 0.8}
+        - {start_sample: 12000, end_sample: 36000, midi_note: 52, velocity: 0.8}
+    outcome: overlap
+    error:
+      name: patchback.score.OverlappingNotes
+      fields:
+        note_sequence_id: 7f0c0000-0000-4000-8000-000000000254
+    no_events: [patchback.score.NoteSequenceLoaded]
+
+  - at: 2026-10-22T09:00:01Z
+    command: patchback.score.LoadNoteSequence
+    actor: patchback.score.Operator
+    input:
+      note_sequence_id: 7f0c0000-0000-4000-8000-000000000254
+      format_version: 1
+      sample_rate_hz: 48000
+      patch_id: 7f0c0000-0000-4000-8000-000000000153
+      notes:
+        - {start_sample: 0, end_sample: 24000, midi_note: 45, velocity: 0.8}
+        - {start_sample: 0, end_sample: 12000, midi_note: 52, velocity: 0.8}
+    outcome: overlap
+    error:
+      name: patchback.score.OverlappingNotes
+    no_events: [patchback.score.NoteSequenceLoaded]
+
+  - at: 2026-10-22T09:00:02Z
+    command: patchback.score.LoadNoteSequence
+    actor: patchback.score.Operator
+    input:
+      note_sequence_id: 7f0c0000-0000-4000-8000-000000000254
+      format_version: 3
+      sample_rate_hz: 48000
+      patch_id: 7f0c0000-0000-4000-8000-000000000153
+      notes: []
+    outcome: unknown-version
+    error:
+      name: patchback.score.UnknownFormatVersion
+      fields:
+        format_version: 3
+    no_events: [patchback.score.NoteSequenceLoaded]

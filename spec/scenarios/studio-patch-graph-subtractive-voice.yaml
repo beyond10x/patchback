@@ -1,0 +1,44 @@
+# epic:patch-studio, patch graph view. The fixed subtractive voice of DESIGN.md section 5.2:
+# note/gate -> Saw -> Drive -> Lowpass -> VCA -> Output, with the ADSR on the VCA's gain. Ranks
+# lay it out left to right; no edge is delayed feedback. Port names are illustrative (UNMAPPED).
+type: ess-scenario/1
+domain: patchback.studio
+scenario: studio-patch-graph-subtractive-voice
+summary: The subtractive voice is drawn with seven ranked nodes and seven rate-coloured edges, none of them feedback.
+
+timeline:
+  - at: 2026-10-22T13:10:00Z
+    command: patchback.studio.DrawGraph
+    actor: patchback.studio.Studio
+    input:
+      graph_view_id: 5a0d0000-0000-4000-8000-000000000201
+      patch_id: 5a0d0000-0000-4000-8000-000000000301
+      topology_id: 5a0d0000-0000-4000-8000-000000000101
+      nodes:
+        - {node_id: 1, kind: NoteInput, rank: 0}
+        - {node_id: 2, kind: SawOscillator, rank: 1}
+        - {node_id: 3, kind: Drive, rank: 2}
+        - {node_id: 4, kind: LowpassFilter, rank: 3}
+        - {node_id: 5, kind: AdsrEnvelope, rank: 1}
+        - {node_id: 6, kind: Vca, rank: 4}
+        - {node_id: 7, kind: Output, rank: 5}
+      edges:
+        - {from_node: 1, from_port: note, to_node: 2, to_port: note, rate: Event, delayed_feedback: false}
+        - {from_node: 1, from_port: gate, to_node: 5, to_port: gate, rate: Event, delayed_feedback: false}
+        - {from_node: 2, from_port: out, to_node: 3, to_port: in, rate: Audio, delayed_feedback: false}
+        - {from_node: 3, from_port: out, to_node: 4, to_port: in, rate: Audio, delayed_feedback: false}
+        - {from_node: 4, from_port: out, to_node: 6, to_port: in, rate: Audio, delayed_feedback: false}
+        - {from_node: 5, from_port: env, to_node: 6, to_port: gain, rate: Control, delayed_feedback: false}
+        - {from_node: 6, from_port: out, to_node: 7, to_port: in, rate: Audio, delayed_feedback: false}
+    outcome: drawn
+    events:
+      - event: patchback.studio.GraphDrawn
+        payload:
+          patch_id: 5a0d0000-0000-4000-8000-000000000301
+
+assert:
+  - view: patchback.studio.GraphViews
+    contains:
+      graph_view_id: 5a0d0000-0000-4000-8000-000000000201
+      state: Drawn
+      patch_id: 5a0d0000-0000-4000-8000-000000000301

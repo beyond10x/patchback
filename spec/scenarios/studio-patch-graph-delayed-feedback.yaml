@@ -1,0 +1,30 @@
+# epic:patch-studio, patch graph view. DESIGN.md section 5.4: a cycle is admitted only through a
+# Delay node of at least one sample. The patch of delayed-feedback-accepted (Drive -> Delay ->
+# Drive) is drawn with the edge leaving the Delay marked as delayed feedback, so the view draws it
+# as a return arc and ranks the rest as a chain.
+type: ess-scenario/1
+domain: patchback.studio
+scenario: studio-patch-graph-delayed-feedback
+summary: A Drive-Delay loop is drawn with the edge leaving the Delay node marked as delayed feedback.
+
+timeline:
+  - at: 2026-10-22T13:10:00Z
+    command: patchback.studio.DrawGraph
+    actor: patchback.studio.Studio
+    input:
+      graph_view_id: 5a0d0000-0000-4000-8000-000000000202
+      patch_id: 5a0d0000-0000-4000-8000-000000000302
+      topology_id: 5a0d0000-0000-4000-8000-000000000102
+      nodes:
+        - {node_id: 3, kind: Drive, rank: 0}
+        - {node_id: 10, kind: Delay, rank: 1}
+      edges:
+        - {from_node: 3, from_port: out, to_node: 10, to_port: in, rate: Audio, delayed_feedback: false}
+        - {from_node: 10, from_port: out, to_node: 3, to_port: in, rate: Audio, delayed_feedback: true}
+    outcome: drawn
+
+assert:
+  - view: patchback.studio.GraphViews
+    contains:
+      graph_view_id: 5a0d0000-0000-4000-8000-000000000202
+      state: Drawn

@@ -1,0 +1,60 @@
+# DESIGN.md 7.1: generation is seeded and records the PRNG algorithm with the seed; the example
+# split is 50,016 train / 4,992 validation / 4,992 test, each divisible by batch size 16.
+type: ess-scenario/1
+domain: patchback.dataset
+scenario: dataset-generation-seeded-splits
+summary: A dataset generated from seed 42 with its PRNG named opens train, validation and test splits of 50,016, 4,992 and 4,992 samples.
+
+arrange:
+  - instance: dataset
+    entity: patchback.dataset.Dataset
+  - instance: train
+    entity: patchback.dataset.DatasetSplit
+  - instance: validation
+    entity: patchback.dataset.DatasetSplit
+  - instance: test
+    entity: patchback.dataset.DatasetSplit
+
+timeline:
+  - at: 2026-10-22T10:00:00Z
+    command: patchback.dataset.GenerateDataset
+    actor: patchback.dataset.Operator
+    input:
+      seed: 42
+      prng_algorithm: std-only-generator
+      batch_size: 16
+      feature_contract_id: 5a000000-0000-4000-8000-000000000001
+      topology_id: 5a000000-0000-4000-8000-000000000002
+      out_dir: data/
+    outcome: generated
+    capture: {instance: dataset, event: patchback.dataset.DatasetGenerated, field: dataset_id}
+
+  - at: 2026-10-22T10:00:01Z
+    command: patchback.dataset.OpenSplit
+    actor: patchback.dataset.Operator
+    input:
+      dataset_id: {$instance: dataset}
+      role: Train
+      sample_count: 50016
+    outcome: opened
+    capture: {instance: train, event: patchback.dataset.SplitOpened, field: dataset_split_id}
+
+  - at: 2026-10-22T10:00:02Z
+    command: patchback.dataset.OpenSplit
+    actor: patchback.dataset.Operator
+    input:
+      dataset_id: {$instance: dataset}
+      role: Validation
+      sample_count: 4992
+    outcome: opened
+    capture: {instance: validation, event: patchback.dataset.SplitOpened, field: dataset_split_id}
+
+  - at: 2026-10-22T10:00:03Z
+    command: patchback.dataset.OpenSplit
+    actor: patchback.dataset.Operator
+    input:
+      dataset_id: {$instance: dataset}
+      role: Test
+      sample_count: 4992
+    outcome: opened
+    capture: {instance: test, event: patchback.dataset.SplitOpened, field: dataset_split_id}

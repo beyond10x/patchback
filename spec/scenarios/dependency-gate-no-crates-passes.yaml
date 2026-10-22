@@ -1,0 +1,49 @@
+# DESIGN.md 3: "An offline first milestone can be built with zero third-party runtime crates";
+# 12.2 Dependency gate. An audit with no recorded crate passes, and a passed audit takes no more
+# crates.
+type: ess-scenario/1
+domain: patchback.dependency
+scenario: dependency-gate-no-crates-passes
+summary: An audit with no third-party application crate passes; recording a crate or concluding again afterwards is refused.
+
+arrange:
+  - instance: audit
+    entity: patchback.dependency.DependencyAudit
+
+timeline:
+  - at: 2026-10-22T14:00:00Z
+    command: patchback.dependency.StartDependencyAudit
+    actor: patchback.dependency.Auditor
+    input:
+      revision: rev-offline-mvp
+    outcome: started
+    capture: {instance: audit, event: patchback.dependency.DependencyAuditStarted, field: dependency_audit_id}
+
+  - at: 2026-10-22T14:00:01Z
+    command: patchback.dependency.ConcludeDependencyAudit
+    actor: patchback.dependency.Auditor
+    input:
+      dependency_audit_id: {$instance: audit}
+    outcome: passed
+
+  - at: 2026-10-22T14:00:02Z
+    command: patchback.dependency.RecordCrate
+    actor: patchback.dependency.Auditor
+    input:
+      dependency_audit_id: {$instance: audit}
+      crate_name: cpal
+      category: AudioIo
+      approved: true
+      behind_optional_feature: true
+    outcome: audit-concluded
+    error:
+      name: patchback.dependency.AuditConcluded
+
+  - at: 2026-10-22T14:00:03Z
+    command: patchback.dependency.ConcludeDependencyAudit
+    actor: patchback.dependency.Auditor
+    input:
+      dependency_audit_id: {$instance: audit}
+    outcome: wrong-state
+    error:
+      name: patchback.dependency.AuditConcluded

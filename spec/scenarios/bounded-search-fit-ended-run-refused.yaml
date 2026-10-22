@@ -1,0 +1,127 @@
+# DESIGN.md 9.2 step 5: a run ends once, completed with its best patch or failed without one. A run
+# that has completed can be neither completed again nor failed afterwards; both are refused with
+# FitNotRunning naming the run's state, and nothing is emitted.
+type: ess-scenario/1
+domain: patchback.fit
+scenario: bounded-search-fit-ended-run-refused
+summary: Completing or failing a run that already completed is refused with FitNotRunning, and the run stays Completed.
+
+arrange:
+  - instance: reference
+    entity: patchback.audio.AudioClip
+  - instance: run
+    entity: patchback.fit.FitRun
+
+timeline:
+  - at: 2026-10-22T00:00:01Z
+    command: patchback.patch.DeclareTopology
+    actor: patchback.patch.Operator
+    input:
+      topology_id: 2d8f3b10-0000-4000-8000-000000000703
+      name: subtractive-mono/1
+      parameters: []
+    outcome: declared
+
+  - at: 2026-10-22T00:00:02Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 2d8f3b10-0000-4000-8000-0000000007f1
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 2d8f3b10-0000-4000-8000-000000000703
+      nodes:
+        - {id: 2, kind: SawOscillator, parameters: []}
+      edges: []
+    outcome: loaded
+
+  - at: 2026-10-22T00:00:03Z
+    command: patchback.score.LoadNoteSequence
+    actor: patchback.score.Operator
+    input:
+      note_sequence_id: 2d8f3b10-0000-4000-8000-000000000702
+      format_version: 1
+      sample_rate_hz: 48000
+      patch_id: 2d8f3b10-0000-4000-8000-0000000007f1
+      notes:
+        - {start_sample: 0, end_sample: 24000, midi_note: 45, velocity: 0.8}
+    outcome: loaded
+
+  - at: 2026-10-22T00:00:04Z
+    command: patchback.audio.ImportWav
+    actor: patchback.audio.Operator
+    input:
+      path: reference.wav
+      origin: PatchbackSynthesized
+      sample_rate_hz: 48000
+      channel_count: 1
+      format_tag: 3
+      bits_per_sample: 32
+      frame_count: 48000
+    outcome: imported
+    capture: {instance: reference, event: patchback.audio.ClipImported, field: audio_clip_id}
+
+  - at: 2026-10-22T12:00:00Z
+    command: patchback.fit.StartFit
+    actor: patchback.fit.Operator
+    input:
+      reference_clip_id: {$instance: reference}
+      note_sequence_id: 2d8f3b10-0000-4000-8000-000000000702
+      note_source: Known
+      scope: SingleNote
+      topology_id: 2d8f3b10-0000-4000-8000-000000000703
+      seed: 42
+      max_renders: 2000
+      max_wall_time_ms: 600000
+      max_restarts: 4
+      improvement_threshold: 0.001
+    outcome: started
+    capture: {instance: run, event: patchback.fit.FitStarted, field: fit_run_id}
+
+  - at: 2026-10-22T12:00:01Z
+    command: patchback.fit.EvaluateCandidate
+    actor: patchback.fit.Optimizer
+    input:
+      fit_run_id: {$instance: run}
+      patch_id: 2d8f3b10-0000-4000-8000-000000000710
+      render_id: 2d8f3b10-0000-4000-8000-000000000720
+      components: {log_spectral: 0.8, envelope: 0.6, transient: 0.4, band_energy: 0.5}
+      total_loss: 0.645
+    outcome: first-retained
+
+  - at: 2026-10-22T12:00:02Z
+    command: patchback.fit.CompleteFit
+    actor: patchback.fit.Optimizer
+    input:
+      fit_run_id: {$instance: run}
+      stop_reason: ImprovementBelowThreshold
+      wall_time_ms: 2000
+    outcome: completed
+
+  - at: 2026-10-22T12:00:03Z
+    command: patchback.fit.CompleteFit
+    actor: patchback.fit.Optimizer
+    input:
+      fit_run_id: {$instance: run}
+      stop_reason: ImprovementBelowThreshold
+      wall_time_ms: 3000
+    outcome: wrong-state
+    error:
+      name: patchback.fit.FitNotRunning
+      fields:
+        state: Completed
+    no_events: [patchback.fit.FitCompleted]
+
+  - at: 2026-10-22T12:00:04Z
+    command: patchback.fit.FailFit
+    actor: patchback.fit.Optimizer
+    input:
+      fit_run_id: {$instance: run}
+      failure_reason: RendererFault
+      wall_time_ms: 4000
+    outcome: wrong-state
+    error:
+      name: patchback.fit.FitNotRunning
+      fields:
+        state: Completed
+    no_events: [patchback.fit.FitFailed]

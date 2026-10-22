@@ -1,0 +1,96 @@
+# DESIGN.md 10 V1: monophonic onset, pitch and gate estimation yields "an event sequence"; the
+# score stays separate from the instrument, so the sequence is loaded by the score domain and
+# records the estimation it was written from. A sequence naming no existing estimation is refused.
+type: ess-scenario/1
+domain: patchback.score
+scenario: note-events-from-estimation
+summary: A note sequence written from a note estimation records it; one naming an unknown estimation is refused.
+
+arrange:
+  - instance: analysis
+    entity: patchback.analysis.Analysis
+  - instance: estimation
+    entity: patchback.analysis.NoteEstimation
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.analysis.AnalyzeAudio
+    actor: patchback.analysis.Operator
+    input:
+      audio_clip_id: 7f0c0000-0000-4000-8000-000000000961
+      out_dir: analysis/
+      sample_rate_hz: 48000
+      frame_count: 96000
+      fft_lengths: [512, 2048, 8192]
+      hop_length: 512
+      window: Hann
+    outcome: analyzed
+    capture: {instance: analysis, event: patchback.analysis.AudioAnalyzed, field: analysis_id}
+
+  - at: 2026-10-22T09:00:01Z
+    command: patchback.analysis.EstimateNotes
+    actor: patchback.analysis.Operator
+    input:
+      audio_clip_id: 7f0c0000-0000-4000-8000-000000000961
+      analysis_id: {$instance: analysis}
+    outcome: estimated
+    capture: {instance: estimation, event: patchback.analysis.NotesEstimated, field: note_estimation_id}
+
+  - at: 2026-10-22T09:00:02Z
+    command: patchback.patch.DeclareTopology
+    actor: patchback.patch.Operator
+    input:
+      topology_id: 7f0c0000-0000-4000-8000-000000000962
+      name: subtractive-mono/1
+      parameters: []
+    outcome: declared
+
+  - at: 2026-10-22T09:00:03Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000963
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 7f0c0000-0000-4000-8000-000000000962
+      nodes:
+        - {id: 2, kind: SawOscillator, parameters: []}
+      edges: []
+    outcome: loaded
+
+  - at: 2026-10-22T09:00:04Z
+    command: patchback.score.LoadNoteSequence
+    actor: patchback.score.Operator
+    input:
+      note_sequence_id: 7f0c0000-0000-4000-8000-000000000964
+      format_version: 1
+      sample_rate_hz: 48000
+      patch_id: 7f0c0000-0000-4000-8000-000000000963
+      note_estimation_id: {$instance: estimation}
+      notes:
+        - {start_sample: 0, end_sample: 24000, midi_note: 45, velocity: 0.8}
+    outcome: loaded
+    events:
+      - event: patchback.score.NoteSequenceLoaded
+
+  - at: 2026-10-22T09:00:05Z
+    command: patchback.score.LoadNoteSequence
+    actor: patchback.score.Operator
+    input:
+      note_sequence_id: 7f0c0000-0000-4000-8000-000000000965
+      format_version: 1
+      sample_rate_hz: 48000
+      patch_id: 7f0c0000-0000-4000-8000-000000000963
+      note_estimation_id: 7f0c0000-0000-4000-8000-000000000969
+      notes:
+        - {start_sample: 0, end_sample: 24000, midi_note: 45, velocity: 0.8}
+    outcome: unknown-estimation
+    error:
+      name: patchback.score.NoteEstimationNotFound
+    no_events: [patchback.score.NoteSequenceLoaded]
+
+assert:
+  - view: patchback.score.NoteSequences
+    contains:
+      note_sequence_id: 7f0c0000-0000-4000-8000-000000000964
+      note_estimation_id: {$instance: estimation}

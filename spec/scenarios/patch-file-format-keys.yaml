@@ -1,0 +1,51 @@
+# DESIGN.md section 11: the parser refuses duplicate keys and duplicate ids. A node that sets
+# one parameter key twice is a duplicate key; two nodes with one id are a duplicate id.
+type: ess-scenario/1
+domain: patchback.patch
+scenario: patch-file-format-keys
+summary: A node that repeats a parameter key, or two nodes sharing an id, make the .patch file refused.
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.patch.DeclareTopology
+    actor: patchback.patch.Operator
+    input:
+      topology_id: 7f0c0000-0000-4000-8000-000000000022
+      name: subtractive-mono/1
+      parameters: []
+    outcome: declared
+
+  - at: 2026-10-22T09:00:01Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000122
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 7f0c0000-0000-4000-8000-000000000022
+      nodes:
+        - {id: 4, kind: LowpassFilter, parameters: [{name: cutoff, value: 800}, {name: cutoff, value: 1200}]}
+      edges: []
+    outcome: duplicate-key
+    error:
+      name: patchback.patch.DuplicateKey
+      fields:
+        patch_id: 7f0c0000-0000-4000-8000-000000000122
+    no_events: [patchback.patch.PatchLoaded]
+
+  - at: 2026-10-22T09:00:02Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000122
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 7f0c0000-0000-4000-8000-000000000022
+      nodes:
+        - {id: 4, kind: LowpassFilter, parameters: [{name: cutoff, value: 800}]}
+        - {id: 4, kind: Vca, parameters: []}
+      edges: []
+    outcome: duplicate-id
+    error:
+      name: patchback.patch.DuplicateNodeId
+    no_events: [patchback.patch.PatchLoaded]

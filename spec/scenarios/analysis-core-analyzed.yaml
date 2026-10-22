@@ -1,0 +1,26 @@
+# DESIGN.md 6.2: STFT, envelopes and spectral descriptors with Hann windows; 6.3: FFT lengths
+# 512, 2048, 8192 at 48 kHz; 11: `patchback analyze --input reference.wav --out analysis/`.
+# The hop value is UNMAPPED (spec/domains/analysis.yaml, Analysis.hop_length); 512 is illustrative.
+type: ess-scenario/1
+domain: patchback.analysis
+scenario: analysis-core-analyzed
+summary: A 1-second 48 kHz clip is analysed and the analysis records its FFT lengths, hop and window.
+
+arrange:
+  - instance: analysis
+    entity: patchback.analysis.Analysis
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.analysis.AnalyzeAudio
+    actor: patchback.analysis.Operator
+    input:
+      audio_clip_id: 0a1b2c3d-0000-4000-8000-000000000001
+      out_dir: analysis/
+      sample_rate_hz: 48000
+      frame_count: 48000
+      fft_lengths: [512, 2048, 8192]
+      hop_length: 512
+      window: Hann
+    outcome: analyzed
+    capture: {instance: analysis, event: patchback.analysis.AudioAnalyzed, field: analysis_id}

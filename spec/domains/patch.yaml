@@ -1,0 +1,923 @@
+domain: patchback.patch
+
+summary: >-
+  The editable DSP program Patchback infers: a versioned patch of typed nodes and rate-checked
+  edges, validated before it is compiled, and the topology whose module catalogue and parameter
+  contracts it is checked against (DESIGN.md sections 2, 5 and 11).
+
+types:
+  - name: patchback.patch.PatchId
+    kind: newtype
+    of: Uuid
+
+  - name: patchback.patch.TopologyId
+    kind: newtype
+    of: Uuid
+
+  - name: patchback.patch.TopologyName
+    kind: newtype
+    of: String
+    naming:
+      summary: A versioned topology name, such as subtractive-mono/1.
+
+  # UNMAPPED: DESIGN.md section 5.1 says parameters are addressed by "stable module/parameter
+  # identifiers" and section 10 types ControlEvent.parameter_path as a String; neither gives the
+  # path syntax (a bare name such as attack, or module-qualified such as adsr.attack). Open question.
+  - name: patchback.patch.ParameterPath
+    kind: newtype
+    of: String
+    naming:
+      summary: The stable identifier of one parameter of a topology.
+
+  - name: patchback.patch.ParameterName
+    kind: newtype
+    of: String
+    naming:
+      summary: The key of one parameter inside one node of a .patch file.
+
+  - name: patchback.patch.PortName
+    kind: newtype
+    of: String
+
+  - name: patchback.patch.PortRate
+    kind: enum
+    variants: [Audio, Control, Event]
+
+  # Section 5.2 (the fixed MVP voice) and section 5.4 (families added one at a time).
+  # UNMAPPED: section 5.4 also names "FM, and more oscillators"; no family name or kinds are given
+  # for them, so they are not declared. Open question.
+  - name: patchback.patch.NodeKind
+    kind: enum
+    variants:
+      - NoteInput
+      - SawOscillator
+      - Drive
+      - LowpassFilter
+      - AdsrEnvelope
+      - Vca
+      - Output
+      - SquareOscillator
+      - SineOscillator
+      - HighpassFilter
+      - BandpassFilter
+      - Lfo
+      - Delay
+      - Noise
+
+  - name: patchback.patch.ModuleFamily
+    kind: enum
+    naming:
+      summary: A family of module kinds a topology admits beyond the fixed subtractive voice.
+    variants: [SquareSine, HighpassBandpass, Lfo, Delay, Noise]
+
+  - name: patchback.patch.ParameterUnit
+    kind: enum
+    variants: [Seconds, LinearAmplitude, Hertz, Dimensionless, Decibels]
+
+  - name: patchback.patch.ParameterMapping
+    kind: enum
+    naming:
+      summary: >-
+        How a normalized value p in [0,1] maps to the physical value: Exponential is
+        at_zero * (at_one / at_zero)^p, Linear is at_zero + (at_one - at_zero) * p.
+    variants: [Exponential, Linear]
+
+  - name: patchback.patch.ClampPolicy
+    kind: enum
+    naming:
+      summary: What happens to a normalized value outside [0,1] (section 5.2 clamps p to [0,1]).
+    variants: [ClampToUnitInterval]
+
+  - name: patchback.patch.ParameterContract
+    kind: struct
+    naming:
+      summary: Domain, default, unit, mapping and clamping policy of one parameter (section 2, invariant 2).
+    fields:
+      - name: path
+        type: patchback.patch.ParameterPath
+      - name: index
+        type: Integer
+        summary: Position of the parameter in the model's normalized target vector.
+      - name: unit
+        type: patchback.patch.ParameterUnit
+      - name: mapping
+        type: patchback.patch.ParameterMapping
+      - name: physical_at_zero
+        type: Decimal
+        summary: Physical value at p = 0, the lower end of the domain.
+      - name: physical_at_one
+        type: Decimal
+        summary: Physical value at p = 1, the upper end of the domain.
+      # UNMAPPED: section 2 requires a documented default for every parameter; the section 5.2
+      # default column is open for all eight (DESIGN.md section 17, OQ-1) and must be set before
+      # the Milestone A baseline. The topology scenarios carry placeholders.
+      - name: default_normalized
+        type: Decimal
+      - name: clamp
+        type: patchback.patch.ClampPolicy
+
+  - name: patchback.patch.ParameterValue
+    kind: struct
+    naming:
+      summary: One parameter of one node as a .patch file serializes it, in physical units (section 5.2).
+    fields:
+      - name: name
+        type: patchback.patch.ParameterName
+      - name: value
+        type: Decimal
+
+  - name: patchback.patch.NodeDecl
+    kind: struct
+    fields:
+      - name: id
+        type: Integer
+        summary: The node's stable identifier inside the patch (section 5.1, u32).
+      - name: kind
+        type: patchback.patch.NodeKind
+      - name: parameters
+        type: List<patchback.patch.ParameterValue>
+
+  # DESIGN.md 0.3 section 5.1 lists the MVP kinds' ports. The edge carries the rate the node kind
+  # declares for each named port, as the validator resolves it; an undeclared port is an external
+  # refusal.
+  # UNMAPPED: the port names and the pitch/env/gain rates are proposals, and the section 5.4
+  # families have no port list (DESIGN.md section 17, OQ-3).
+  - name: patchback.patch.EdgeDecl
+    kind: struct
+    fields:
+      - name: from_node
+        type: Integer
+      - name: from_port
+        type: patchback.patch.PortName
+      - name: from_rate
+        type: patchback.patch.PortRate
+      - name: to_node
+        type: Integer
+      - name: to_port
+        type: patchback.patch.PortName
+      - name: to_rate
+        type: patchback.patch.PortRate
+
+entities:
+  - name: patchback.patch.Patch
+    naming:
+      summary: >-
+        A versioned patch (section 5.1). Loaded is parsed and well formed; Validated has passed the
+        graph checks of sections 5.1 and 5.4; Compiled has an execution plan (section 5.1).
+    identity:
+      name: patch_id
+      type: patchback.patch.PatchId
+    fields:
+      - name: format_version
+        type: Integer
+      - name: sample_rate_hz
+        type: Integer
+      - name: topology_id
+        type: patchback.patch.TopologyId
+      - name: nodes
+        type: List<patchback.patch.NodeDecl>
+      - name: edges
+        type: List<patchback.patch.EdgeDecl>
+    relations:
+      - name: topology
+        kind: references
+        target: patchback.patch.Topology
+        cardinality: one
+        via: topology_id
+    # Section 5.1 nests `nodes: Vec<Node>` and `edges: Vec<Edge>` in Patch, so a node and an edge
+    # are values (NodeDecl, EdgeDecl) with no identity or lifecycle of their own.
+    lifecycle:
+      initial: Loaded
+      states: [Loaded, Validated, Compiled]
+      terminal: []
+      transitions:
+        - name: validate
+          from: [Loaded]
+          to: Validated
+        - name: compile
+          from: [Validated]
+          to: Compiled
+        # UNMAPPED: section 5.1 puts parameter validation inside compilation, so a parameter
+        # change is modelled as returning the patch to Loaded, to be validated and compiled again.
+        # DESIGN.md does not say whether a compiled plan may take new parameter values in place.
+        - name: edit
+          from: [Loaded, Validated, Compiled]
+          to: Loaded
+
+  - name: patchback.patch.Topology
+    naming:
+      summary: >-
+        A named signal-chain topology: the fixed subtractive voice of section 5.2 plus the module
+        families admitted one at a time (section 5.4), and the parameter contracts of its parameters.
+    identity:
+      name: topology_id
+      type: patchback.patch.TopologyId
+    fields:
+      - name: name
+        type: patchback.patch.TopologyName
+      - name: parameters
+        type: List<patchback.patch.ParameterContract>
+      - name: admits_square_sine
+        type: Boolean
+      - name: admits_highpass_bandpass
+        type: Boolean
+      - name: admits_lfo
+        type: Boolean
+      - name: admits_delay
+        type: Boolean
+      - name: admits_noise
+        type: Boolean
+    # UNMAPPED: a topology name carries a version (subtractive-mono/1). DESIGN.md does not say
+    # whether admitting a family changes the topology in place or declares a new version, nor what
+    # parameter contracts the added families carry (LFO rate, delay time, feedback gain, noise
+    # level). Open question.
+    lifecycle:
+      initial: Declared
+      states: [Declared]
+      terminal: [Declared]
+
+actors:
+  - name: patchback.patch.Operator
+    naming:
+      summary: The person or program running the patchback CLI (section 11).
+    may:
+      - patchback.patch.DeclareTopology
+      - patchback.patch.AdmitModuleFamily
+      - patchback.patch.LoadPatch
+      - patchback.patch.ValidatePatch
+      - patchback.patch.CompilePatch
+      - patchback.patch.SetParameter
+
+errors:
+  - name: patchback.patch.UnknownFormatVersion
+    summary: The file declares a format version this parser does not read (section 11).
+    fields:
+      - name: format_version
+        type: Integer
+
+  - name: patchback.patch.DuplicateKey
+    summary: A node repeats a parameter key (section 11).
+    fields:
+      - name: patch_id
+        type: patchback.patch.PatchId
+
+  - name: patchback.patch.DuplicateNodeId
+    summary: Two nodes share one identifier (sections 11, 12.1).
+    fields:
+      - name: patch_id
+        type: patchback.patch.PatchId
+
+  - name: patchback.patch.MalformedNumber
+    summary: A numeric token does not parse as a finite number (section 11).
+    fields:
+      - name: patch_id
+        type: patchback.patch.PatchId
+
+  - name: patchback.patch.UnsupportedSampleRate
+    summary: The sample rate is not the supported 48000 Hz; nothing is converted (sections 5.3, 11).
+    fields:
+      - name: sample_rate_hz
+        type: Integer
+
+  - name: patchback.patch.LengthBoundExceeded
+    summary: The file exceeds a parser length bound (section 11).
+    fields:
+      - name: patch_id
+        type: patchback.patch.PatchId
+
+  - name: patchback.patch.UnknownTopology
+    fields:
+      - name: topology_id
+        type: patchback.patch.TopologyId
+
+  - name: patchback.patch.UnknownNode
+    summary: An edge names a node the patch does not declare (section 12.1).
+    fields:
+      - name: patch_id
+        type: patchback.patch.PatchId
+
+  - name: patchback.patch.UnknownPort
+    summary: An edge names a port its node kind does not declare (section 12.1).
+    fields:
+      - name: patch_id
+        type: patchback.patch.PatchId
+
+  - name: patchback.patch.IncompatiblePortRates
+    summary: An edge joins ports of different rates (sections 5.1, 12.1).
+    fields:
+      - name: patch_id
+        type: patchback.patch.PatchId
+
+  - name: patchback.patch.KindOutsideCatalogue
+    summary: A node's kind belongs to a family the patch's topology does not admit (section 5.4).
+    fields:
+      - name: patch_id
+        type: patchback.patch.PatchId
+      - name: topology_id
+        type: patchback.patch.TopologyId
+      - name: kind_family
+        type: patchback.patch.ModuleFamily
+
+  - name: patchback.patch.DelayTooShort
+    summary: A Delay node has less than one sample of latency (section 5.4).
+    fields:
+      - name: patch_id
+        type: patchback.patch.PatchId
+
+  - name: patchback.patch.ZeroDelayCycle
+    summary: A cycle of the graph passes through no Delay node (sections 5.4, 12.1).
+    fields:
+      - name: patch_id
+        type: patchback.patch.PatchId
+
+  - name: patchback.patch.FeedbackGainExceeded
+    summary: A feedback path's gain exceeds the limit (section 5.4).
+    fields:
+      - name: patch_id
+        type: patchback.patch.PatchId
+
+  - name: patchback.patch.ResourceCapExceeded
+    summary: The graph exceeds a resource cap, such as its node or edge count (sections 12.1, 12.3).
+    fields:
+      - name: patch_id
+        type: patchback.patch.PatchId
+
+  - name: patchback.patch.PatchStateConflict
+    summary: The patch is not in a state the command acts from; compilation needs a validated patch.
+    fields:
+      - name: patch_id
+        type: patchback.patch.PatchId
+      - name: state
+        type: patchback.patch.Patch.State
+
+  - name: patchback.patch.PatchNotFound
+    fields:
+      - name: patch_id
+        type: patchback.patch.PatchId
+
+  - name: patchback.patch.InvalidParameterContract
+    summary: A contract's default lies outside [0,1], its domain is empty, or an exponential domain does not start above zero.
+    fields:
+      - name: name
+        type: patchback.patch.TopologyName
+
+  - name: patchback.patch.DuplicateParameterPath
+    fields:
+      - name: name
+        type: patchback.patch.TopologyName
+
+  - name: patchback.patch.TopologyNotFound
+    fields:
+      - name: topology_id
+        type: patchback.patch.TopologyId
+
+  - name: patchback.patch.NonFiniteParameterValue
+    summary: A parameter value is NaN or infinite (section 5.2).
+    fields:
+      - name: patch_id
+        type: patchback.patch.PatchId
+      - name: path
+        type: patchback.patch.ParameterPath
+
+  - name: patchback.patch.UnknownParameterPath
+    summary: The path names no parameter contract of the patch's topology.
+    fields:
+      - name: patch_id
+        type: patchback.patch.PatchId
+      - name: path
+        type: patchback.patch.ParameterPath
+
+commands:
+  - name: patchback.patch.DeclareTopology
+    naming:
+      summary: Declare a topology with its parameter contracts and no added module family.
+    input:
+      - name: topology_id
+        type: patchback.patch.TopologyId
+      - name: name
+        type: patchback.patch.TopologyName
+      - name: parameters
+        type: List<patchback.patch.ParameterContract>
+    outcomes:
+      - name: duplicate-path
+        when: {not: {distinct: {in: parameters, as: c, by: c.path}}}
+        error: patchback.patch.DuplicateParameterPath
+        payload:
+          patchback.patch.DuplicateParameterPath:
+            name: input.name
+      - name: invalid-contract
+        when:
+          exists:
+            in: parameters
+            as: c
+            that:
+              any:
+                - c.default_normalized < 0
+                - c.default_normalized > 1
+                - c.physical_at_one <= c.physical_at_zero
+                - all: [c.mapping == Exponential, c.physical_at_zero <= 0]
+        error: patchback.patch.InvalidParameterContract
+        payload:
+          patchback.patch.InvalidParameterContract:
+            name: input.name
+      - name: declared
+        creates: patchback.patch.Topology
+        instance: topology_id
+        sets:
+          name: input.name
+          parameters: input.parameters
+          admits_square_sine: false
+          admits_highpass_bandpass: false
+          admits_lfo: false
+          admits_delay: false
+          admits_noise: false
+        emits: [patchback.patch.TopologyDeclared]
+        payload:
+          patchback.patch.TopologyDeclared:
+            topology_id: input.topology_id
+            name: input.name
+
+  - name: patchback.patch.AdmitModuleFamily
+    naming:
+      summary: Add one module family to a topology's catalogue (section 5.4, one family at a time).
+    input:
+      - name: topology_id
+        type: patchback.patch.TopologyId
+      - name: family
+        type: patchback.patch.ModuleFamily
+    outcomes:
+      - name: no-such-topology
+        unknown_instance: true
+        error: patchback.patch.TopologyNotFound
+        payload:
+          patchback.patch.TopologyNotFound:
+            topology_id: input.topology_id
+      - name: square-sine
+        when: family == SquareSine
+        updates: patchback.patch.Topology
+        instance: topology_id
+        sets: {admits_square_sine: true}
+        emits: [patchback.patch.ModuleFamilyAdmitted]
+        payload:
+          patchback.patch.ModuleFamilyAdmitted: {topology_id: input.topology_id, family: input.family}
+      - name: highpass-bandpass
+        when: family == HighpassBandpass
+        updates: patchback.patch.Topology
+        instance: topology_id
+        sets: {admits_highpass_bandpass: true}
+        emits: [patchback.patch.ModuleFamilyAdmitted]
+        payload:
+          patchback.patch.ModuleFamilyAdmitted: {topology_id: input.topology_id, family: input.family}
+      - name: lfo
+        when: family == Lfo
+        updates: patchback.patch.Topology
+        instance: topology_id
+        sets: {admits_lfo: true}
+        emits: [patchback.patch.ModuleFamilyAdmitted]
+        payload:
+          patchback.patch.ModuleFamilyAdmitted: {topology_id: input.topology_id, family: input.family}
+      - name: delay
+        when: family == Delay
+        updates: patchback.patch.Topology
+        instance: topology_id
+        sets: {admits_delay: true}
+        emits: [patchback.patch.ModuleFamilyAdmitted]
+        payload:
+          patchback.patch.ModuleFamilyAdmitted: {topology_id: input.topology_id, family: input.family}
+      - name: noise
+        updates: patchback.patch.Topology
+        instance: topology_id
+        sets: {admits_noise: true}
+        emits: [patchback.patch.ModuleFamilyAdmitted]
+        payload:
+          patchback.patch.ModuleFamilyAdmitted: {topology_id: input.topology_id, family: input.family}
+
+  - name: patchback.patch.LoadPatch
+    naming:
+      summary: >-
+        Parse a line-oriented, versioned .patch file (section 11, patchback patch validate). The
+        input is what the parser read; refusals here are the file-format refusals of section 11.
+    input:
+      - name: patch_id
+        type: patchback.patch.PatchId
+      - name: format_version
+        type: Integer
+      - name: sample_rate_hz
+        type: Integer
+      - name: topology_id
+        type: patchback.patch.TopologyId
+      - name: nodes
+        type: List<patchback.patch.NodeDecl>
+      - name: edges
+        type: List<patchback.patch.EdgeDecl>
+    outcomes:
+      - name: unknown-version
+        when: format_version != 1
+        error: patchback.patch.UnknownFormatVersion
+        payload:
+          patchback.patch.UnknownFormatVersion:
+            format_version: input.format_version
+      - name: unsupported-rate
+        when: sample_rate_hz != 48000
+        error: patchback.patch.UnsupportedSampleRate
+        payload:
+          patchback.patch.UnsupportedSampleRate:
+            sample_rate_hz: input.sample_rate_hz
+      - name: duplicate-id
+        when: {not: {distinct: {in: nodes, as: n, by: n.id}}}
+        error: patchback.patch.DuplicateNodeId
+        payload:
+          patchback.patch.DuplicateNodeId:
+            patch_id: input.patch_id
+      - name: duplicate-key
+        when:
+          exists:
+            in: nodes
+            as: n
+            that: {not: {distinct: {in: n.parameters, as: p, by: p.name}}}
+        error: patchback.patch.DuplicateKey
+        payload:
+          patchback.patch.DuplicateKey:
+            patch_id: input.patch_id
+      - name: unknown-topology
+        when_related:
+          via: input.topology_id
+          exists: false
+        error: patchback.patch.UnknownTopology
+        payload:
+          patchback.patch.UnknownTopology:
+            topology_id: input.topology_id
+      # Section 5.4: a node whose kind belongs to a family the topology has not admitted. The
+      # kinds of the fixed subtractive voice (section 5.2) are in every topology's catalogue.
+      - name: square-sine-outside-catalogue
+        when: {exists: {in: nodes, as: n, that: {n.kind: [SquareOscillator, SineOscillator]}}}
+        when_related:
+          via: input.topology_id
+          predicate: admits_square_sine == false
+        error: patchback.patch.KindOutsideCatalogue
+        payload:
+          patchback.patch.KindOutsideCatalogue:
+            patch_id: input.patch_id
+            topology_id: input.topology_id
+            kind_family: SquareSine
+      - name: highpass-bandpass-outside-catalogue
+        when: {exists: {in: nodes, as: n, that: {n.kind: [HighpassFilter, BandpassFilter]}}}
+        when_related:
+          via: input.topology_id
+          predicate: admits_highpass_bandpass == false
+        error: patchback.patch.KindOutsideCatalogue
+        payload:
+          patchback.patch.KindOutsideCatalogue:
+            patch_id: input.patch_id
+            topology_id: input.topology_id
+            kind_family: HighpassBandpass
+      - name: lfo-outside-catalogue
+        when: {exists: {in: nodes, as: n, that: n.kind == Lfo}}
+        when_related:
+          via: input.topology_id
+          predicate: admits_lfo == false
+        error: patchback.patch.KindOutsideCatalogue
+        payload:
+          patchback.patch.KindOutsideCatalogue:
+            patch_id: input.patch_id
+            topology_id: input.topology_id
+            kind_family: Lfo
+      - name: delay-outside-catalogue
+        when: {exists: {in: nodes, as: n, that: n.kind == Delay}}
+        when_related:
+          via: input.topology_id
+          predicate: admits_delay == false
+        error: patchback.patch.KindOutsideCatalogue
+        payload:
+          patchback.patch.KindOutsideCatalogue:
+            patch_id: input.patch_id
+            topology_id: input.topology_id
+            kind_family: Delay
+      - name: noise-outside-catalogue
+        when: {exists: {in: nodes, as: n, that: n.kind == Noise}}
+        when_related:
+          via: input.topology_id
+          predicate: admits_noise == false
+        error: patchback.patch.KindOutsideCatalogue
+        payload:
+          patchback.patch.KindOutsideCatalogue:
+            patch_id: input.patch_id
+            topology_id: input.topology_id
+            kind_family: Noise
+      # UNMAPPED: section 11 names malformed numbers and unbounded lengths without the grammar or
+      # the bounds (maximum line length, node count, file size). Both are the parser's, outside
+      # the model.
+      - name: malformed-number
+        external: a numeric token does not parse as a finite decimal number
+        error: patchback.patch.MalformedNumber
+        payload:
+          patchback.patch.MalformedNumber:
+            patch_id: input.patch_id
+      - name: unbounded-length
+        external: a line, token or list exceeds the parser's length bound
+        error: patchback.patch.LengthBoundExceeded
+        payload:
+          patchback.patch.LengthBoundExceeded:
+            patch_id: input.patch_id
+      - name: loaded
+        creates: patchback.patch.Patch
+        instance: patch_id
+        sets:
+          format_version: input.format_version
+          sample_rate_hz: input.sample_rate_hz
+          topology_id: input.topology_id
+          nodes: input.nodes
+          edges: input.edges
+        emits: [patchback.patch.PatchLoaded]
+        payload:
+          patchback.patch.PatchLoaded:
+            patch_id: input.patch_id
+            topology_id: input.topology_id
+
+  - name: patchback.patch.ValidatePatch
+    naming:
+      summary: >-
+        Run the graph checks of section 5.1 on a loaded patch: identifiers, port rates, the
+        topology's catalogue, cycles and resource caps. Only a validated patch can be compiled.
+    input:
+      - name: patch_id
+        type: patchback.patch.PatchId
+    outcomes:
+      - name: no-such-patch
+        unknown_instance: true
+        error: patchback.patch.PatchNotFound
+        payload:
+          patchback.patch.PatchNotFound:
+            patch_id: input.patch_id
+      - name: unknown-node
+        when_subject:
+          predicate:
+            exists:
+              in: edges
+              as: e
+              that:
+                any:
+                  - not: {exists: {in: nodes, as: n, that: n.id == e.from_node}}
+                  - not: {exists: {in: nodes, as: n, that: n.id == e.to_node}}
+        error: patchback.patch.UnknownNode
+        payload:
+          patchback.patch.UnknownNode:
+            patch_id: input.patch_id
+      - name: incompatible-rates
+        # UNMAPPED: section 5.4 makes control interpolation explicit but gives no rule for which
+        # rates may meet; this draft admits an edge only between ports of one rate.
+        when_subject:
+          predicate:
+            exists: {in: edges, as: e, that: e.from_rate != e.to_rate}
+        error: patchback.patch.IncompatiblePortRates
+        payload:
+          patchback.patch.IncompatiblePortRates:
+            patch_id: input.patch_id
+      - name: delay-too-short
+        when_subject:
+          predicate:
+            exists:
+              in: nodes
+              as: n
+              that:
+                all:
+                  - n.kind == Delay
+                  - exists:
+                      in: n.parameters
+                      as: p
+                      that: {all: [p.name == delay_samples, p.value < 1]}
+        error: patchback.patch.DelayTooShort
+        payload:
+          patchback.patch.DelayTooShort:
+            patch_id: input.patch_id
+      - name: wrong-state
+        wrong_state: true
+        error: patchback.patch.PatchStateConflict
+        payload:
+          patchback.patch.PatchStateConflict:
+            patch_id: input.patch_id
+            state: {subject: state}
+      - name: unknown-port
+        external: an edge names a port its node kind does not declare
+        error: patchback.patch.UnknownPort
+        payload:
+          patchback.patch.UnknownPort:
+            patch_id: input.patch_id
+      # Cycle detection is a graph search the model cannot state: the validator finds a cycle
+      # with no Delay node of at least one sample on it (section 5.4).
+      - name: zero-delay-cycle
+        external: a cycle of the graph passes through no Delay node
+        error: patchback.patch.ZeroDelayCycle
+        payload:
+          patchback.patch.ZeroDelayCycle:
+            patch_id: input.patch_id
+      # UNMAPPED: section 5.4 says "limit feedback gain" and gives no limit, nor which parameter
+      # carries the gain. Open question.
+      - name: feedback-gain-exceeded
+        external: the gain around a delayed feedback cycle exceeds the feedback limit
+        error: patchback.patch.FeedbackGainExceeded
+        payload:
+          patchback.patch.FeedbackGainExceeded:
+            patch_id: input.patch_id
+      # UNMAPPED: sections 12.1 and 12.3 require caps on graph size and voice count and give no
+      # value. Open question.
+      - name: resource-cap
+        external: the graph exceeds a resource cap
+        error: patchback.patch.ResourceCapExceeded
+        payload:
+          patchback.patch.ResourceCapExceeded:
+            patch_id: input.patch_id
+      - name: validated
+        moves: patchback.patch.Patch.validate
+        instance: patch_id
+        emits: [patchback.patch.PatchValidated]
+        payload:
+          patchback.patch.PatchValidated:
+            patch_id: input.patch_id
+
+  - name: patchback.patch.CompilePatch
+    naming:
+      summary: >-
+        Schedule a validated patch and assign its buffers into a DSP execution plan (section 5.1).
+        A patch that has not passed validation is refused (invariant 3).
+    input:
+      - name: patch_id
+        type: patchback.patch.PatchId
+    outcomes:
+      - name: no-such-patch
+        unknown_instance: true
+        error: patchback.patch.PatchNotFound
+        payload:
+          patchback.patch.PatchNotFound:
+            patch_id: input.patch_id
+      - name: compiled
+        moves: patchback.patch.Patch.compile
+        instance: patch_id
+        emits: [patchback.patch.PatchCompiled]
+        payload:
+          patchback.patch.PatchCompiled:
+            patch_id: input.patch_id
+      - name: not-validated
+        wrong_state: true
+        error: patchback.patch.PatchStateConflict
+        payload:
+          patchback.patch.PatchStateConflict:
+            patch_id: input.patch_id
+            state: {subject: state}
+
+  - name: patchback.patch.SetParameter
+    naming:
+      summary: >-
+        Set one parameter from a normalized value p (section 5.2): p outside [0,1] is clamped
+        with a warning, a non-finite p is refused, and the patch stores the physical value its
+        contract maps p to. The patch returns to Loaded and is validated again.
+    input:
+      - name: patch_id
+        type: patchback.patch.PatchId
+      - name: path
+        type: patchback.patch.ParameterPath
+      - name: normalized_value
+        type: Decimal
+    outcomes:
+      - name: no-such-patch
+        unknown_instance: true
+        error: patchback.patch.PatchNotFound
+        payload:
+          patchback.patch.PatchNotFound:
+            patch_id: input.patch_id
+      - name: clamped
+        when:
+          any:
+            - normalized_value < 0
+            - normalized_value > 1
+        moves: patchback.patch.Patch.edit
+        instance: patch_id
+        emits: [patchback.patch.ParameterClamped]
+        payload:
+          patchback.patch.ParameterClamped:
+            patch_id: input.patch_id
+            path: input.path
+            submitted: input.normalized_value
+            applied: {expr: "max(0, min(1, input.normalized_value))"}
+      - name: non-finite
+        external: the normalized value is NaN or infinite
+        error: patchback.patch.NonFiniteParameterValue
+        payload:
+          patchback.patch.NonFiniteParameterValue:
+            patch_id: input.patch_id
+            path: input.path
+      - name: unknown-path
+        external: the path names no parameter contract of the patch's topology
+        error: patchback.patch.UnknownParameterPath
+        payload:
+          patchback.patch.UnknownParameterPath:
+            patch_id: input.patch_id
+            path: input.path
+      - name: set
+        moves: patchback.patch.Patch.edit
+        instance: patch_id
+        emits: [patchback.patch.ParameterSet]
+        payload:
+          patchback.patch.ParameterSet:
+            patch_id: input.patch_id
+            path: input.path
+            normalized_value: input.normalized_value
+
+events:
+  - name: patchback.patch.TopologyDeclared
+    fields:
+      - name: topology_id
+        type: patchback.patch.TopologyId
+      - name: name
+        type: patchback.patch.TopologyName
+
+  - name: patchback.patch.ModuleFamilyAdmitted
+    fields:
+      - name: topology_id
+        type: patchback.patch.TopologyId
+      - name: family
+        type: patchback.patch.ModuleFamily
+
+  - name: patchback.patch.PatchLoaded
+    fields:
+      - name: patch_id
+        type: patchback.patch.PatchId
+      - name: topology_id
+        type: patchback.patch.TopologyId
+
+  - name: patchback.patch.PatchValidated
+    fields:
+      - name: patch_id
+        type: patchback.patch.PatchId
+
+  - name: patchback.patch.PatchCompiled
+    fields:
+      - name: patch_id
+        type: patchback.patch.PatchId
+
+  - name: patchback.patch.ParameterSet
+    fields:
+      - name: patch_id
+        type: patchback.patch.PatchId
+      - name: path
+        type: patchback.patch.ParameterPath
+      - name: normalized_value
+        type: Decimal
+
+  - name: patchback.patch.ParameterClamped
+    naming:
+      summary: The warning section 8.1 asks for when a normalized value had to be clamped.
+    fields:
+      - name: patch_id
+        type: patchback.patch.PatchId
+      - name: path
+        type: patchback.patch.ParameterPath
+      - name: submitted
+        type: Decimal
+      - name: applied
+        type: Decimal
+
+views:
+  - name: patchback.patch.Patches
+    source: patchback.patch.Patch
+    consistency: read_your_writes
+    fields:
+      - name: patch_id
+        type: patchback.patch.PatchId
+      - name: state
+        type: patchback.patch.Patch.State
+      - name: format_version
+        type: Integer
+      - name: sample_rate_hz
+        type: Integer
+      - name: topology_id
+        type: patchback.patch.TopologyId
+      # DESIGN.md 11 writes results/patch.patch, "canonical, human-readable, versioned patch
+      # data", so the nodes are read back as the edges are. They are not published here:
+      # ParameterValue.value is a Decimal, and ESS 0.67.0 refuses Decimal replay results in a
+      # view ("Decimal and Binary64 replay results are unsupported"), which would cost the
+      # generated ValidatePatch and SetParameter scenarios (tested: unscenarioed 91 -> 103).
+      # The completeness notes "no view publishes `nodes`" stand for that ESS gap.
+      - name: edges
+        type: List<patchback.patch.EdgeDecl>
+
+  - name: patchback.patch.Topologies
+    source: patchback.patch.Topology
+    consistency: read_your_writes
+    fields:
+      - name: topology_id
+        type: patchback.patch.TopologyId
+      - name: state
+        type: patchback.patch.Topology.State
+      - name: name
+        type: patchback.patch.TopologyName
+      - name: admits_square_sine
+        type: Boolean
+      - name: admits_highpass_bandpass
+        type: Boolean
+      - name: admits_lfo
+        type: Boolean
+      - name: admits_delay
+        type: Boolean
+      - name: admits_noise
+        type: Boolean

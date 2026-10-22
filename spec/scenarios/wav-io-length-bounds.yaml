@@ -1,0 +1,38 @@
+# DESIGN.md 12.3: "Bound input duration ..." and "Reject ... empty audio"; 6.1: "frame limits".
+# The bound's value is UNMAPPED (spec/domains/audio.yaml, ImportWav too-long), so the over-bound
+# case is external and its frame count illustrative.
+type: ess-scenario/1
+domain: patchback.audio
+scenario: wav-io-length-bounds
+summary: A file with no frames and a file over the duration bound are each refused and no clip is created.
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.audio.ImportWav
+    actor: patchback.audio.Operator
+    input:
+      path: empty.wav
+      origin: PatchbackSynthesized
+      sample_rate_hz: 48000
+      channel_count: 1
+      format_tag: 1
+      bits_per_sample: 16
+      frame_count: 0
+    outcome: empty
+    error:
+      name: patchback.audio.EmptyAudio
+
+  - at: 2026-10-22T09:00:01Z
+    command: patchback.audio.ImportWav
+    actor: patchback.audio.Operator
+    input:
+      path: one-hour.wav
+      origin: PatchbackSynthesized
+      sample_rate_hz: 48000
+      channel_count: 1
+      format_tag: 1
+      bits_per_sample: 16
+      frame_count: 172800000
+    outcome: too-long
+    error:
+      name: patchback.audio.InputTooLong

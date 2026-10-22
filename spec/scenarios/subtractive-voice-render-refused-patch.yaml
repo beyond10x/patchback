@@ -1,0 +1,126 @@
+# DESIGN.md 5.1: validation and compilation run "before scheduling into an execution plan", and
+# the renderer runs that plan; 11: `patchback render --patch --notes --out`. A render that names a
+# patch or note sequence that does not exist, or a patch not yet compiled, is refused and records
+# no render.
+# UNMAPPED: DESIGN.md gives no port names; the ports and node-local parameter keys are the
+# placeholders of patch-graph-validation-accepted.
+type: ess-scenario/1
+domain: patchback.audio
+scenario: subtractive-voice-render-refused-patch
+summary: A render of an unknown patch, of an unknown note sequence, and of a loaded or validated but uncompiled patch is each refused.
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.patch.DeclareTopology
+    actor: patchback.patch.Operator
+    input:
+      topology_id: 7f0c0000-0000-4000-8000-000000000931
+      name: subtractive-mono/1
+      parameters: []
+    outcome: declared
+
+  - at: 2026-10-22T09:00:01Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000941
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 7f0c0000-0000-4000-8000-000000000931
+      nodes:
+        - {id: 1, kind: NoteInput, parameters: []}
+        - {id: 2, kind: SawOscillator, parameters: []}
+        - {id: 3, kind: Drive, parameters: [{name: drive, value: 6}]}
+        - {id: 4, kind: LowpassFilter, parameters: [{name: cutoff, value: 1200}, {name: resonance, value: 0.7}]}
+        - {id: 5, kind: AdsrEnvelope, parameters: [{name: attack, value: 0.01}, {name: decay, value: 0.2}, {name: sustain, value: 0.6}, {name: release, value: 0.3}]}
+        - {id: 6, kind: Vca, parameters: []}
+        - {id: 7, kind: Output, parameters: [{name: gain, value: -6}]}
+      edges:
+        - {from_node: 1, from_port: pitch, from_rate: Control, to_node: 2, to_port: pitch, to_rate: Control}
+        - {from_node: 1, from_port: gate, from_rate: Event, to_node: 5, to_port: gate, to_rate: Event}
+        - {from_node: 2, from_port: out, from_rate: Audio, to_node: 3, to_port: in, to_rate: Audio}
+        - {from_node: 3, from_port: out, from_rate: Audio, to_node: 4, to_port: in, to_rate: Audio}
+        - {from_node: 4, from_port: out, from_rate: Audio, to_node: 6, to_port: in, to_rate: Audio}
+        - {from_node: 5, from_port: env, from_rate: Control, to_node: 6, to_port: gain, to_rate: Control}
+        - {from_node: 6, from_port: out, from_rate: Audio, to_node: 7, to_port: in, to_rate: Audio}
+    outcome: loaded
+
+  - at: 2026-10-22T09:00:02Z
+    command: patchback.score.LoadNoteSequence
+    actor: patchback.score.Operator
+    input:
+      note_sequence_id: 7f0c0000-0000-4000-8000-000000000951
+      format_version: 1
+      sample_rate_hz: 48000
+      patch_id: 7f0c0000-0000-4000-8000-000000000941
+      notes:
+        - {start_sample: 0, end_sample: 24000, midi_note: 45, velocity: 0.8}
+    outcome: loaded
+
+  - at: 2026-10-22T09:00:03Z
+    command: patchback.audio.RenderPatch
+    actor: patchback.audio.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000999
+      note_sequence_id: 7f0c0000-0000-4000-8000-000000000951
+      sample_rate_hz: 48000
+      out_path: out.wav
+    outcome: no-such-patch
+    error:
+      name: patchback.audio.PatchNotFound
+      fields:
+        patch_id: 7f0c0000-0000-4000-8000-000000000999
+    no_events: [patchback.audio.PatchRendered]
+
+  - at: 2026-10-22T09:00:04Z
+    command: patchback.audio.RenderPatch
+    actor: patchback.audio.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000941
+      note_sequence_id: 7f0c0000-0000-4000-8000-000000000998
+      sample_rate_hz: 48000
+      out_path: out.wav
+    outcome: no-such-note-sequence
+    error:
+      name: patchback.audio.NoteSequenceNotFound
+      fields:
+        note_sequence_id: 7f0c0000-0000-4000-8000-000000000998
+    no_events: [patchback.audio.PatchRendered]
+
+  - at: 2026-10-22T09:00:05Z
+    command: patchback.audio.RenderPatch
+    actor: patchback.audio.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000941
+      note_sequence_id: 7f0c0000-0000-4000-8000-000000000951
+      sample_rate_hz: 48000
+      out_path: out.wav
+    outcome: patch-not-compiled
+    error:
+      name: patchback.audio.PatchNotCompiled
+      fields:
+        patch_id: 7f0c0000-0000-4000-8000-000000000941
+        state: Loaded
+    no_events: [patchback.audio.PatchRendered]
+
+  - at: 2026-10-22T09:00:06Z
+    command: patchback.patch.ValidatePatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000941
+    outcome: validated
+
+  - at: 2026-10-22T09:00:07Z
+    command: patchback.audio.RenderPatch
+    actor: patchback.audio.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000941
+      note_sequence_id: 7f0c0000-0000-4000-8000-000000000951
+      sample_rate_hz: 48000
+      out_path: out.wav
+    outcome: patch-not-compiled
+    error:
+      name: patchback.audio.PatchNotCompiled
+      fields:
+        state: Validated
+    no_events: [patchback.audio.PatchRendered]

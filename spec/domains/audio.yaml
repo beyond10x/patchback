@@ -1,0 +1,689 @@
+domain: patchback.audio
+
+summary: >-
+  Audio clips read from WAV files, clips written back as WAV, and renders of a patch and a note
+  sequence through the native DSP renderer (DESIGN.md sections 3, 5.2, 5.3, 6.1, 11, 12.1, 12.3).
+
+types:
+  - name: patchback.audio.AudioClipId
+    kind: newtype
+    of: Uuid
+
+  - name: patchback.audio.RenderId
+    kind: newtype
+    of: Uuid
+
+  - name: patchback.audio.WavFileId
+    kind: newtype
+    of: Uuid
+
+  # DESIGN.md 6.1: "mono WAV or stereo WAV downmixed explicitly to mono".
+  - name: patchback.audio.AudioOrigin
+    kind: enum
+    naming:
+      summary: >-
+        Where the audio came from. DESIGN.md 12.3 and AGENTS.md: fixtures are synthesized by
+        Patchback or carry a recorded licence and provenance.
+    variants: [PatchbackSynthesized, ExternalRecording]
+
+  # DESIGN.md 6.1: "PCM16 or IEEE float32 samples".
+  - name: patchback.audio.WavSampleFormat
+    kind: enum
+    variants: [Pcm16, Float32]
+
+entities:
+  # The WAV header facts (sample rate, channel count, format tag, bits per sample, frame count)
+  # are what the std-only WAV reader of DESIGN.md 3 reads from the fmt and data chunks; the
+  # byte-level checks the model cannot see (truncation, chunk corruption, non-finite samples) are
+  # external refusals of ImportWav.
+  - name: patchback.audio.AudioClip
+    naming:
+      summary: Mono audio at 48 kHz read from one WAV file, after validation and any explicit downmix.
+    identity:
+      name: audio_clip_id
+      type: patchback.audio.AudioClipId
+    fields:
+      - name: path
+        type: String
+      - name: origin
+        type: patchback.audio.AudioOrigin
+      - name: sample_rate_hz
+        type: Integer
+      - name: source_channel_count
+        type: Integer
+      - name: downmixed
+        type: Boolean
+        summary: True when a stereo source was downmixed to mono; the downmix is recorded, never silent.
+      - name: format_tag
+        type: Integer
+        summary: WAVE fmt-chunk format tag of the source; 1 is PCM, 3 is IEEE float.
+      - name: bits_per_sample
+        type: Integer
+      - name: frame_count
+        type: Integer
+      - name: provenance
+        type: Optional<String>
+      - name: licence
+        type: Optional<String>
+      - name: render_id
+        type: Optional<patchback.audio.RenderId>
+        summary: >-
+          The render whose WAV this clip was read from, when it was one (DESIGN.md 11: `patchback
+          compare` reads reconstructed.wav, the WAV `patchback render` wrote).
+    invariants:
+      - sample_rate_hz == 48000
+      - frame_count > 0
+    relations:
+      - name: render
+        kind: references
+        target: patchback.audio.Render
+        cardinality: one
+        via: render_id
+    # UNMAPPED: DESIGN.md 12.3 "maintain provenance for test fixtures" and the external-audio
+    # story require provenance for external recordings. A clip may name the render it was read
+    # from; no section says whether a clip with origin PatchbackSynthesized must name one, nor
+    # whether an ExternalRecording may. This model records the render when given and requires
+    # it of neither. Open question for the owner.
+    lifecycle:
+      initial: Ready
+      states: [Ready]
+      terminal: [Ready]
+
+  - name: patchback.audio.WavFile
+    naming:
+      summary: A WAV file written from a clip (DESIGN.md 11, out.wav and reconstructed.wav).
+    identity:
+      name: wav_file_id
+      type: patchback.audio.WavFileId
+    fields:
+      - name: audio_clip_id
+        type: patchback.audio.AudioClipId
+      - name: path
+        type: String
+      - name: sample_format
+        type: patchback.audio.WavSampleFormat
+    relations:
+      - name: clip
+        kind: references
+        target: patchback.audio.AudioClip
+        cardinality: one
+        via: audio_clip_id
+    lifecycle:
+      initial: Written
+      states: [Written]
+      terminal: [Written]
+
+  # A render writes its WAV directly (DESIGN.md 11: `patchback render --patch --notes --out
+  # out.wav`); a rendered WAV re-enters the system as an AudioClip through ImportWav with origin
+  # PatchbackSynthesized, as `patchback compare` reads it.
+  - name: patchback.audio.Render
+    naming:
+      summary: >-
+        One offline render of a patch and a note sequence, recording what it was rendered from and
+        whether the protective output limiter engaged (DESIGN.md 5.3, invariant 5).
+    identity:
+      name: render_id
+      type: patchback.audio.RenderId
+    fields:
+      - name: patch_id
+        type: patchback.patch.PatchId
+      - name: note_sequence_id
+        type: patchback.score.NoteSequenceId
+      - name: sample_rate_hz
+        type: Integer
+      - name: block_size_frames
+        type: Integer
+      - name: out_path
+        type: String
+      - name: limited
+        type: Boolean
+        summary: True when protective output clipping or limiting engaged; DESIGN.md 5.3 requires it reported.
+    invariants:
+      - sample_rate_hz == 48000
+      - block_size_frames > 0
+    relations:
+      - name: patch
+        kind: references
+        target: patchback.patch.Patch
+        cardinality: one
+        via: patch_id
+      - name: note_sequence
+        kind: references
+        target: patchback.score.NoteSequence
+        cardinality: one
+        via: note_sequence_id
+    lifecycle:
+      initial: Rendered
+      states: [Rendered]
+      terminal: [Rendered]
+
+actors:
+  - name: patchback.audio.Operator
+    naming:
+      display: Operator
+      summary: The person running the patchback CLI (DESIGN.md 11).
+    may:
+      - patchback.audio.ImportWav
+      - patchback.audio.ExportWav
+      - patchback.audio.RenderPatch
+
+errors:
+  - name: patchback.audio.ProvenanceMissing
+    summary: An external recording was offered without recorded provenance (DESIGN.md 12.3).
+    fields:
+      - name: path
+        type: String
+
+  - name: patchback.audio.LicenceMissing
+    summary: An external recording was offered without a recorded licence (DESIGN.md 12.3, AGENTS.md).
+    fields:
+      - name: path
+        type: String
+
+  - name: patchback.audio.TruncatedRiff
+    summary: The RIFF size or a chunk size runs past the end of the file; nothing was read.
+    fields:
+      - name: path
+        type: String
+
+  - name: patchback.audio.CorruptRiffChunk
+    summary: >-
+      A RIFF chunk is malformed (bad chunk id, missing fmt or data chunk, a size that overflows the
+      allocation bound); nothing was read (DESIGN.md 6.1, 12.1).
+    fields:
+      - name: path
+        type: String
+
+  - name: patchback.audio.UnsupportedSampleRate
+    summary: The sample rate is not 48000 Hz; it is refused, never converted (DESIGN.md 5.3, 6.1).
+    fields:
+      - name: sample_rate_hz
+        type: Integer
+
+  - name: patchback.audio.UnsupportedSampleFormat
+    summary: The sample format is neither PCM16 (tag 1, 16 bits) nor IEEE float32 (tag 3, 32 bits).
+    fields:
+      - name: format_tag
+        type: Integer
+      - name: bits_per_sample
+        type: Integer
+
+  - name: patchback.audio.UnsupportedChannelCount
+    summary: The file has neither one nor two channels (DESIGN.md 6.1).
+    fields:
+      - name: channel_count
+        type: Integer
+
+  - name: patchback.audio.EmptyAudio
+    summary: The data chunk holds no frames (DESIGN.md 12.3).
+    fields:
+      - name: path
+        type: String
+
+  - name: patchback.audio.NonFiniteSamples
+    summary: A float sample is NaN or infinite (DESIGN.md 2 invariant 4, 6.1).
+    fields:
+      - name: path
+        type: String
+
+  - name: patchback.audio.InputTooLong
+    summary: The frame count exceeds the input duration bound (DESIGN.md 6.1, 12.3).
+    fields:
+      - name: frame_count
+        type: Integer
+
+  - name: patchback.audio.ClipNotFound
+    summary: No clip carries the identity given.
+    fields:
+      - name: audio_clip_id
+        type: patchback.audio.AudioClipId
+
+  - name: patchback.audio.InvalidBlockSize
+    summary: The block size is not a positive number of frames.
+    fields:
+      - name: block_size_frames
+        type: Optional<Integer>
+
+  - name: patchback.audio.RenderNotFound
+    summary: The clip names a render that does not exist; no clip is created.
+    fields:
+      - name: render_id
+        type: Optional<patchback.audio.RenderId>
+
+  - name: patchback.audio.PatchNotFound
+    summary: No patch carries the identity given; nothing is rendered.
+    fields:
+      - name: patch_id
+        type: patchback.patch.PatchId
+
+  - name: patchback.audio.NoteSequenceNotFound
+    summary: No note sequence carries the identity given; nothing is rendered.
+    fields:
+      - name: note_sequence_id
+        type: patchback.score.NoteSequenceId
+
+  - name: patchback.audio.PatchNotCompiled
+    summary: >-
+      The patch has not been validated and compiled; it is never executed (DESIGN.md 2 invariant
+      3, 5.1).
+    fields:
+      - name: patch_id
+        type: patchback.patch.PatchId
+      - name: state
+        type: patchback.patch.Patch.State
+
+  - name: patchback.audio.NonFiniteRender
+    summary: >-
+      The render produced a NaN or infinite sample; it failed and no WAV was written (DESIGN.md 2
+      invariant 4).
+    fields:
+      - name: patch_id
+        type: patchback.patch.PatchId
+
+commands:
+  - name: patchback.audio.ImportWav
+    naming:
+      wire: import-wav
+      display: Import a WAV file
+      summary: >-
+        Read a WAV file into a mono 48 kHz clip (DESIGN.md 6.1; the input step of `patchback
+        analyze`, `fit` and `compare`, DESIGN.md 11).
+    input:
+      - name: path
+        type: String
+      - name: origin
+        type: patchback.audio.AudioOrigin
+      - name: provenance
+        type: Optional<String>
+      - name: licence
+        type: Optional<String>
+      - name: render_id
+        type: Optional<patchback.audio.RenderId>
+      - name: sample_rate_hz
+        type: Integer
+      - name: channel_count
+        type: Integer
+      - name: format_tag
+        type: Integer
+      - name: bits_per_sample
+        type: Integer
+      - name: frame_count
+        type: Integer
+    # UNMAPPED: DESIGN.md 11 lists no CLI flag that states a recording's origin, provenance or
+    # licence, and 12.3 asks provenance "for test fixtures". Whether the requirement applies to
+    # every import of external audio or only to files under tests/fixtures/ is not settled; this
+    # model requires it on every ExternalRecording import. Open question for the owner.
+    # UNMAPPED: DESIGN.md 6.1 says "stereo WAV downmixed explicitly to mono" and does not say
+    # whether "explicitly" means an operator opt-in (stereo refused without it) or a recorded
+    # downmix the system always performs. This model downmixes and records `downmixed: true`.
+    # UNMAPPED: WAVE_FORMAT_EXTENSIBLE (tag 65534) wrapping PCM16 or float32 is not mentioned;
+    # this model refuses it as an unsupported format.
+    outcomes:
+      - name: provenance-missing
+        when: {all: [origin == ExternalRecording, not defined(provenance)]}
+        error: patchback.audio.ProvenanceMissing
+        payload:
+          patchback.audio.ProvenanceMissing: {path: input.path}
+        summary: An external recording without provenance is refused and no clip exists.
+
+      - name: licence-missing
+        when: {all: [origin == ExternalRecording, defined(provenance), not defined(licence)]}
+        error: patchback.audio.LicenceMissing
+        payload:
+          patchback.audio.LicenceMissing: {path: input.path}
+        summary: An external recording without a licence is refused and no clip exists.
+
+      - name: truncated
+        external: the WAV reader finds the RIFF size or a chunk size running past the end of the file
+        before_row: true
+        error: patchback.audio.TruncatedRiff
+        payload:
+          patchback.audio.TruncatedRiff: {path: input.path}
+
+      - name: corrupt-chunk
+        external: the WAV reader finds a malformed RIFF chunk, a missing fmt or data chunk, or a size over the allocation bound
+        before_row: true
+        error: patchback.audio.CorruptRiffChunk
+        payload:
+          patchback.audio.CorruptRiffChunk: {path: input.path}
+
+      - name: unsupported-sample-rate
+        when: sample_rate_hz != 48000
+        error: patchback.audio.UnsupportedSampleRate
+        payload:
+          patchback.audio.UnsupportedSampleRate: {sample_rate_hz: input.sample_rate_hz}
+        summary: Any rate other than 48000 Hz is refused; no conversion happens.
+
+      - name: unsupported-sample-format
+        when:
+          none:
+            - {all: [format_tag == 1, bits_per_sample == 16]}
+            - {all: [format_tag == 3, bits_per_sample == 32]}
+        error: patchback.audio.UnsupportedSampleFormat
+        payload:
+          patchback.audio.UnsupportedSampleFormat:
+            format_tag: input.format_tag
+            bits_per_sample: input.bits_per_sample
+
+      - name: unsupported-channel-count
+        when: {channel_count: {none_of: [1, 2]}}
+        error: patchback.audio.UnsupportedChannelCount
+        payload:
+          patchback.audio.UnsupportedChannelCount: {channel_count: input.channel_count}
+
+      - name: empty
+        when: frame_count <= 0
+        error: patchback.audio.EmptyAudio
+        payload:
+          patchback.audio.EmptyAudio: {path: input.path}
+
+      - name: no-such-render
+        when_related: {via: input.render_id, exists: false}
+        error: patchback.audio.RenderNotFound
+        payload:
+          patchback.audio.RenderNotFound: {render_id: input.render_id}
+        summary: A clip that names a render must name one that exists.
+
+      # UNMAPPED: DESIGN.md 6.1 and 12.3 require a frame/duration bound and name no value (6.1
+      # gives "roughly 0.5-2 seconds" as the analysis unit, not as a limit). Until the owner sets
+      # the bound it is an external refusal rather than a guard on frame_count.
+      - name: too-long
+        external: the frame count exceeds the configured input duration bound
+        error: patchback.audio.InputTooLong
+        payload:
+          patchback.audio.InputTooLong: {frame_count: input.frame_count}
+
+      - name: non-finite
+        external: the WAV reader finds a NaN or infinite float32 sample
+        error: patchback.audio.NonFiniteSamples
+        payload:
+          patchback.audio.NonFiniteSamples: {path: input.path}
+
+      - name: imported-downmixed
+        when: channel_count == 2
+        creates: patchback.audio.AudioClip
+        instance: audio_clip_id
+        sets:
+          path: input.path
+          origin: input.origin
+          provenance: input.provenance
+          licence: input.licence
+          render_id: input.render_id
+          sample_rate_hz: input.sample_rate_hz
+          source_channel_count: input.channel_count
+          downmixed: true
+          format_tag: input.format_tag
+          bits_per_sample: input.bits_per_sample
+          frame_count: input.frame_count
+        emits: [patchback.audio.ClipImported]
+        payload:
+          patchback.audio.ClipImported:
+            audio_clip_id: {generated: true}
+            path: input.path
+            origin: input.origin
+            frame_count: input.frame_count
+            source_channel_count: input.channel_count
+            downmixed: true
+        summary: A stereo file is downmixed to mono and the clip records the downmix.
+
+      - name: imported
+        creates: patchback.audio.AudioClip
+        instance: audio_clip_id
+        sets:
+          path: input.path
+          origin: input.origin
+          provenance: input.provenance
+          licence: input.licence
+          render_id: input.render_id
+          sample_rate_hz: input.sample_rate_hz
+          source_channel_count: input.channel_count
+          downmixed: false
+          format_tag: input.format_tag
+          bits_per_sample: input.bits_per_sample
+          frame_count: input.frame_count
+        emits: [patchback.audio.ClipImported]
+        payload:
+          patchback.audio.ClipImported:
+            audio_clip_id: {generated: true}
+            path: input.path
+            origin: input.origin
+            frame_count: input.frame_count
+            source_channel_count: input.channel_count
+            downmixed: false
+        summary: A mono file becomes a clip unchanged.
+
+  - name: patchback.audio.ExportWav
+    naming:
+      wire: export-wav
+      display: Export a clip as WAV
+      summary: Write a clip to a mono 48 kHz WAV file (DESIGN.md 6.1, 12.1 roundtrip).
+    input:
+      - name: audio_clip_id
+        type: patchback.audio.AudioClipId
+      - name: path
+        type: String
+      - name: sample_format
+        type: patchback.audio.WavSampleFormat
+    # UNMAPPED: no section says what a PCM16 export does with float samples outside [-1, 1]
+    # (refuse, or clip and report as 5.3 requires of the output stage). Open question.
+    outcomes:
+      - name: no-such-clip
+        when_related: {via: input.audio_clip_id, exists: false}
+        error: patchback.audio.ClipNotFound
+        payload:
+          patchback.audio.ClipNotFound: {audio_clip_id: input.audio_clip_id}
+
+      - name: exported
+        creates: patchback.audio.WavFile
+        instance: wav_file_id
+        sets:
+          audio_clip_id: input.audio_clip_id
+          path: input.path
+          sample_format: input.sample_format
+        emits: [patchback.audio.WavExported]
+        payload:
+          patchback.audio.WavExported:
+            wav_file_id: {generated: true}
+            audio_clip_id: input.audio_clip_id
+            path: input.path
+            sample_format: input.sample_format
+
+  - name: patchback.audio.RenderPatch
+    naming:
+      wire: render
+      display: Render a patch
+      summary: >-
+        Render a patch driven by a note sequence offline at 48 kHz and write the WAV (DESIGN.md 5.2,
+        5.3, 11 `patchback render`).
+    input:
+      - name: patch_id
+        type: patchback.patch.PatchId
+      - name: note_sequence_id
+        type: patchback.score.NoteSequenceId
+      - name: sample_rate_hz
+        type: Integer
+      - name: block_size_frames
+        type: Optional<Integer>
+      - name: out_path
+        type: String
+    # DESIGN.md 2 invariant 3 and 5.1: the graph is validated and compiled before execution, so a
+    # patch not in patchback.patch.Patch state Compiled is refused. The patch, the note sequence
+    # and the render share one rate by construction: LoadPatch refuses a patch rate other than
+    # 48000, LoadNoteSequence refuses a sequence rate other than its patch's, and the
+    # unsupported-sample-rate branch below refuses a render rate other than 48000. A render-time
+    # comparison of the three could never hold, so none is declared.
+    # DESIGN.md 0.3 section 10: any patch at the sequence's rate may render it, so the sequence's
+    # recorded patch_id is deliberately not compared with patch_id here.
+    # UNMAPPED: DESIGN.md 5.3 makes the block size configurable with default 256 and names no
+    # upper bound; only a non-positive size is refused here.
+    # UNMAPPED: whether a failed (non-finite) render is recorded as a Render in a Failed state or
+    # leaves nothing behind; this model leaves nothing (no Render, no WAV).
+    outcomes:
+      - name: unsupported-sample-rate
+        when: sample_rate_hz != 48000
+        error: patchback.audio.UnsupportedSampleRate
+        payload:
+          patchback.audio.UnsupportedSampleRate: {sample_rate_hz: input.sample_rate_hz}
+        summary: A render at any rate other than 48000 Hz is refused.
+
+      - name: invalid-block-size
+        when: "coalesce(block_size_frames, 256) <= 0"
+        error: patchback.audio.InvalidBlockSize
+        payload:
+          patchback.audio.InvalidBlockSize: {block_size_frames: input.block_size_frames}
+
+      - name: no-such-patch
+        when_related: {via: input.patch_id, exists: false}
+        error: patchback.audio.PatchNotFound
+        payload:
+          patchback.audio.PatchNotFound: {patch_id: input.patch_id}
+
+      - name: no-such-note-sequence
+        when_related: {via: input.note_sequence_id, exists: false}
+        error: patchback.audio.NoteSequenceNotFound
+        payload:
+          patchback.audio.NoteSequenceNotFound: {note_sequence_id: input.note_sequence_id}
+
+      - name: patch-not-compiled
+        when_related: {via: input.patch_id, predicate: state != Compiled}
+        error: patchback.audio.PatchNotCompiled
+        payload:
+          patchback.audio.PatchNotCompiled:
+            patch_id: input.patch_id
+            state: {related: {via: input.patch_id, field: state}}
+        summary: A patch that has not been validated and compiled is never executed (DESIGN.md 2 invariant 3).
+
+      - name: non-finite-output
+        external: the renderer produces a NaN or infinite sample
+        error: patchback.audio.NonFiniteRender
+        payload:
+          patchback.audio.NonFiniteRender: {patch_id: input.patch_id}
+        summary: The render fails; no Render is recorded and no WAV is written.
+
+      - name: rendered-limited
+        external: the protective output limiter engaged on at least one sample
+        creates: patchback.audio.Render
+        instance: render_id
+        sets:
+          patch_id: input.patch_id
+          note_sequence_id: input.note_sequence_id
+          sample_rate_hz: input.sample_rate_hz
+          block_size_frames: {input: block_size_frames, else: 256}
+          out_path: input.out_path
+          limited: true
+        emits: [patchback.audio.PatchRendered]
+        payload:
+          patchback.audio.PatchRendered:
+            render_id: {generated: true}
+            patch_id: input.patch_id
+            note_sequence_id: input.note_sequence_id
+            limited: true
+        summary: The render succeeds and reports that the protective limiter engaged.
+
+      - name: rendered
+        creates: patchback.audio.Render
+        instance: render_id
+        sets:
+          patch_id: input.patch_id
+          note_sequence_id: input.note_sequence_id
+          sample_rate_hz: input.sample_rate_hz
+          block_size_frames: {input: block_size_frames, else: 256}
+          out_path: input.out_path
+          limited: false
+        emits: [patchback.audio.PatchRendered]
+        payload:
+          patchback.audio.PatchRendered:
+            render_id: {generated: true}
+            patch_id: input.patch_id
+            note_sequence_id: input.note_sequence_id
+            limited: false
+        summary: The render succeeds with no limiting; the WAV is written to out_path.
+
+events:
+  - name: patchback.audio.ClipImported
+    fields:
+      - name: audio_clip_id
+        type: patchback.audio.AudioClipId
+      - name: path
+        type: String
+      - name: origin
+        type: patchback.audio.AudioOrigin
+      - name: frame_count
+        type: Integer
+      - name: source_channel_count
+        type: Integer
+      - name: downmixed
+        type: Boolean
+
+  - name: patchback.audio.WavExported
+    fields:
+      - name: wav_file_id
+        type: patchback.audio.WavFileId
+      - name: audio_clip_id
+        type: patchback.audio.AudioClipId
+      - name: path
+        type: String
+      - name: sample_format
+        type: patchback.audio.WavSampleFormat
+
+  - name: patchback.audio.PatchRendered
+    fields:
+      - name: render_id
+        type: patchback.audio.RenderId
+      - name: patch_id
+        type: patchback.patch.PatchId
+      - name: note_sequence_id
+        type: patchback.score.NoteSequenceId
+      - name: limited
+        type: Boolean
+
+views:
+  - name: patchback.audio.AudioClips
+    source: patchback.audio.AudioClip
+    consistency: read_your_writes
+    fields:
+      - {name: audio_clip_id, type: patchback.audio.AudioClipId}
+      - {name: state, type: patchback.audio.AudioClip.State}
+      - {name: path, type: String}
+      - {name: origin, type: patchback.audio.AudioOrigin}
+      - {name: provenance, type: Optional<String>}
+      - {name: licence, type: Optional<String>}
+      - {name: render_id, type: Optional<patchback.audio.RenderId>}
+      - {name: sample_rate_hz, type: Integer}
+      - {name: source_channel_count, type: Integer}
+      - {name: downmixed, type: Boolean}
+      - {name: format_tag, type: Integer}
+      - {name: bits_per_sample, type: Integer}
+      - {name: frame_count, type: Integer}
+    naming:
+      wire: audio-clips
+      display: Audio clips
+
+  - name: patchback.audio.WavFiles
+    source: patchback.audio.WavFile
+    consistency: read_your_writes
+    fields:
+      - {name: wav_file_id, type: patchback.audio.WavFileId}
+      - {name: state, type: patchback.audio.WavFile.State}
+      - {name: audio_clip_id, type: patchback.audio.AudioClipId}
+      - {name: path, type: String}
+      - {name: sample_format, type: patchback.audio.WavSampleFormat}
+    naming:
+      wire: wav-files
+      display: WAV files
+
+  - name: patchback.audio.Renders
+    source: patchback.audio.Render
+    consistency: read_your_writes
+    fields:
+      - {name: render_id, type: patchback.audio.RenderId}
+      - {name: state, type: patchback.audio.Render.State}
+      - {name: patch_id, type: patchback.patch.PatchId}
+      - {name: note_sequence_id, type: patchback.score.NoteSequenceId}
+      - {name: sample_rate_hz, type: Integer}
+      - {name: block_size_frames, type: Integer}
+      - {name: out_path, type: String}
+      - {name: limited, type: Boolean}
+    naming:
+      wire: renders
+      display: Renders

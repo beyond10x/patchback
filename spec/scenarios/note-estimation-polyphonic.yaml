@@ -1,0 +1,36 @@
+# DESIGN.md 2: polyphonic transcription is a non-goal for the MVP; 10: simple polyphony is V2;
+# 6.2: the limitation "must be surfaced rather than guessed away". Refusal rather than a partial
+# estimate is UNMAPPED (spec/domains/analysis.yaml, EstimateNotes).
+type: ess-scenario/1
+domain: patchback.analysis
+scenario: note-estimation-polyphonic
+summary: A clip with simultaneous notes is refused as polyphonic and no estimation exists.
+
+arrange:
+  - instance: analysis
+    entity: patchback.analysis.Analysis
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.analysis.AnalyzeAudio
+    actor: patchback.analysis.Operator
+    input:
+      audio_clip_id: 0a1b2c3d-0000-4000-8000-000000000023
+      out_dir: analysis/
+      sample_rate_hz: 48000
+      frame_count: 96000
+      fft_lengths: [512, 2048, 8192]
+      hop_length: 512
+      window: Hann
+    outcome: analyzed
+    capture: {instance: analysis, event: patchback.analysis.AudioAnalyzed, field: analysis_id}
+
+  - at: 2026-10-22T09:00:01Z
+    command: patchback.analysis.EstimateNotes
+    actor: patchback.analysis.Operator
+    input:
+      audio_clip_id: 0a1b2c3d-0000-4000-8000-000000000023
+      analysis_id: {$instance: analysis}
+    outcome: polyphonic
+    error:
+      name: patchback.analysis.PolyphonicInput

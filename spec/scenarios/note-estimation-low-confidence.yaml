@@ -1,0 +1,36 @@
+# DESIGN.md 6.2: f0 estimation "with low-confidence refusal"; 10: "refusals include
+# confidence/ambiguity diagnostics"; Milestone C: "Handle timing and pitch estimation uncertainty
+# explicitly". The threshold is UNMAPPED (spec/domains/analysis.yaml, EstimateNotes).
+type: ess-scenario/1
+domain: patchback.analysis
+scenario: note-estimation-low-confidence
+summary: A phrase with a note below the confidence threshold is refused with every estimated note and its confidence; no note is dropped silently.
+
+arrange:
+  - instance: analysis
+    entity: patchback.analysis.Analysis
+
+timeline:
+  - at: 2026-10-22T09:00:00Z
+    command: patchback.analysis.AnalyzeAudio
+    actor: patchback.analysis.Operator
+    input:
+      audio_clip_id: 0a1b2c3d-0000-4000-8000-000000000022
+      out_dir: analysis/
+      sample_rate_hz: 48000
+      frame_count: 96000
+      fft_lengths: [512, 2048, 8192]
+      hop_length: 512
+      window: Hann
+    outcome: analyzed
+    capture: {instance: analysis, event: patchback.analysis.AudioAnalyzed, field: analysis_id}
+
+  - at: 2026-10-22T09:00:01Z
+    command: patchback.analysis.EstimateNotes
+    actor: patchback.analysis.Operator
+    input:
+      audio_clip_id: 0a1b2c3d-0000-4000-8000-000000000022
+      analysis_id: {$instance: analysis}
+    outcome: low-confidence
+    error:
+      name: patchback.analysis.LowConfidenceNotes

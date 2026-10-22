@@ -1,0 +1,120 @@
+{
+  "format": "b10x-product-landing/1",
+  "product": {
+    "name": "Patchback",
+    "mark": "Pb",
+    "eyebrow": "Inverse synthesis for electronic music",
+    "promise": [
+      "Give it a synth sound.",
+      "Get back the patch that plays it."
+    ],
+    "lede": "Patchback listens to a recording of a synth note and recovers an editable DSP patch and the note events that drive it. It renders that patch with its own Rust engine, compares the rendering with the recording at several resolutions and refines the patch until it matches. A small regressor trained with ModelSpec proposes where the search starts. No neural audio decoder: what comes out is a program you can open, read and change.",
+    "actions": [
+      {"label": "Get started", "href": "/docs/getting-started", "kind": "primary"},
+      {"label": "Read the documentation", "href": "/docs/"},
+      {"label": "What exists today", "href": "/docs/status"}
+    ],
+    "meta": "One Rust binary · std only, no ML or DSP crates · ModelSpec for training · Apache-2.0",
+    "kpis": [
+      {"count": "entities", "label": "entities in the specification"},
+      {"count": "relations", "label": "relations between them"},
+      {"count": "planned", "label": "capabilities planned"}
+    ],
+    "art": {
+      "kind": "domain-graph",
+      "data": "data/ess/patchback.domain-graph.json",
+      "caption": "Every entity of the Patchback specification and the relations between them, generated from spec/ by patchback-docs."
+    }
+  },
+  "sections": [
+    {
+      "kind": "features",
+      "eyebrow": "What you get",
+      "title": "A program, not a waveform.",
+      "lede": "The output of a fit is a patch file, an events file, a rendering and a report. Every one of them is plain text or a WAV you can inspect.",
+      "items": [
+        {
+          "title": "An editable patch",
+          "description": "Modules, connections and parameters in physical units: attack in seconds, cutoff in hertz, drive in decibels. Open it, change a value, render it again.",
+          "status": "planned",
+          "icon": "outcome",
+          "href": "/docs/concepts/patch"
+        },
+        {
+          "title": "Rendered by the engine that made the training data",
+          "description": "Training data, previews and the final rendering all come from the same native DSP engine, so a recovered patch always runs.",
+          "status": "planned",
+          "icon": "action",
+          "href": "/docs/concepts/guarantees"
+        },
+        {
+          "title": "A comparison you can read",
+          "description": "Log-spectral, envelope, transient and band-energy terms, each logged for every candidate, after the rendering is aligned with the reference.",
+          "status": "planned",
+          "icon": "evidence",
+          "href": "/docs/concepts/closed-loop#the-comparison"
+        },
+        {
+          "title": "A bounded, seeded search",
+          "description": "Coordinate search over eight normalized parameters within a render budget. The best valid patch is kept; an invalid candidate never replaces it.",
+          "status": "planned",
+          "icon": "obligation",
+          "href": "/docs/concepts/closed-loop#the-search"
+        },
+        {
+          "title": "A regressor trained with ModelSpec",
+          "description": "A two-layer network maps 32 audio features to the eight parameters and gives the search its starting point. It is trained on audio Patchback rendered itself.",
+          "status": "planned",
+          "icon": "claim",
+          "href": "/docs/concepts/regressor"
+        },
+        {
+          "title": "Refusals instead of guesses",
+          "description": "An unsupported sample rate, a non-finite sample or an ambiguous pitch is refused with a diagnostic, not converted or estimated silently.",
+          "status": "planned",
+          "icon": "evidence",
+          "href": "/docs/concepts/guarantees"
+        }
+      ]
+    },
+    {
+      "kind": "flow",
+      "eyebrow": "The closed loop",
+      "title": "Analyze, predict, render, compare, refine.",
+      "lede": "The regressor only proposes. The rendering and the comparison decide.",
+      "steps": [
+        {"label": "patchback analyze", "title": "Analyze", "description": "Onsets, pitch, envelopes and spectra of the reference; the 32 features of features/1."},
+        {"label": "Regressor", "title": "Predict", "description": "Eight normalized parameters from the features, or the default patch when no weights are loaded."},
+        {"label": "patchback render", "title": "Render", "description": "The validated patch plays the note events through the native engine at 48 kHz."},
+        {"label": "patchback compare", "title": "Compare", "description": "Four loss terms at several resolutions, after time alignment."},
+        {"label": "patchback fit", "title": "Refine", "description": "Seeded restarts and coordinate search until the render budget is spent or the gain is too small."}
+      ]
+    },
+    {
+      "kind": "status",
+      "eyebrow": "Status",
+      "title": "Specified, not built yet.",
+      "lede": "The design and its ESS specification exist. Every capability below is planned; the status page moves a row to shipped when a test on main holds it.",
+      "items": "data/status.json"
+    },
+    {
+      "kind": "related",
+      "eyebrow": "Related tools",
+      "title": "How Patchback is trained, specified and planned.",
+      "tools": [
+        {
+          "name": "ModelSpec",
+          "mark": "Ms",
+          "description": "Trains Patchback's parameter regressor: the .mspec model is checked and trained on ModelSpec's CPU backend.",
+          "href": "https://beyond10x.github.io/modelspec/"
+        },
+        {"id": "ess", "relation": "specified-by", "via": "spec/"},
+        {
+          "name": "AEP",
+          "description": "The planning store under .engineering/ that holds Patchback's milestones and stories.",
+          "href": "https://beyond10x.github.io/ecosystem/aep/"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,62 @@
+# DESIGN.md 8.1: `modelspec check` with the pinned binary decides whether the source may proceed.
+# A non-zero exit is recorded as Rejected (an external decision: the binary's verdict).
+type: ess-scenario/1
+domain: patchback.model
+scenario: modelspec-pin-and-check-rejected
+summary: A source the pinned binary refuses is recorded Rejected; a source against an unknown pin and a check of an unknown source are refused.
+
+arrange:
+  - instance: pin
+    entity: patchback.model.ModelSpecPin
+  - instance: source
+    entity: patchback.model.ModelSource
+
+timeline:
+  - at: 2026-10-22T11:10:00Z
+    command: patchback.model.PinModelSpec
+    actor: patchback.model.Operator
+    input:
+      version: pinned-release
+      commit: 0123456789abcdef0123456789abcdef01234567
+      vulkan_backend_shipped: false
+    outcome: pinned
+    capture: {instance: pin, event: patchback.model.ModelSpecPinned, field: model_spec_pin_id}
+
+  - at: 2026-10-22T11:10:01Z
+    command: patchback.model.RegisterModelSource
+    actor: patchback.model.Operator
+    input:
+      path: models/patch_regressor.mspec
+      model_name: PatchRegressor
+      batch_size: 16
+      model_spec_pin_id: {$instance: pin}
+    outcome: registered
+    capture: {instance: source, event: patchback.model.ModelSourceRegistered, field: model_source_id}
+
+  - at: 2026-10-22T11:10:02Z
+    command: patchback.model.CheckModelSource
+    actor: patchback.model.Operator
+    input:
+      model_source_id: {$instance: source}
+    outcome: rejected
+
+  - at: 2026-10-22T11:10:03Z
+    command: patchback.model.RegisterModelSource
+    actor: patchback.model.Operator
+    input:
+      path: models/patch_regressor.mspec
+      model_name: PatchRegressor
+      batch_size: 16
+      model_spec_pin_id: 6b000000-0000-4000-8000-0000000000ff
+    outcome: unknown-pin
+    error:
+      name: patchback.model.UnknownPin
+
+  - at: 2026-10-22T11:10:04Z
+    command: patchback.model.CheckModelSource
+    actor: patchback.model.Operator
+    input:
+      model_source_id: 6b000000-0000-4000-8000-0000000000fe
+    outcome: unknown-source
+    error:
+      name: patchback.model.UnknownModelSource
