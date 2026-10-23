@@ -10,13 +10,28 @@
 //! the rates agree, whether the graph has cycles and whether a parameter fits its contract are the
 //! graph checks of § 5.1, which a loaded patch has not passed (`patchback.patch.ValidatePatch`).
 //! The file grammar, the bounds and the writer are in [`file`].
+//!
+//! [`validate`] runs those checks and returns a [`ValidatedPatch`], the only input [`compile`]
+//! takes; [`compile`] schedules it into an [`ExecutionPlan`]. The checks, the port table and the
+//! caps are in [`validate`](mod@validate), scheduling and buffers in [`compile`](mod@compile).
+//! [`load_patch_file`] reads, parses and validates a file, answering with the refusal the
+//! specification declares first ([`load`]).
 
+pub mod compile;
 pub mod file;
+pub mod load;
+pub mod validate;
 
+pub use compile::{ExecutionPlan, PlanInput, PlanOutput, PlanStep, compile};
 pub use file::{
     LOAD_PATCH_PRECEDENCE, MAX_EDGES, MAX_FILE_BYTES, MAX_LINE_BYTES, MAX_NODES, PatchFileError,
     PatchFileReason, ReadPatchError, format_decimal, parse_decimal, parse_patch, read_patch,
     read_patch_file, write_patch,
+};
+pub use load::{LoadPatchError, load_patch, load_patch_file};
+pub use validate::{
+    MAX_GRAPH_EDGES, MAX_GRAPH_NODES, MAX_VOICES, Port, PortDirection, ResourceCap,
+    VALIDATE_PATCH_PRECEDENCE, ValidatedPatch, ValidationError, known_topology, validate,
 };
 
 /// The `.patch` format version this crate reads and writes.
@@ -166,8 +181,9 @@ impl EdgeDecl {
     }
 }
 
-/// A patch as the file carries it (§ 5.1). The topology is referenced by `topology_id`, a token
-/// the file does not resolve: whether a topology of that identifier exists is the caller's check.
+/// A patch as the file carries it (§ 5.1). The topology is referenced by `topology_id`, its name
+/// (`subtractive-mono/1`), which the file does not resolve: whether a topology of that name
+/// exists is [`validate`]'s check ([`known_topology`]).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Patch {
     pub format_version: u32,

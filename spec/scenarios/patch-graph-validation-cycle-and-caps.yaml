@@ -1,6 +1,8 @@
 # DESIGN.md section 12.1 Graph: "illegal zero-delay cycles ... resource caps"; section 5.4:
 # "Unbounded instantaneous cycles are never evaluated"; section 12.3: bound graph size. Cycle
-# search and the caps are the validator's (the caps have no value in DESIGN.md, UNMAPPED).
+# search and the caps are the validator's (the caps have no value in DESIGN.md, UNMAPPED). The
+# second patch has two NoteInput nodes, two voices where section 5.2 has one monophonic voice; the
+# provisional caps are MAX_GRAPH_NODES, MAX_GRAPH_EDGES and MAX_VOICES in patchback-core.
 type: ess-scenario/1
 domain: patchback.patch
 scenario: patch-graph-validation-cycle-and-caps
@@ -25,8 +27,8 @@ timeline:
       sample_rate_hz: 48000
       topology_id: 7f0c0000-0000-4000-8000-000000000015
       nodes:
-        - {id: 3, kind: Drive, parameters: []}
-        - {id: 4, kind: LowpassFilter, parameters: []}
+        - {id: 3, kind: Drive, parameters: [{name: drive, value: 6}]}
+        - {id: 4, kind: LowpassFilter, parameters: [{name: filter_cutoff, value: 1200}, {name: resonance_q, value: 0.7}]}
       edges:
         - {from_node: 3, from_port: out, from_rate: Audio, to_node: 4, to_port: in, to_rate: Audio}
         - {from_node: 4, from_port: out, from_rate: Audio, to_node: 3, to_port: in, to_rate: Audio}
@@ -60,10 +62,13 @@ timeline:
       sample_rate_hz: 48000
       topology_id: 7f0c0000-0000-4000-8000-000000000015
       nodes:
-        - {id: 2, kind: SawOscillator, parameters: []}
-        - {id: 7, kind: Output, parameters: []}
+        - {id: 1, kind: NoteInput, parameters: []}
+        - {id: 2, kind: NoteInput, parameters: []}
+        - {id: 3, kind: SawOscillator, parameters: []}
+        - {id: 7, kind: Output, parameters: [{name: output_gain, value: -6}]}
       edges:
-        - {from_node: 2, from_port: out, from_rate: Audio, to_node: 7, to_port: in, to_rate: Audio}
+        - {from_node: 1, from_port: pitch, from_rate: Control, to_node: 3, to_port: pitch, to_rate: Control}
+        - {from_node: 3, from_port: out, from_rate: Audio, to_node: 7, to_port: in, to_rate: Audio}
     outcome: loaded
 
   - at: 2026-10-22T09:00:05Z

@@ -14,6 +14,15 @@ All notable changes to Patchback are recorded here. The format follows
   versions, duplicate keys or ids, malformed numbers, unsupported rates, lines outside the
   grammar and lengths past the provisional bounds are refused with the line, a file with several
   faults by the one `LoadPatch` declares first.
+- `patchback patch validate <file>`, and `validate` and `compile` in `patchback-core::patch`
+  (story patch-graph-validation): a loaded patch is checked for identifiers, port rates,
+  parameter contracts, ports, cycles, the provisional caps `MAX_GRAPH_NODES`,
+  `MAX_GRAPH_EDGES` and `MAX_VOICES`, and one edge per input port (`InputPortTaken`), then
+  compiled into a deterministic `ExecutionPlan`; only a `ValidatedPatch` compiles. `load_patch`
+  and `load_patch_file` read and validate a file, refusing with the outcome `LoadPatch` declares
+  first, unknown topology and a kind outside the catalogue included. A `.patch` names its
+  topology by name (`subtractive-mono/1`). The command prints one line and exits 0, or 1 with one
+  line naming the error and the line, node or edge.
 
 ## [0.1.0] - 2026-10-23
 

@@ -1,24 +1,27 @@
 //! `patchback`, the application entry point (DESIGN.md § 4.1, § 11).
 //!
-//! The scaffold recognises the Milestone A subcommands, `patch validate`, `render`, `analyze`,
-//! `compare` and `fit`; none is implemented yet, and none takes an argument yet. The command
-//! line is parsed with clap derive, the one reviewed command-line crate (DESIGN.md § 3).
+//! The binary recognises the Milestone A subcommands, `patch validate`, `render`, `analyze`,
+//! `compare` and `fit`. `patch validate <file>` is implemented ([`patch_validate`]); the others
+//! are not implemented yet and take no argument yet. The command line is parsed with clap
+//! derive, the one reviewed command-line crate (DESIGN.md § 3).
 //!
 //! Exit statuses:
 //!
 //! | Status | Meaning |
 //! |---|---|
-//! | 0 | `--help` or `-h` (on the root or on any command) or `help [command]` printed clap's help to stdout; `--version` or `-V` printed `patchback <version>` to stdout |
-//! | 2 | usage error, reported by clap on stderr: no arguments or `patch` alone (the help, to stderr), an unknown command or flag, or an argument a command does not take |
-//! | 3 | a recognised command that is not implemented yet, with one line on stderr |
-//!
-//! Status 1 is left for a recognised command that runs and fails, once commands exist.
+//! | 0 | `patch validate` found the patch valid and printed one line naming it, its node and edge counts, to stdout; or `--help` or `-h` (on the root or on any command) or `help [command]` printed clap's help to stdout; or `--version` or `-V` printed `patchback <version>` to stdout |
+//! | 1 | `patch validate` refused (an unreadable file, a file the parser refuses, a graph validation refuses), with one line on stderr: `patchback: patch validate refused: <domain error>: "<file>": <line or node or edge>: <reason>` |
+//! | 2 | usage error, reported by clap on stderr: no arguments or `patch` alone (the help, to stderr), an unknown command or flag, `patch validate` without its file or with a second one, or an argument a command does not take |
+//! | 3 | a recognised command that is not implemented yet (`render`, `analyze`, `compare`, `fit`), with one line on stderr |
 //!
 //! Where clap's conventions differ from the std-only parser of wave a1: help is the help of the
 //! command it follows, not one shared usage text; an unknown command is reported as clap's
 //! `error: unrecognized subcommand '<name>'`; and an argument a stub does not take, or a help
 //! flag after such an argument, is a usage error (2) rather than the stub's status 3.
 
+mod patch_validate;
+
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
@@ -60,7 +63,10 @@ enum Command {
 #[derive(Subcommand)]
 enum PatchCommand {
     /// Check a .patch file without rendering it
-    Validate,
+    Validate {
+        /// The .patch file to load, validate and compile
+        file: PathBuf,
+    },
 }
 
 impl Command {
@@ -68,7 +74,7 @@ impl Command {
     fn name(&self) -> &'static str {
         match self {
             Command::Patch {
-                command: PatchCommand::Validate,
+                command: PatchCommand::Validate { .. },
             } => "patch validate",
             Command::Render => "render",
             Command::Analyze => "analyze",
@@ -80,6 +86,13 @@ impl Command {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
-    eprintln!("patchback: {} is not implemented yet", cli.command.name());
-    ExitCode::from(NOT_IMPLEMENTED)
+    match &cli.command {
+        Command::Patch {
+            command: PatchCommand::Validate { file },
+        } => patch_validate::run(file),
+        command => {
+            eprintln!("patchback: {} is not implemented yet", command.name());
+            ExitCode::from(NOT_IMPLEMENTED)
+        }
+    }
 }

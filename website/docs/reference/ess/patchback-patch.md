@@ -374,7 +374,7 @@ It takes:
 
 - `patch_id` — `patchback.patch.PatchId`
 
-It has 10 outcomes.
+It has 13 outcomes.
 
 **`no-such-patch`** — Taken when the identity the command names is one no record carries, before any other answer for it. No entity in this specification changes. It reports `patchback.patch.PatchNotFound`, carrying `patch_id`. It emits nothing. A test reaches it by sending an identity no record carries, arranging nothing.
 
@@ -386,13 +386,19 @@ It has 10 outcomes.
 
 **`wrong-state`** — Taken when the subject is resting in a state none of this command's moves start from — a `patchback.patch.Patch` in `Compiled` and `Validated`, which is what is left of the lifecycle once this command's own moves are taken away. The document lists none of it. No entity in this specification changes. It reports `patchback.patch.PatchStateConflict`, carrying `patch_id` and `state`. It emits nothing. A test reaches it by driving an instance into one of those states and then issuing the command, because no input selects this branch.
 
+**`parameter-contract`** — Decided outside the input: a node's parameters are not exactly its kind's, or a value is outside its contract. No predicate over the input reaches this branch, and saying `when: false` instead would have claimed it is unreachable, which is a different and false statement. No entity in this specification changes. It reports `patchback.patch.ParameterContractViolation`, carrying `patch_id`. It emits nothing. A test reaches it by injecting the declared fault, because no input can.
+
 **`unknown-port`** — Decided outside the input: an edge names a port its node kind does not declare. No predicate over the input reaches this branch, and saying `when: false` instead would have claimed it is unreachable, which is a different and false statement. No entity in this specification changes. It reports `patchback.patch.UnknownPort`, carrying `patch_id`. It emits nothing. A test reaches it by injecting the declared fault, because no input can.
+
+**`port-rate-mismatch`** — Decided outside the input: an edge end states a rate its node kind does not declare for that port. No predicate over the input reaches this branch, and saying `when: false` instead would have claimed it is unreachable, which is a different and false statement. No entity in this specification changes. It reports `patchback.patch.PortRateMismatch`, carrying `patch_id`. It emits nothing. A test reaches it by injecting the declared fault, because no input can.
 
 **`zero-delay-cycle`** — Decided outside the input: a cycle of the graph passes through no Delay node. No predicate over the input reaches this branch, and saying `when: false` instead would have claimed it is unreachable, which is a different and false statement. No entity in this specification changes. It reports `patchback.patch.ZeroDelayCycle`, carrying `patch_id`. It emits nothing. A test reaches it by injecting the declared fault, because no input can.
 
 **`feedback-gain-exceeded`** — Decided outside the input: the gain around a delayed feedback cycle exceeds the feedback limit. No predicate over the input reaches this branch, and saying `when: false` instead would have claimed it is unreachable, which is a different and false statement. No entity in this specification changes. It reports `patchback.patch.FeedbackGainExceeded`, carrying `patch_id`. It emits nothing. A test reaches it by injecting the declared fault, because no input can.
 
 **`resource-cap`** — Decided outside the input: the graph exceeds a resource cap. No predicate over the input reaches this branch, and saying `when: false` instead would have claimed it is unreachable, which is a different and false statement. No entity in this specification changes. It reports `patchback.patch.ResourceCapExceeded`, carrying `patch_id`. It emits nothing. A test reaches it by injecting the declared fault, because no input can.
+
+**`input-port-taken`** — Decided outside the input: two edges, or a duplicated edge, feed one input port. No predicate over the input reaches this branch, and saying `when: false` instead would have claimed it is unreachable, which is a different and false statement. No entity in this specification changes. It reports `patchback.patch.InputPortTaken`, carrying `patch_id`. It emits nothing. A test reaches it by injecting the declared fault, because no input can.
 
 **`validated`** — The default branch, taken when no other outcome's condition matched. It moves a `patchback.patch.Patch` from `Loaded` to `Validated`, along the declared move `validate`. The instance is the one named by the input field `patch_id`. It emits `patchback.patch.PatchValidated`. A test reaches it by constructing an input that satisfies no other outcome's condition.
 
@@ -560,6 +566,16 @@ It carries:
 
 Reported by `patchback.patch.ValidatePatch` on its `incompatible-rates` outcome.
 
+### `InputPortTaken`
+
+An edge feeds an input port another edge already feeds: a duplicated edge, or a second source into one input; an input port takes at most one edge (sections 5.1, 12.1).
+
+It carries:
+
+- `patch_id` — `patchback.patch.PatchId`
+
+Reported by `patchback.patch.ValidatePatch` on its `input-port-taken` outcome.
+
 ### `InvalidParameterContract`
 
 A contract's default lies outside [0,1], its domain is empty, an exponential domain does not start above zero, or its index is not below the number of contracts (indices are exactly 0..n-1).
@@ -623,6 +639,16 @@ It carries:
 
 Reported by `patchback.patch.SetParameter` on its `non-finite` outcome.
 
+### `ParameterContractViolation`
+
+A node lacks a parameter its kind declares, carries one its kind does not declare, or holds a value outside its contract's physical range (sections 5.1, 5.2).
+
+It carries:
+
+- `patch_id` — `patchback.patch.PatchId`
+
+Reported by `patchback.patch.ValidatePatch` on its `parameter-contract` outcome.
+
 ### `PatchNotFound`
 
 It carries:
@@ -647,6 +673,16 @@ It carries:
 Reported by `patchback.patch.CompilePatch` on its `not-validated` outcome.
 
 Reported by `patchback.patch.ValidatePatch` on its `wrong-state` outcome.
+
+### `PortRateMismatch`
+
+An edge end states a rate other than the one its node kind declares for that port (section 5.1).
+
+It carries:
+
+- `patch_id` — `patchback.patch.PatchId`
+
+Reported by `patchback.patch.ValidatePatch` on its `port-rate-mismatch` outcome.
 
 ### `ResourceCapExceeded`
 
@@ -748,4 +784,4 @@ It may invoke [`AdmitModuleFamily`](#admitmodulefamily), [`CompilePatch`](#compi
 
 ---
 
-Generated from patchback v1 · model digest `a03455491d93253435737b807519c31aa2948237c8a689adc39284f70014cea8` · contract digest `slice-sha256/2:7140c2c5afdff382cccd276de7899e7d49607d23955530237c83f17b987a79f1`. Do not edit this file; change the specification and regenerate it with `task docs-generate`.
+Generated from patchback v1 · model digest `4b7f3d2b5d9b4a5f664a58cd0a02fba93cde9320f0fb0038ce644d0542a23953` · contract digest `slice-sha256/2:c79db2c8f9b7bb190dbfbc6c8ac3f72c47fe6a764db837025a39e28bcbf87851`. Do not edit this file; change the specification and regenerate it with `task docs-generate`.

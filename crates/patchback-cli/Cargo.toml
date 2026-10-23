@@ -12,3 +12,4 @@ path = "src/main.rs"
 
 [dependencies]
 clap.workspace = true
+patchback-core = { path = "../patchback-core" }

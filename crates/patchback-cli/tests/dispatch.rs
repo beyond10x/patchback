@@ -3,14 +3,9 @@
 
 use std::process::{Command, Output};
 
-/// The subcommands DESIGN.md § 11 names that the scaffold recognises, as typed.
-const STUBS: &[&[&str]] = &[
-    &["patch", "validate"],
-    &["render"],
-    &["analyze"],
-    &["compare"],
-    &["fit"],
-];
+/// The subcommands DESIGN.md § 11 names that are recognised and not implemented yet, as typed
+/// (`patch validate` is implemented: `tests/patch_validate.rs`).
+const STUBS: &[&[&str]] = &[&["render"], &["analyze"], &["compare"], &["fit"]];
 
 /// The top-level commands the root help lists.
 const TOP_LEVEL: &[&str] = &["patch", "render", "analyze", "compare", "fit"];
@@ -107,11 +102,6 @@ fn assert_not_implemented(stub: &[&str]) {
         [format!("patchback: {name} is not implemented yet")],
         "{stub:?}"
     );
-}
-
-#[test]
-fn patch_validate_is_not_implemented_and_exits_3() {
-    assert_not_implemented(&["patch", "validate"]);
 }
 
 #[test]
