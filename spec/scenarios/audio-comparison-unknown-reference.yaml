@@ -30,7 +30,7 @@ timeline:
     input:
       reference_clip_id: 1c4a2e90-0000-4000-8000-000000000098
       candidate_clip_id: {$instance: candidate}
-      weights: {log_spectral: 0.4, envelope: 0.3, transient: 0.2, band_energy: 0.1}
+      weights: {log_spectral: 0.45, envelope: 0.25, transient: 0.15, band_energy: 0.15}
     outcome: unknown-reference
     error:
       name: patchback.fit.ClipNotFound

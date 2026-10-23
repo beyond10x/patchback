@@ -48,7 +48,7 @@ timeline:
     input:
       reference_clip_id: {$instance: reference}
       candidate_clip_id: {$instance: candidate}
-      weights: {log_spectral: 0.4, envelope: 0.3, transient: 0.2, band_energy: 0.1}
+      weights: {log_spectral: 0.45, envelope: 0.25, transient: 0.15, band_energy: 0.15}
     outcome: sample-rate-mismatch
     error:
       name: patchback.fit.SampleRateMismatch

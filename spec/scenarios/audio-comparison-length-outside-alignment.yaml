@@ -1,6 +1,6 @@
 # DESIGN.md 9.1: "Time alignment and note matching must be performed before computing these
-# losses." The tolerance alignment absorbs is not settled (UNMAPPED in fit.yaml, CompareAudio),
-# so the refusal is external.
+# losses." The tolerance alignment absorbs is not settled (UNMAPPED in fit.yaml, CompareAudio;
+# provisionally 4 800 frames, patchback_fit::ALIGNMENT_TOLERANCE_FRAMES), so the refusal is external.
 type: ess-scenario/1
 domain: patchback.fit
 scenario: audio-comparison-length-outside-alignment
@@ -37,7 +37,7 @@ timeline:
       channel_count: 1
       format_tag: 3
       bits_per_sample: 32
-      frame_count: 48000
+      frame_count: 52801
     outcome: imported
     capture: {instance: candidate, event: patchback.audio.ClipImported, field: audio_clip_id}
 
@@ -47,7 +47,7 @@ timeline:
     input:
       reference_clip_id: {$instance: reference}
       candidate_clip_id: {$instance: candidate}
-      weights: {log_spectral: 0.4, envelope: 0.3, transient: 0.2, band_energy: 0.1}
+      weights: {log_spectral: 0.45, envelope: 0.25, transient: 0.15, band_energy: 0.15}
     outcome: length-outside-alignment
     error:
       name: patchback.fit.LengthOutsideAlignment

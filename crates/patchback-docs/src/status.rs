@@ -167,13 +167,17 @@ pub const CAPABILITIES: &[Capability] = &[
         milestone: None,
         href: "/docs/concepts/listening",
     },
-    planned(
-        A,
-        "Fit",
-        "A multi-resolution audio comparison",
-        "patchback compare: log-spectral, envelope, transient and band-energy terms after time alignment, each term logged for every candidate.",
-        "/docs/concepts/closed-loop#the-comparison",
-    ),
+    Capability {
+        area: "Fit",
+        label: "A multi-resolution audio comparison",
+        detail: "patchback compare --reference --candidate: the candidate is aligned to the reference by up to 100 ms, then log-spectral (512, 2048 and 8192 samples), envelope, transient and band-energy terms, each in [0, 1] and 0 for identical clips, are printed with the design's weights, their weighted sum and the lag. Clips at different rates and lengths alignment cannot absorb are refused. The tolerance, spectral floor and term definitions are provisional.",
+        status: "shipped",
+        evidence: Some(
+            "crates/patchback-cli/tests/compare.rs::compare_prints_the_loss_and_its_components",
+        ),
+        milestone: None,
+        href: "/docs/reference/cli#patchback-compare",
+    },
     planned(
         A,
         "Fit",
