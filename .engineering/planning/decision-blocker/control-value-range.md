@@ -6,7 +6,7 @@ status: cleared
 title: 'Control value outside [0,1]: clamp (DESIGN 5.2) or refuse (scenario)'
 relations:
 - blocks: story:control-automation
-revision: 3
+revision: 4
 transitions:
 - {from: "open", to: "cleared", at: "2026-10-23T13:58:16Z", actor: "human:timo", revision: 3}
 ---
@@ -23,3 +23,8 @@ refused, and NaN/Infinity is refused". The scenario now clamps 1.3 (`outcome: cl
 `patchback.score.ControlValuesClamped`, `control-automation-automated.yaml:67-73`). What stays open
 is whether the clamp rewrites the stored value or applies at render: OQ-27, an `UNMAPPED:` marker at
 `spec/domains/score.yaml:425`, not this blocker.
+
+## Confirmed
+
+`b10x-chef-orchestrator`, 2026-10-23, for Timo: "clamp and record, per DESIGN.md 5.2 and
+story:parameter-contracts". The scenario already clamps; nothing changed.

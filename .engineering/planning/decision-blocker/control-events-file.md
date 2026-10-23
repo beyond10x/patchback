@@ -2,11 +2,13 @@
 format: aep.planning-md/3
 id: decision-blocker:control-events-file
 kind: decision-blocker
-status: open
+status: cleared
 title: 'Control events: own file or events/2 shared with notes.events'
 relations:
 - blocks: story:control-automation
-revision: 2
+revision: 4
+transitions:
+- {from: "open", to: "cleared", at: "2026-10-23T17:17:57Z", actor: "human:timo", revision: 4}
 ---
 # Control events: own file or events/2 shared with notes.events
 
@@ -28,4 +30,9 @@ not wait for it, because note-events writes `notes.events` version 1 either way.
 
 A: nothing shipped in Milestone A changes, and § 11 already lists one file per artifact.
 
-This waits for Timo; no Milestone A or B story depends on it.
+No Milestone A or B story depended on it.
+
+## Cleared
+
+Timo, through `b10x-chef-orchestrator` on 2026-10-23, took option A: `controls.events` version 1 beside
+`notes.events`; the Milestone A parser stays as it is. Recorded in approval-record:control-events-file.
