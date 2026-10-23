@@ -12,7 +12,7 @@ relations:
 scope:
 - confidence: inferred
   path: crates/patchback-core
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-23T09:26:42Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-10-23T09:26:42Z", actor: "human:timo", revision: 4}
@@ -35,14 +35,20 @@ clamped and the clamp recorded; a non-finite value and an invalid contract are r
 - spec/scenarios/parameter-contracts-subtractive-mono.yaml
 - spec/scenarios/parameter-contracts-invalid-contract.yaml
 - spec/scenarios/parameter-contracts-clamp.yaml
-- spec/scenarios/parameter-contracts-non-finite.yaml
+- spec/scenarios/parameter-contracts-unknown-path.yaml
 
 ## Numeric obligations
 
 - Forward and inverse mapping of each of the eight contracts roundtrips within f32 tolerance across
   [0, 1], and the endpoints hit the § 5.2 ranges: attack 1 ms–2 s, decay and release 5 ms–2 s,
   sustain linear, cutoff 40 Hz–16 kHz, Q 0.5–12, drive 0–24 dB, gain -24–0 dB (§ 5.2).
-- `p` is clamped to [0, 1]; NaN and Infinity are rejected (§ 5.2, § 2 invariant 4).
+- `p` is clamped to [0, 1]; NaN and Infinity are rejected (§ 5.2, § 2 invariant 4). ESS Decimal
+  and Binary64 hold finite values only (https://github.com/beyond10x/ess/issues/676, by design),
+  so this refusal sits at the decoder seam in `patchback-core` and is held by Rust tests
+  (`a_non_finite_value_is_refused_naming_the_parameter`,
+  `a_range_whose_width_or_ratio_overflows_is_refused`); no scenario stands in for it.
+  Orchestrator, 2026-10-23: "Approved for wave a2: refuse NaN/inf at your decoder/adapter seam and
+  keep the Rust tests there."
 - Serialized values are physical units, model outputs normalized units (§ 5.2).
 
 ## Open questions

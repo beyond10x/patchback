@@ -1,10 +1,12 @@
-# DESIGN.md section 5.2: "reject NaN/Infinity". A non-finite value cannot be written in the
-# model's Decimal, so the refusal is the implementation's (external): the scenario names it.
 # A path that names no contract of the patch's topology is refused (section 5.1 identifier checks).
+# DESIGN.md section 5.2 also says "reject NaN/Infinity"; ESS Decimal holds finite values only (by
+# design, beyond10x/ess#676), so that refusal sits at the decoder seam in patchback-core and is held
+# by crates/patchback-core/tests/parameter_contracts.rs
+# (a_non_finite_value_is_refused_naming_the_parameter), not by a scenario.
 type: ess-scenario/1
 domain: patchback.patch
-scenario: parameter-contracts-non-finite
-summary: A NaN or infinite normalized value, and a path outside the topology's contracts, are refused.
+scenario: parameter-contracts-unknown-path
+summary: A path outside the topology's contracts is refused, whatever the value.
 
 timeline:
   - at: 2026-10-22T09:00:00Z
@@ -31,23 +33,6 @@ timeline:
     outcome: loaded
 
   - at: 2026-10-22T09:00:02Z
-    command: patchback.patch.SetParameter
-    actor: patchback.patch.Operator
-    input:
-      patch_id: 7f0c0000-0000-4000-8000-000000000104
-      path: attack
-      # Gap (ESS 0.68.0): a Decimal input cannot be NaN or infinite (.nan, .inf, NaN, Infinity and
-      # "NaN" are refused as ESS-AUTHOR-015, "expected Decimal, found null"). 0.5 stands in for
-      # NaN/Infinity; the outcome is external, and the refusal of NaN, +Infinity and -Infinity is
-      # held by crates/patchback-core/tests/parameter_contracts.rs
-      # (a_non_finite_value_is_refused_naming_the_parameter).
-      normalized_value: 0.5
-    outcome: non-finite
-    error:
-      name: patchback.patch.NonFiniteParameterValue
-    no_events: [patchback.patch.ParameterSet, patchback.patch.ParameterClamped]
-
-  - at: 2026-10-22T09:00:03Z
     command: patchback.patch.SetParameter
     actor: patchback.patch.Operator
     input:

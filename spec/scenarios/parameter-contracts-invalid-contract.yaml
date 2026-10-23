@@ -4,10 +4,10 @@
 # stable identifiers (section 5.1), so one topology does not declare a path twice; an index is a
 # position in the model's normalized target vector (section 5.2), so the indices of n contracts are
 # exactly 0..n-1: neither repeated nor outside that range.
-# Gap (ESS 0.68.0): a NaN or infinite range end cannot be written in the model's Decimal, and a
-# finite range whose width or ratio overflows an f64 does not overflow there; the refusal of both is
-# held by crates/patchback-core/tests/parameter_contracts.rs (an_invalid_contract_is_refused_with_a_typed_reason,
-# a_range_whose_width_or_ratio_overflows_is_refused).
+# A NaN or infinite range end, and a finite range whose width or ratio overflows an f64, are refused
+# at the decoder seam in patchback-core (ESS Decimal holds finite values only, by design,
+# beyond10x/ess#676); crates/patchback-core/tests/parameter_contracts.rs holds both
+# (an_invalid_contract_is_refused_with_a_typed_reason, a_range_whose_width_or_ratio_overflows_is_refused).
 type: ess-scenario/1
 domain: patchback.patch
 scenario: parameter-contracts-invalid-contract

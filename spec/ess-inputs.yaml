@@ -82,7 +82,7 @@ scenarios:
   - scenarios/note-events-parser-refusals.yaml
   - scenarios/parameter-contracts-clamp.yaml
   - scenarios/parameter-contracts-invalid-contract.yaml
-  - scenarios/parameter-contracts-non-finite.yaml
+  - scenarios/parameter-contracts-unknown-path.yaml
   - scenarios/parameter-contracts-subtractive-mono.yaml
   - scenarios/patch-file-format-header.yaml
   - scenarios/patch-file-format-keys.yaml
