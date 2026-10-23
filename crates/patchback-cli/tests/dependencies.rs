@@ -98,8 +98,12 @@ struct AudioBackend {
 }
 
 /// The approved audio I/O backends: at most one (DESIGN.md § 3), and none is approved today.
-/// An entry needs an approval record in the AEP store that names the crate; its id goes in
-/// `approval` (`every_approved_audio_backend_names_its_approval_record` holds that), and the
+/// An entry needs an approval record in the AEP store; its id goes in `approval`
+/// (`every_approved_audio_backend_names_its_approval_record` holds that). The record approves
+/// the crate only when its front-matter `status` is not rejected, superseded or archived and a
+/// line of its body, trimmed, is exactly ``Approves: `<crate>` <version>`` with the crate's name
+/// and the exact version below, for example ``Approves: `cpal` 0.15.3``. Any other mention of
+/// the crate approves nothing. The
 /// backend's exact resolved closure goes in `closure`
 /// (`every_approved_audio_backend_closure_is_exactly_its_resolved_closure`). A listed backend is
 /// admitted only when every workspace manifest that takes it declares it `optional = true` and
@@ -124,8 +128,8 @@ const AUDIO_IO_CRATES: &[&str] = &[
     "wasapi",
 ];
 
-/// ModelSpec runs as a subprocess (DESIGN.md § 8.2), so no package whose name starts with this
-/// is admitted, from any source and at any depth.
+/// ModelSpec runs as a subprocess (DESIGN.md § 8.2), so no package whose name starts with this,
+/// in any letter case, is admitted, from any source and at any depth.
 const MODELSPEC_PREFIX: &str = "modelspec";
 
 fn repository_root() -> PathBuf {
@@ -346,7 +350,8 @@ impl Review<'_> {
 
 /// The local names of the optional dependencies that each workspace member turns on whenever
 /// it is built: through its default features, the features a dependent always asks of it, and
-/// the features those turn on in turn.
+/// the features those turn on in turn. A dev-dependency's requests count too: `cargo test`
+/// unifies them into the build of the crate it names.
 fn always_enabled(manifests: &Manifests) -> BTreeMap<String, BTreeSet<String>> {
     let mut items: BTreeMap<String, BTreeSet<String>> = manifests
         .keys()
@@ -402,7 +407,7 @@ fn always_enabled(manifests: &Manifests) -> BTreeMap<String, BTreeSet<String>> {
         }
         for (name, member) in manifests {
             for declaration in &member.declarations {
-                if declaration.kind == "dev" || !manifests.contains_key(&declaration.package) {
+                if !manifests.contains_key(&declaration.package) {
                     continue;
                 }
                 if declaration.optional && !enabled[name].contains(&declaration.local) {
@@ -482,7 +487,11 @@ fn audit(
         }
         let package = &packages[index];
         let label = format!("{} {}", package.name, package.version);
-        if package.name.starts_with(MODELSPEC_PREFIX) {
+        if package
+            .name
+            .to_ascii_lowercase()
+            .starts_with(MODELSPEC_PREFIX)
+        {
             push(
                 &mut found,
                 format!(
@@ -1388,15 +1397,26 @@ impl JsonReader<'_> {
                         b'r' => '\r',
                         b't' => '\t',
                         b'u' => {
+                            let at = self.at - 2;
                             let mut code = self.hex()?;
-                            if (0xD800..0xDC00).contains(&code)
-                                && self.bytes[self.at..].starts_with(b"\\u")
-                            {
-                                self.at += 2;
-                                let low = self.hex()?;
+                            if (0xD800..0xDC00).contains(&code) {
+                                let low = if self.bytes[self.at..].starts_with(b"\\u") {
+                                    self.at += 2;
+                                    self.hex()?
+                                } else {
+                                    0
+                                };
+                                if !(0xDC00..0xE000).contains(&low) {
+                                    return Err(format!(
+                                        "a high surrogate without its low surrogate at byte {at}"
+                                    ));
+                                }
                                 code = 0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00);
+                            } else if (0xDC00..0xE000).contains(&code) {
+                                return Err(format!("a lone low surrogate at byte {at}"));
                             }
-                            char::from_u32(code).unwrap_or('\u{fffd}')
+                            char::from_u32(code)
+                                .ok_or(format!("an invalid \\u escape at byte {at}"))?
                         }
                         other => return Err(format!("an unknown escape '{}'", other as char)),
                     };
@@ -1566,8 +1586,46 @@ fn repository_manifests() -> Manifests {
     manifests_from_metadata(&metadata(&repository_root()).expect("cargo metadata of the workspace"))
 }
 
+/// The record statuses that approve nothing.
+const VOID_STATUSES: &[&str] = &["rejected", "superseded", "archived"];
+
+/// Why `record`, the text of an approval record, does not approve `backend`: it has no front
+/// matter or no `status` in it, its status is rejected, superseded or archived, or no line of its
+/// body is exactly ``Approves: `<name>` <version>``.
+fn record_problem(record: &str, backend: &AudioBackend) -> Option<String> {
+    let mut lines = record.lines();
+    if lines.next().map(str::trim_end) != Some("---") {
+        return Some("has no front matter".to_owned());
+    }
+    let mut status = None;
+    let mut closed = false;
+    for line in lines.by_ref() {
+        if line.trim_end() == "---" {
+            closed = true;
+            break;
+        }
+        if let Some(value) = line.strip_prefix("status:") {
+            status = Some(value.trim().trim_matches(['"', '\'']).to_owned());
+        }
+    }
+    if !closed {
+        return Some("has no closed front matter".to_owned());
+    }
+    let Some(status) = status.filter(|s| !s.is_empty()) else {
+        return Some("states no status".to_owned());
+    };
+    if VOID_STATUSES.contains(&status.as_str()) {
+        return Some(format!("is {status}, so it approves nothing"));
+    }
+    let form = format!("Approves: `{}` {}", backend.name, backend.version);
+    if !lines.any(|line| line.trim() == form) {
+        return Some(format!("has no line '{form}'"));
+    }
+    None
+}
+
 /// Why the approval of each backend in `backends` does not hold in the store at `root`: its id
-/// is not `approval-record:<slug>`, the record does not exist, or it does not name the crate.
+/// is not `approval-record:<slug>`, the record does not exist, or `record_problem` refuses it.
 fn approval_problems(root: &Path, backends: &[AudioBackend]) -> Vec<String> {
     let mut found = Vec::new();
     for backend in backends {
@@ -1585,11 +1643,11 @@ fn approval_problems(root: &Path, backends: &[AudioBackend]) -> Vec<String> {
         };
         let path = root.join(format!(".engineering/planning/approval-record/{slug}.md"));
         match fs::read_to_string(&path) {
-            Ok(text) if text.contains(&format!("`{}`", backend.name)) => {}
-            Ok(_) => found.push(format!(
-                "{label}: {} does not name `{}`",
-                backend.approval, backend.name
-            )),
+            Ok(text) => {
+                if let Some(problem) = record_problem(&text, backend) {
+                    found.push(format!("{label}: {} {problem}", backend.approval));
+                }
+            }
             Err(e) => found.push(format!("{label}: {}: {e}", backend.approval)),
         }
     }
@@ -2064,30 +2122,200 @@ fn every_approved_audio_backend_names_its_approval_record() {
         approval_problems(&root, AUDIO_BACKENDS),
         Vec::<String>::new()
     );
-    // the check itself: a record that names the crate, one that does not, one that is missing,
-    // and an id that is not an approval record
-    let named = AudioBackend {
-        name: "clap",
-        version: "4.6.7",
-        approval: "approval-record:cli-clap",
-        closure: &[],
-    };
-    assert_eq!(approval_problems(&root, &[named]), Vec::<String>::new());
+    // against a store whose fixture-cpal record approves cpal: an id that is missing from the
+    // store or is not an approval record
+    let root = approval_store("ids", "draft", "Approves: `cpal` 0.15.0\n");
+    assert_eq!(approval_problems(&root, &[CPAL]), Vec::<String>::new());
     for approval in [
-        "approval-record:cli-clap",
         "approval-record:no-such-record",
         "approval-record:../story/dependency-gate",
         "story:dependency-gate",
         "",
     ] {
         let backend = AudioBackend {
-            name: "portaudio-unnamed",
-            version: "0.0.0",
+            name: "cpal",
+            version: "0.15.0",
             approval,
             closure: &[],
         };
         assert_eq!(approval_problems(&root, &[backend]).len(), 1, "{approval}");
     }
+    fs::remove_dir_all(&root).expect("remove the fixture store");
+}
+
+/// A planning store under the test's scratch directory holding `approval-record:fixture-cpal`
+/// with front-matter `status` and `body`.
+fn approval_store(tag: &str, status: &str, body: &str) -> PathBuf {
+    let root = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("approval-{tag}-{}-{status}", std::process::id()));
+    write(
+        &root.join(".engineering/planning/approval-record/fixture-cpal.md"),
+        &format!(
+            "---\nformat: aep.planning-md/3\nid: approval-record:fixture-cpal\n\
+             kind: approval-record\nstatus: {status}\ntitle: Live audio backend\nrevision: 1\n\
+             ---\n# Live audio backend\n\n{body}"
+        ),
+    );
+    root
+}
+
+fn approval_problems_in(tag: &str, status: &str, body: &str) -> Vec<String> {
+    let root = approval_store(tag, status, body);
+    let problems = approval_problems(&root, &[CPAL]);
+    fs::remove_dir_all(&root).expect("remove the fixture store");
+    problems
+}
+
+#[test]
+fn an_approval_counts_only_from_its_fixed_approves_line() {
+    for body in [
+        "Approves: `cpal` 0.15.0\n",
+        "The review is below.\n\n  Approves: `cpal` 0.15.0  \n\nNothing else.\n",
+        "Approves: `rodio` 0.17.0\nApproves: `cpal` 0.15.0\n",
+    ] {
+        assert_eq!(
+            approval_problems_in("fixed", "draft", body),
+            Vec::<String>::new(),
+            "{body}"
+        );
+    }
+    for body in [
+        // prose that names the crate, to decline it or to approve it
+        "`cpal` was proposed as the live audio backend and is not approved.\n",
+        "Approve `cpal` 0.15.0 as the live audio backend.\n",
+        // the fixed form at another version, for another crate, or not alone on its line
+        "Approves: `cpal` 0.15.3\n",
+        "Approves: `cpal`\n",
+        "Approves: `cpal-extra` 0.15.0\n",
+        "Approves: cpal 0.15.0\n",
+        "Nobody Approves: `cpal` 0.15.0\n",
+        "Approves: `cpal` 0.15.0 later\n",
+        "",
+    ] {
+        assert_eq!(
+            approval_problems_in("prose", "draft", body).len(),
+            1,
+            "{body:?}"
+        );
+    }
+    // the line in the front matter does not count
+    let root = approval_store("front", "draft", "");
+    let path = root.join(".engineering/planning/approval-record/fixture-cpal.md");
+    let text = fs::read_to_string(&path).expect("the fixture record");
+    fs::write(
+        &path,
+        text.replacen("revision: 1\n", "revision: 1\nApproves: `cpal` 0.15.0\n", 1),
+    )
+    .expect("rewrite the fixture record");
+    assert_eq!(approval_problems(&root, &[CPAL]).len(), 1);
+    fs::remove_dir_all(&root).expect("remove the fixture store");
+}
+
+#[test]
+fn a_rejected_superseded_or_archived_record_approves_nothing() {
+    let body = "Approves: `cpal` 0.15.0\n";
+    for status in ["draft", "active", "accepted", "implemented"] {
+        assert_eq!(
+            approval_problems_in("status", status, body),
+            Vec::<String>::new(),
+            "{status}"
+        );
+    }
+    for status in ["rejected", "superseded", "archived"] {
+        let problems = approval_problems_in("status", status, body);
+        assert_eq!(problems.len(), 1, "{status}");
+        assert!(problems[0].contains(status), "{problems:?}");
+    }
+    // a record with no front matter, or no status in it
+    let root = approval_store("nostatus", "draft", body);
+    let path = root.join(".engineering/planning/approval-record/fixture-cpal.md");
+    for text in [
+        "# Live audio backend\n\nApproves: `cpal` 0.15.0\n".to_owned(),
+        "---\nid: approval-record:fixture-cpal\n---\nApproves: `cpal` 0.15.0\n".to_owned(),
+    ] {
+        fs::write(&path, &text).expect("rewrite the fixture record");
+        assert_eq!(approval_problems(&root, &[CPAL]).len(), 1, "{text}");
+    }
+    fs::remove_dir_all(&root).expect("remove the fixture store");
+}
+
+#[test]
+fn a_dev_dependency_feature_request_counts_as_always_requested() {
+    // `cargo test` unifies dev-dependency features, so the backend is built in every test run.
+    let audio = "[dependencies]\ncpal = { version = \"0.15\", optional = true }\n\n\
+                 [features]\nlive = [\"dep:cpal\"]\n";
+    for cli in [
+        format!(
+            "[dependencies]\n{AUDIO_PATH} }}\n\n[dev-dependencies]\n{AUDIO_PATH}, features = [\"live\"] }}\n"
+        ),
+        format!("[dev-dependencies]\n{AUDIO_PATH}, features = [\"live\"] }}\n"),
+    ] {
+        let found = member_violations(
+            &[("patchback-cli", &cli), ("patchback-audio", audio)],
+            &[CPAL],
+        );
+        assert!(
+            found
+                .iter()
+                .any(|f| f.contains("audio backend cpal") && f.contains("not optional")),
+            "{cli}\n{found:#?}"
+        );
+    }
+    // a dev-dependency that asks for no backend feature changes nothing
+    let found = member_violations(
+        &[
+            (
+                "patchback-cli",
+                &format!("[dev-dependencies]\n{AUDIO_PATH} }}\n"),
+            ),
+            ("patchback-audio", audio),
+        ],
+        &[CPAL],
+    );
+    assert_eq!(found, Vec::<String>::new());
+}
+
+#[test]
+fn a_modelspec_crate_is_refused_in_any_letter_case() {
+    for name in ["ModelSpec", "MODELSPEC-core", "Modelspec_types"] {
+        let lock = lock_of(&[
+            ("patchback-model", "0.0.0", None, &[name]),
+            (name, "0.1.0", Some(REGISTRY), &[]),
+        ]);
+        let found = audit(&lock, &Manifests::new(), &["patchback-model"], &[]);
+        assert_eq!(found.len(), 1, "{found:#?}");
+        assert!(
+            found[0].starts_with(&format!("{name} 0.1.0:"))
+                && found[0].contains("ModelSpec runs as a subprocess"),
+            "{found:#?}"
+        );
+    }
+}
+
+#[test]
+fn a_lone_or_mismatched_surrogate_is_a_parse_error() {
+    let backslash = char::from(92).to_string();
+    for text in [
+        // a high surrogate followed by a non-surrogate escape, by nothing, by text, by another
+        // high surrogate; a lone low surrogate
+        r#""%ud800%u0041""#,
+        r#""%ud800""#,
+        r#""%ud800x""#,
+        r#""%ud800%ud800""#,
+        r#""%udc00""#,
+        r#""%ud800%u""#,
+    ] {
+        let text = text.replace('%', &backslash);
+        let outcome = std::panic::catch_unwind(|| parse_json(&text));
+        assert!(matches!(outcome, Ok(Err(_))), "{text}: {outcome:?}");
+    }
+    let pair = r#""%ud83c%udfb5""#.replace('%', &backslash);
+    assert_eq!(
+        parse_json(&pair)
+            .ok()
+            .and_then(|j| j.text().map(str::to_owned)),
+        Some("\u{1f3b5}".to_owned())
+    );
 }
 
 #[test]

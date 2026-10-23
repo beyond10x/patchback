@@ -6,13 +6,15 @@ summary: >-
   backend behind an optional feature, and CLI parsing, as the one approved `clap`; every other
   third-party application crate is refused.
 
-# Settled in wave a2 (story:dependency-gate), held by crates/patchback-cli/tests/dependencies.rs:
-# the audit judges the full resolved closure of the application crates in Cargo.lock, so the
+# OQ-22 is settled in DESIGN.md § 3 (revision 0.5) and held by
+# crates/patchback-cli/tests/dependencies.rs (story:dependency-gate): the audit judges the full resolved closure of the application crates in Cargo.lock, so the
 # upstream and transitive build requirements of clap and of an approved audio backend are
 # recorded and reviewed by exact name and version like any other crate (each entry crate's
 # reviewed closure); a package outside a reviewed closure is refused. § 12.2's "pinned ModelSpec
 # tooling" is the ModelSpec binary, which § 8.2 runs as a subprocess; a ModelSpec crate is never
-# admitted and is recorded under the ModelSpec category, which is refused.
+# admitted and is recorded under the ModelSpec category, which is refused. An audio backend is
+# approved only by a planning-store approval record whose status is not rejected, superseded or
+# archived and whose body has the line "Approves: `<crate>` <version>".
 
 types:
   - name: patchback.dependency.DependencyAuditId

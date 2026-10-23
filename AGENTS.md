@@ -63,8 +63,9 @@ Entry points are the `Taskfile.yml` tasks (go-task):
 - Running code is Rust. No Python, PyTorch, or ML, DSP, maths or serialization crates (DESIGN.md
   § 3); at most one optional audio I/O crate, behind a feature, once live audio is approved. A
   backend is admitted only through an `AUDIO_BACKENDS` entry in
-  `crates/patchback-cli/tests/dependencies.rs` naming an AEP approval record that names the crate,
-  its exact version and its reviewed closure. No ModelSpec crate is admitted (DESIGN.md § 8.2).
+  `crates/patchback-cli/tests/dependencies.rs` with its exact version and reviewed closure, naming
+  an AEP approval record (not rejected, superseded or archived) whose body has the line
+  ``Approves: `<crate>` <version>``. No ModelSpec crate is admitted (DESIGN.md § 3, § 8.2).
 - ModelSpec is pinned to a tested release; never assume a ModelSpec capability its documentation
   does not list as shipped (DESIGN.md § 1.1).
 - Fixtures are synthesized by Patchback or carry a recorded licence and provenance.

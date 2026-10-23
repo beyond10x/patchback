@@ -1,7 +1,7 @@
 # Patchback — Technical Design
 
 **Status:** Proposed architecture / implementation-ready MVP scope  
-**Revision:** 0.4  
+**Revision:** 0.5  
 **Date:** 2026-10-23  
 **Primary stack:** Rust + [Beyond10x ModelSpec](https://github.com/beyond10x/modelspec)  
 **Dependency policy:** No third-party ML, DSP, mathematics, serialization, or application frameworks. External audio I/O and CLI parsing (`clap` with `derive`, the one reviewed command-line crate) are the **only** permitted application dependency categories.
@@ -79,7 +79,7 @@ Sources: [ModelSpec README](https://github.com/beyond10x/modelspec), [current CL
 | ESS | Required **specification** tool: `spec/` holds the application contracts and conformance scenarios, validated by `task check`; **not** a runtime or ML dependency (ADR-008) |
 | Patch studio (`studio/`) | Separate developer tool in Vue 3 + TypeScript + Vite + pnpm, **outside** this policy (ADR-011, § 16). It is not linked into, shipped with or required by the Rust application; its live server half is Rust `std` only |
 
-The rule applies to application-level dependencies. ModelSpec, an optional audio backend and `clap` have their own upstream/transitive build requirements; these do **not** grant permission to add unrelated application dependencies. CI audits dependency changes and rejects unreviewed additions: the `Cargo.lock` gate admits `clap` and exactly the reviewed packages of its resolved closure, and a package that later enters that closure fails the gate until it is reviewed. An offline first milestone can be built with no third-party runtime crate beyond `clap` and that closure.
+The rule applies to application-level dependencies. ModelSpec, an optional audio backend and `clap` have their own upstream/transitive build requirements; these do **not** grant permission to add unrelated application dependencies. CI audits dependency changes and rejects unreviewed additions: the `Cargo.lock` gate admits `clap` and exactly the reviewed packages of its resolved closure, and a package that later enters that closure fails the gate until it is reviewed. The gate judges the whole resolved closure in `Cargo.lock`: each package is reviewed by exact name and version inside the closure of the entry crate that brings it in (`clap` or an approved audio backend), and any other package is refused. An audio backend is admitted only through an approval record in the planning store that names the crate, with its exact version and reviewed closure, and only while it is optional and no default or always-requested feature turns it on. ModelSpec runs as a subprocess (§ 8.2); no ModelSpec crate is admitted. An offline first milestone can be built with no third-party runtime crate beyond `clap` and that closure.
 
 ## 4. End-to-end architecture
 
@@ -580,7 +580,7 @@ What this document does not settle. Each item is an `UNMAPPED:` marker in `spec/
 | OQ-19 | PRNG algorithm; the declared training note distribution; how `--samples` maps to split counts; the `order.u32` check (§ 7) | `dataset.yaml` |
 | OQ-20 | Provenance on every external import or only on fixtures; what "explicit" downmix means; WAVE_FORMAT_EXTENSIBLE; PCM16 export of out-of-range samples (§ 6.1, § 12.3) | `audio.yaml` |
 | OQ-21 | Weight checksum algorithm; which test qualifies a ModelSpec pin; split-role rules for training (§ 3, § 8) | `model.yaml` |
-| OQ-22 | How the dependency audit tells application crates from upstream build requirements, and where an approval is recorded (§ 3, ADR-007) | `dependency.yaml` |
+| OQ-22 | Settled in 0.5 (§ 3): the audit judges the whole resolved closure per entry crate, and an audio backend's approval is a planning-store approval record | `dependency.yaml` |
 | OQ-23 | Arrangement shape: stem mixing, lengths, count, polyphony (§ 13 E) | `score.yaml` Arrangement, Stem |
 | OQ-24 | Live transport details: SSE event names, `Last-Event-ID` resume, back-pressure (§ 16) | `studio.yaml` events |
 | OQ-25 | Whether one trace spans several topologies (§ 13 D), and the frame of a learned graph (ADR-003) | `studio.yaml` EvolutionTrace |
@@ -590,6 +590,7 @@ What this document does not settle. Each item is an `UNMAPPED:` marker in `spec/
 
 ## Changelog
 
+- **0.5 (2026-10-23):** § 3 settles OQ-22: the `Cargo.lock` gate judges each package inside the closure of the entry crate that brings it in, an audio backend is admitted only through a planning-store approval record naming the crate, its version and closure, and only while optional; no ModelSpec crate is admitted, since § 8.2 runs ModelSpec as a subprocess.
 - **0.4 (2026-10-23):** § 3 and the dependency policy admit CLI parsing as a second permitted category: `clap` with `derive`, required by the workspace rule, is the one reviewed command-line crate, and the `Cargo.lock` gate admits exactly its reviewed closure; § 12.2's dependency gate names it.
 - **0.3 (2026-10-22):** § 5.1 `Node`/`Edge` agree with the specification (flat edge record, nested values) and the MVP ports are listed; § 5.2 gains the default column required by invariant 2, open as OQ-1; § 10 binds a sequence to a sample rate, not one patch, so one sequence drives every fit candidate, and an out-of-range control value is clamped per § 5.2 (OQ-27); § 11 adds the versioned `trace.events` artifact; § 3, § 4.1 and ADR-011 admit the patch studio as a developer tool outside the runtime policy; new § 16 (patch studio, spectra computed in Rust) and § 17 (open questions, OQ-1 to OQ-28).
 - **0.2 (2026-10-22):** ESS is a required specification tool (ADR-008).
