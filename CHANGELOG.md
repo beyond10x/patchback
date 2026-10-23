@@ -6,6 +6,8 @@ All notable changes to Patchback are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-23
+
 ### Added
 
 - `patchback-core::score`: note events and the line-oriented `notes.events` file (story
@@ -106,6 +108,7 @@ All notable changes to Patchback are recorded here. The format follows
   revision 0.4, § 3); help, version and usage errors follow clap (usage errors exit 2), and the
   dependency gate admits `clap` with exactly its reviewed `Cargo.lock` closure.
 
-[Unreleased]: https://github.com/beyond10x/patchback/compare/0.2.0...HEAD
+[Unreleased]: https://github.com/beyond10x/patchback/compare/0.3.0...HEAD
+[0.3.0]: https://github.com/beyond10x/patchback/compare/0.2.0...0.3.0
 [0.2.0]: https://github.com/beyond10x/patchback/compare/0.1.0...0.2.0
 [0.1.0]: https://github.com/beyond10x/patchback/releases/tag/0.1.0
