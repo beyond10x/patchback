@@ -9,3 +9,6 @@ publish.workspace = true
 [[bin]]
 name = "patchback"
 path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true

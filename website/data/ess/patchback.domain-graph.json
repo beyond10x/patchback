@@ -585,6 +585,10 @@
         {
           "name": "audio_backend_count",
           "type": "integer"
+        },
+        {
+          "name": "cli_parser",
+          "type": "Optional<CrateName>"
         }
       ],
       "id": "patchback.dependency.DependencyAudit",

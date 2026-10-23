@@ -1,0 +1,76 @@
+# DESIGN.md 3: "CLI parsing: clap (derive), required by the workspace rule; the one reviewed
+# command-line crate"; "CI audits dependency changes and rejects unreviewed additions". An
+# unapproved clap and an approved CLI parser that is not clap are refused; an approved clap is
+# admitted beside an admitted audio backend without counting as one, and the audit passes.
+type: ess-scenario/1
+domain: patchback.dependency
+scenario: dependency-gate-cli-parser
+summary: An unapproved clap and an approved argh are refused, an approved clap is admitted and the audit passes.
+
+arrange:
+  - instance: audit
+    entity: patchback.dependency.DependencyAudit
+
+timeline:
+  - at: 2026-10-23T09:00:00Z
+    command: patchback.dependency.StartDependencyAudit
+    actor: patchback.dependency.Auditor
+    input:
+      revision: rev-cli-clap
+    outcome: started
+    capture: {instance: audit, event: patchback.dependency.DependencyAuditStarted, field: dependency_audit_id}
+
+  - at: 2026-10-23T09:00:01Z
+    command: patchback.dependency.RecordCrate
+    actor: patchback.dependency.Auditor
+    input:
+      dependency_audit_id: {$instance: audit}
+      crate_name: clap
+      category: CliParsing
+      approved: false
+      behind_optional_feature: false
+    outcome: unapproved-crate
+    error:
+      name: patchback.dependency.UnapprovedCrate
+
+  - at: 2026-10-23T09:00:02Z
+    command: patchback.dependency.RecordCrate
+    actor: patchback.dependency.Auditor
+    input:
+      dependency_audit_id: {$instance: audit}
+      crate_name: argh
+      category: CliParsing
+      approved: true
+      behind_optional_feature: false
+    outcome: cli-parser-not-clap
+    error:
+      name: patchback.dependency.ForbiddenCrate
+
+  - at: 2026-10-23T09:00:03Z
+    command: patchback.dependency.RecordCrate
+    actor: patchback.dependency.Auditor
+    input:
+      dependency_audit_id: {$instance: audit}
+      crate_name: cpal
+      category: AudioIo
+      approved: true
+      behind_optional_feature: true
+    outcome: audio-backend-admitted
+
+  - at: 2026-10-23T09:00:04Z
+    command: patchback.dependency.RecordCrate
+    actor: patchback.dependency.Auditor
+    input:
+      dependency_audit_id: {$instance: audit}
+      crate_name: clap
+      category: CliParsing
+      approved: true
+      behind_optional_feature: false
+    outcome: cli-parser-admitted
+
+  - at: 2026-10-23T09:00:05Z
+    command: patchback.dependency.ConcludeDependencyAudit
+    actor: patchback.dependency.Auditor
+    input:
+      dependency_audit_id: {$instance: audit}
+    outcome: passed
