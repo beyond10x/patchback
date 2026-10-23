@@ -11,14 +11,14 @@
     },
     {
       "area": "Patch",
-      "detail": "Identifiers, parameter domains, port rates and cycles are checked, then the graph is compiled into an execution plan. patchback patch validate runs the checks alone. Milestone A.",
-      "href": "/docs/concepts/patch",
+      "detail": "Identifiers, port rates, parameter contracts, the ports of each kind, cycles and provisional resource caps are checked, in the order the specification declares; a refusal names its error and the node, edge or line. Only a validated patch compiles, into a deterministic execution plan (ready nodes by lowest identifier, one buffer per output port). patchback patch validate runs the checks and the compilation on a .patch file. Held by test accepted_the_default_voice_validates_and_compiles in crates/patchback-core/tests/patch_graph_validation.rs.",
+      "href": "/docs/reference/cli#patchback-patch-validate",
       "label": "A typed patch graph, validated before it runs",
-      "status": "planned"
+      "status": "shipped"
     },
     {
       "area": "Patch",
-      "detail": "A versioned, human-readable patch file in physical units, parsed into a loaded, unvalidated patch and written in canonical form; write then parse is bit-exact. Unknown versions, duplicate keys or IDs, malformed numbers, unsupported rates, lines outside the grammar and lengths past the provisional bounds are refused with the line, and nothing is loaded. No command reads it yet. Held by test default_voice_write_then_parse_is_identity in crates/patchback-core/tests/patch_file_format.rs.",
+      "detail": "A versioned, human-readable patch file in physical units, parsed into a loaded, unvalidated patch and written in canonical form; write then parse is bit-exact. Unknown versions, duplicate keys or IDs, malformed numbers, unsupported rates, lines outside the grammar and lengths past the provisional bounds are refused with the line, and nothing is loaded. patchback patch validate reads it. Held by test default_voice_write_then_parse_is_identity in crates/patchback-core/tests/patch_file_format.rs.",
       "href": "/docs/reference/files#patch-patch",
       "label": "The line-oriented .patch file",
       "status": "shipped"

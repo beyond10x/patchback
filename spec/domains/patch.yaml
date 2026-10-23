@@ -306,6 +306,14 @@ errors:
       - name: patch_id
         type: patchback.patch.PatchId
 
+  - name: patchback.patch.ParameterContractViolation
+    summary: >-
+      A node lacks a parameter its kind declares, carries one its kind does not declare, or holds
+      a value outside its contract's physical range (sections 5.1, 5.2).
+    fields:
+      - name: patch_id
+        type: patchback.patch.PatchId
+
   - name: patchback.patch.UnknownPort
     summary: An edge names a port its node kind does not declare (section 12.1).
     fields:
@@ -314,6 +322,14 @@ errors:
 
   - name: patchback.patch.IncompatiblePortRates
     summary: An edge joins ports of different rates (sections 5.1, 12.1).
+    fields:
+      - name: patch_id
+        type: patchback.patch.PatchId
+
+  - name: patchback.patch.PortRateMismatch
+    summary: >-
+      An edge end states a rate other than the one its node kind declares for that port (section
+      5.1).
     fields:
       - name: patch_id
         type: patchback.patch.PatchId
@@ -348,6 +364,14 @@ errors:
 
   - name: patchback.patch.ResourceCapExceeded
     summary: The graph exceeds a resource cap, such as its node or edge count (sections 12.1, 12.3).
+    fields:
+      - name: patch_id
+        type: patchback.patch.PatchId
+
+  - name: patchback.patch.InputPortTaken
+    summary: >-
+      An edge feeds an input port another edge already feeds: a duplicated edge, or a second
+      source into one input; an input port takes at most one edge (sections 5.1, 12.1).
     fields:
       - name: patch_id
         type: patchback.patch.PatchId
@@ -521,6 +545,9 @@ commands:
       summary: >-
         Parse a line-oriented, versioned .patch file (section 11, patchback patch validate). The
         input is what the parser read; refusals here are the file-format refusals of section 11.
+        The file names its topology by TopologyName (section 5.1 topology_id String, section 11),
+        such as subtractive-mono/1; topology_id here is the identity of the Topology carrying that
+        name. A name no Topology carries, a Uuid included, is unknown-topology.
     input:
       - name: patch_id
         type: patchback.patch.PatchId
@@ -668,8 +695,10 @@ commands:
   - name: patchback.patch.ValidatePatch
     naming:
       summary: >-
-        Run the graph checks of section 5.1 on a loaded patch: identifiers, port rates, the
-        topology's catalogue, cycles and resource caps. Only a validated patch can be compiled.
+        Run the graph checks of section 5.1 on a loaded patch, in its order: identifiers,
+        parameters, ports and rates, cycles, resource caps, then one edge per input port. Only a
+        validated patch can be compiled. Where several checks fail, the outcome declared first
+        answers.
     input:
       - name: patch_id
         type: patchback.patch.PatchId
@@ -728,11 +757,31 @@ commands:
           patchback.patch.PatchStateConflict:
             patch_id: input.patch_id
             state: {subject: state}
+      # Section 5.1's order puts parameters before ports and rates; ESS answers every predicate
+      # outcome above (incompatible-rates) before any external one, so a disagreement of an edge's
+      # two stated rates answers before the checks below.
+      # A parameter's contract lives in the topology, which the model cannot join to a node's
+      # parameter list: the validator checks each node carries exactly its kind's parameters,
+      # each inside its contract's physical range.
+      - name: parameter-contract
+        external: a node's parameters are not exactly its kind's, or a value is outside its contract
+        error: patchback.patch.ParameterContractViolation
+        payload:
+          patchback.patch.ParameterContractViolation:
+            patch_id: input.patch_id
       - name: unknown-port
         external: an edge names a port its node kind does not declare
         error: patchback.patch.UnknownPort
         payload:
           patchback.patch.UnknownPort:
+            patch_id: input.patch_id
+      # The port table is the validator's (see the UNMAPPED note on EdgeDecl): an edge end that
+      # states a rate other than the one its node kind declares for that port.
+      - name: port-rate-mismatch
+        external: an edge end states a rate its node kind does not declare for that port
+        error: patchback.patch.PortRateMismatch
+        payload:
+          patchback.patch.PortRateMismatch:
             patch_id: input.patch_id
       # Cycle detection is a graph search the model cannot state: the validator finds a cycle
       # with no Delay node of at least one sample on it (section 5.4).
@@ -757,6 +806,15 @@ commands:
         error: patchback.patch.ResourceCapExceeded
         payload:
           patchback.patch.ResourceCapExceeded:
+            patch_id: input.patch_id
+      # Section 5.1: an input port takes at most one edge. A port is the validator's (the port
+      # table, see EdgeDecl), so the model cannot name two edges into one input port; declared
+      # last, so every check above answers before it.
+      - name: input-port-taken
+        external: two edges, or a duplicated edge, feed one input port
+        error: patchback.patch.InputPortTaken
+        payload:
+          patchback.patch.InputPortTaken:
             patch_id: input.patch_id
       - name: validated
         moves: patchback.patch.Patch.validate

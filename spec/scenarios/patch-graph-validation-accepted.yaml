@@ -1,8 +1,11 @@
 # DESIGN.md section 5.2: the fixed subtractive voice, note/gate -> Saw -> Drive -> Lowpass -> VCA
 # -> Output, with the ADSR on the VCA; section 5.1: compilation runs identifier, parameter,
 # port/rate and cycle checks before scheduling into an execution plan.
-# UNMAPPED: DESIGN.md gives no port names; pitch, gate, in, out, env and gain are placeholders,
-# and node-local parameter keys (cutoff, attack, ...) are placeholders in physical units.
+# UNMAPPED: DESIGN.md gives no port names; pitch, gate, in, out, env and gain are placeholders.
+# Parameter keys are the section 5.2 contract paths (filter_cutoff, attack, ...), in physical
+# units; the addressing scheme is open (section 17, OQ-2).
+# The .patch file names the topology subtractive-mono/1 by name; the scenario refers to the
+# Topology declared with that name by its identity (see LoadPatch in spec/domains/patch.yaml).
 type: ess-scenario/1
 domain: patchback.patch
 scenario: patch-graph-validation-accepted
@@ -30,10 +33,10 @@ timeline:
         - {id: 1, kind: NoteInput, parameters: []}
         - {id: 2, kind: SawOscillator, parameters: []}
         - {id: 3, kind: Drive, parameters: [{name: drive, value: 6}]}
-        - {id: 4, kind: LowpassFilter, parameters: [{name: cutoff, value: 1200}, {name: resonance, value: 0.7}]}
+        - {id: 4, kind: LowpassFilter, parameters: [{name: filter_cutoff, value: 1200}, {name: resonance_q, value: 0.7}]}
         - {id: 5, kind: AdsrEnvelope, parameters: [{name: attack, value: 0.01}, {name: decay, value: 0.2}, {name: sustain, value: 0.6}, {name: release, value: 0.3}]}
         - {id: 6, kind: Vca, parameters: []}
-        - {id: 7, kind: Output, parameters: [{name: gain, value: -6}]}
+        - {id: 7, kind: Output, parameters: [{name: output_gain, value: -6}]}
       edges:
         - {from_node: 1, from_port: pitch, from_rate: Control, to_node: 2, to_port: pitch, to_rate: Control}
         - {from_node: 1, from_port: gate, from_rate: Event, to_node: 5, to_port: gate, to_rate: Event}

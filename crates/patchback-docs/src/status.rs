@@ -98,17 +98,21 @@ pub const CAPABILITIES: &[Capability] = &[
         milestone: None,
         href: "/docs/reference/files#reference-audio",
     },
-    planned(
-        A,
-        "Patch",
-        "A typed patch graph, validated before it runs",
-        "Identifiers, parameter domains, port rates and cycles are checked, then the graph is compiled into an execution plan. patchback patch validate runs the checks alone.",
-        "/docs/concepts/patch",
-    ),
+    Capability {
+        area: "Patch",
+        label: "A typed patch graph, validated before it runs",
+        detail: "Identifiers, port rates, parameter contracts, the ports of each kind, cycles and provisional resource caps are checked, in the order the specification declares; a refusal names its error and the node, edge or line. Only a validated patch compiles, into a deterministic execution plan (ready nodes by lowest identifier, one buffer per output port). patchback patch validate runs the checks and the compilation on a .patch file.",
+        status: "shipped",
+        evidence: Some(
+            "crates/patchback-core/tests/patch_graph_validation.rs::accepted_the_default_voice_validates_and_compiles",
+        ),
+        milestone: None,
+        href: "/docs/reference/cli#patchback-patch-validate",
+    },
     Capability {
         area: "Patch",
         label: "The line-oriented .patch file",
-        detail: "A versioned, human-readable patch file in physical units, parsed into a loaded, unvalidated patch and written in canonical form; write then parse is bit-exact. Unknown versions, duplicate keys or IDs, malformed numbers, unsupported rates, lines outside the grammar and lengths past the provisional bounds are refused with the line, and nothing is loaded. No command reads it yet.",
+        detail: "A versioned, human-readable patch file in physical units, parsed into a loaded, unvalidated patch and written in canonical form; write then parse is bit-exact. Unknown versions, duplicate keys or IDs, malformed numbers, unsupported rates, lines outside the grammar and lengths past the provisional bounds are refused with the line, and nothing is loaded. patchback patch validate reads it.",
         status: "shipped",
         evidence: Some(
             "crates/patchback-core/tests/patch_file_format.rs::default_voice_write_then_parse_is_identity",

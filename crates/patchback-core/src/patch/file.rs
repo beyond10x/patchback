@@ -779,7 +779,7 @@ fn expect_fields(fields: &[&str], expected: usize) -> Result<(), PatchFileReason
     }
 }
 
-fn parse_u32(token: &str) -> Result<u32, PatchFileReason> {
+pub(super) fn parse_u32(token: &str) -> Result<u32, PatchFileReason> {
     let malformed = || PatchFileReason::MalformedNumber {
         token: token.to_owned(),
     };
@@ -804,7 +804,7 @@ fn name(token: &str) -> Result<String, PatchFileReason> {
 }
 
 /// A topology identifier: one or more of `[A-Za-z0-9._/-]`.
-fn topology_id(token: &str) -> Result<String, PatchFileReason> {
+pub(super) fn topology_id(token: &str) -> Result<String, PatchFileReason> {
     let well_formed = !token.is_empty()
         && token
             .bytes()
