@@ -4,8 +4,8 @@
 mod support;
 
 use patchback_audio::{
-    AudioClip, Corruption, MAX_FRAMES, SAMPLE_RATE_HZ, Truncation, WavError, WavSampleFormat,
-    decode, downmix_frame, encode, read_wav, write_wav,
+    AudioClip, Corruption, MAX_FRAMES, ReadError, SAMPLE_RATE_HZ, Truncation, WavError,
+    WavSampleFormat, decode, downmix_frame, encode, read_wav, write_wav,
 };
 use support::*;
 
@@ -553,4 +553,144 @@ fn accepts_a_file_exactly_at_the_frame_bound() {
 #[test]
 fn the_frame_bound_is_ten_minutes_at_48_khz() {
     assert_eq!(MAX_FRAMES, 10 * 60 * 48_000);
+}
+
+// Non-seekable input: a pipe, as `--input <(…)` hands the reader, has no length to look up.
+
+/// Reads `bytes` with [`read_wav`] through a pipe, fed by a thread that stops quietly when the
+/// reader closes its end early.
+fn read_through_a_pipe(bytes: Vec<u8>) -> Result<Vec<u32>, WavError> {
+    use std::io::Write;
+    use std::os::fd::AsRawFd;
+    let (reader, mut writer) = std::io::pipe().unwrap();
+    let path = format!("/proc/self/fd/{}", reader.as_raw_fd());
+    let feeder = std::thread::spawn(move || {
+        let _ = writer.write_all(&bytes);
+    });
+    let result = read_wav(std::path::Path::new(&path));
+    drop(reader);
+    feeder.join().unwrap();
+    match result {
+        Ok(clip) => Ok(bits(clip.samples())),
+        Err(ReadError::Wav(error)) => Err(error),
+        Err(ReadError::Io(error)) => panic!("the pipe failed: {error}"),
+    }
+}
+
+fn decoded(bytes: &[u8]) -> Result<Vec<u32>, WavError> {
+    decode(bytes).map(|clip| bits(clip.samples()))
+}
+
+#[test]
+fn a_complete_wav_through_a_pipe_reads() {
+    let wavs = [
+        pcm16_wav(1, &[0, 16_384, -16_384, i16::MIN, i16::MAX]),
+        pcm16_wav(2, &[1_000, -3_000, i16::MAX, i16::MIN]),
+        f32_wav(2, &[0.25, -0.75, 1.0, 0.5]),
+        riff(&[
+            chunk(b"LIST", b"odd"),
+            chunk(b"data", &pcm16_data(&[7, -7])),
+            chunk(b"fmt ", &fmt_body(1, 1, 48_000, 16)),
+        ]),
+    ];
+    for bytes in wavs {
+        let expected = decoded(&bytes);
+        assert!(expected.is_ok(), "{expected:?}");
+        assert_eq!(read_through_a_pipe(bytes), expected);
+    }
+}
+
+#[test]
+fn a_truncated_wav_through_a_pipe_is_refused_as_the_slice_is() {
+    let bytes = pcm16_wav(2, &[1, 2, 3, 4, 5, 6]);
+    for cut in 0..bytes.len() {
+        let expected = decoded(&bytes[..cut]);
+        assert!(
+            matches!(expected, Err(WavError::Truncated(_))),
+            "cut {cut}: {expected:?}"
+        );
+        assert_eq!(
+            read_through_a_pipe(bytes[..cut].to_vec()),
+            expected,
+            "cut {cut}"
+        );
+    }
+}
+
+#[test]
+fn a_malformed_wav_through_a_pipe_is_refused_as_the_slice_is() {
+    let mono = || chunk(b"fmt ", &fmt_body(1, 1, 48_000, 16));
+    let body = [mono(), chunk(b"data", &pcm16_data(&[0]))].concat();
+    let past_riff_end = {
+        let mut bytes = riff(&[mono(), chunk(b"data", &pcm16_data(&[0, 0]))]);
+        let declared = (bytes.len() - 10) as u32;
+        bytes[4..8].copy_from_slice(&declared.to_le_bytes());
+        bytes
+    };
+    let mut not_wave = pcm16_wav(1, &[0]);
+    not_wave[8..12].copy_from_slice(b"AVI ");
+    let cases = [
+        riff_declaring((body.len() + 5) as u32, &body),
+        riff_declaring(u32::MAX, &body),
+        riff(&[mono(), chunk_header(b"data", u32::MAX)]),
+        riff(&[mono(), mono(), chunk(b"data", &pcm16_data(&[0]))]),
+        riff(&[mono(), chunk(b"data", &[]), chunk(b"data", &[])]),
+        riff(&[chunk(b"fmt ", &[0; 8]), chunk(b"data", &[])]),
+        riff(&[chunk(b"\x01mt ", &[0; 16])]),
+        riff(&[mono()]),
+        riff(&[chunk(b"data", &pcm16_data(&[0]))]),
+        riff(&[mono(), chunk(b"data", &[0])]),
+        riff(&[mono(), chunk(b"data", &[])]),
+        riff(&[
+            chunk(b"fmt ", &fmt_body(3, 2, 48_000, 32)),
+            chunk(b"data", &f32_data(&[0.0, 0.0, 0.0, f32::NAN])),
+        ]),
+        riff(&[
+            chunk(b"fmt ", &fmt_body(1, 1, 44_100, 16)),
+            chunk(b"data", &[]),
+        ]),
+        riff_declaring(3, &[]),
+        past_riff_end.clone(),
+        past_riff_end[..past_riff_end.len() - 1].to_vec(),
+        not_wave.clone(),
+        not_wave[..20].to_vec(),
+    ];
+    for (index, bytes) in cases.into_iter().enumerate() {
+        let expected = decoded(&bytes);
+        assert!(expected.is_err(), "case {index}");
+        assert_eq!(read_through_a_pipe(bytes), expected, "case {index}");
+    }
+}
+
+// Short input: the magic is compared on whatever bytes exist, before any length check.
+
+#[test]
+fn short_input_that_is_not_riff_is_not_riff() {
+    for input in [
+        &b"X"[..],
+        b"OggS",
+        b"fLaC\x00\x00\x00\x22",
+        b"ID3\x04\x00\x00\x00\x00\x00\x00\x00",
+        b"RIFX\x24\x00\x00\x00WAVE",
+    ] {
+        assert_eq!(
+            decode(input),
+            Err(WavError::CorruptChunk(Corruption::NotRiff)),
+            "{input:?}"
+        );
+    }
+    for input in [&b"RIFF\x24\x00\x00\x00A"[..], b"RIFF\x24\x00\x00\x00WAX"] {
+        assert_eq!(
+            decode(input),
+            Err(WavError::CorruptChunk(Corruption::NotWave)),
+            "{input:?}"
+        );
+    }
+    for input in [&b""[..], b"R", b"RIF", b"RIFF", b"RIFF\x24\x00\x00\x00WA"] {
+        assert_eq!(
+            decode(input),
+            Err(WavError::Truncated(Truncation::Header)),
+            "{input:?}"
+        );
+    }
 }
