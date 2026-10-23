@@ -73,6 +73,35 @@ jobs:
           tar -xzf "$RUNNER_TEMP/$AEP_DIR.tar.gz" -C "$RUNNER_TEMP" "$AEP_DIR/aep"
           echo "$RUNNER_TEMP/$AEP_DIR" >> "$GITHUB_PATH"
 
+      - name: Install modelspec
+        run: |
+          set -euo pipefail
+          MODELSPEC_VERSION=$(sed -n 's/^version //p' models/modelspec.pin)
+          MODELSPEC_SHA256=$(sed -n 's/^sha256-x86_64-unknown-linux-gnu //p' models/modelspec.pin)
+          if [ -z "$MODELSPEC_VERSION" ] || [ -z "$MODELSPEC_SHA256" ]; then
+            echo "models/modelspec.pin names no version or no sha256-x86_64-unknown-linux-gnu" >&2
+            exit 1
+          fi
+          MODELSPEC_ASSET="modelspec-$MODELSPEC_VERSION-x86_64-unknown-linux-gnu"
+          MODELSPEC_URL="https://github.com/beyond10x/modelspec/releases/download/$MODELSPEC_VERSION/$MODELSPEC_ASSET"
+          mkdir -p "$RUNNER_TEMP/modelspec-bin"
+          curl --fail --silent --show-error --location --output "$RUNNER_TEMP/$MODELSPEC_ASSET" "$MODELSPEC_URL"
+          curl --fail --silent --show-error --location --output "$RUNNER_TEMP/$MODELSPEC_ASSET.sha256" "$MODELSPEC_URL.sha256"
+          RELEASE_SHA256=$(cut -d ' ' -f 1 "$RUNNER_TEMP/$MODELSPEC_ASSET.sha256")
+          if [ "$RELEASE_SHA256" != "$MODELSPEC_SHA256" ]; then
+            echo "release $MODELSPEC_VERSION publishes sha256 $RELEASE_SHA256; models/modelspec.pin has $MODELSPEC_SHA256" >&2
+            exit 1
+          fi
+          echo "$MODELSPEC_SHA256  $RUNNER_TEMP/$MODELSPEC_ASSET" | sha256sum --check --strict
+          install -m 0755 "$RUNNER_TEMP/$MODELSPEC_ASSET" "$RUNNER_TEMP/modelspec-bin/modelspec"
+          REPORTED=$("$RUNNER_TEMP/modelspec-bin/modelspec" --version)
+          if [ "$REPORTED" != "modelspec $MODELSPEC_VERSION" ]; then
+            echo "the downloaded binary reports '$REPORTED'; models/modelspec.pin pins $MODELSPEC_VERSION" >&2
+            exit 1
+          fi
+          echo "$RUNNER_TEMP/modelspec-bin" >> "$GITHUB_PATH"
+          echo "PATCHBACK_REQUIRE_MODELSPEC=1" >> "$GITHUB_ENV"
+
       - name: task check
         env:
           PATCHBACK_SCRATCH: ${{ runner.temp }}/conform

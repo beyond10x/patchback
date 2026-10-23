@@ -102,10 +102,10 @@
     },
     {
       "area": "Model",
-      "detail": "One pinned ModelSpec release runs modelspec check on models/patch_regressor.mspec; a model the pinned binary rejects is recorded as rejected and cannot be trained. Milestone A.",
+      "detail": "ModelSpec 0.5.0 is pinned in models/modelspec.pin by version, commit and binary checksum; CI installs that binary and runs modelspec check on models/patch_regressor.mspec. A binary reporting another version is refused, and a model the pinned binary rejects is recorded as rejected and cannot be trained. Held by test a_rejected_source_cannot_be_trained in crates/patchback-model/tests/adapter.rs.",
       "href": "/docs/guides/train-the-regressor#check-and-train",
       "label": "A pinned ModelSpec that checks the model",
-      "status": "planned"
+      "status": "shipped"
     },
     {
       "area": "Analysis",

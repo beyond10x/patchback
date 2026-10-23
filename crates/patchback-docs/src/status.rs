@@ -187,13 +187,17 @@ pub const CAPABILITIES: &[Capability] = &[
         "An audit passes a workspace with no third-party application crate but clap, the one reviewed CLI parser, and its reviewed closure; it refuses a forbidden or unreviewed crate, and admits at most one approved optional audio I/O backend.",
         "/docs/concepts/guarantees#dependencies",
     ),
-    planned(
-        A,
-        "Model",
-        "A pinned ModelSpec that checks the model",
-        "One pinned ModelSpec release runs modelspec check on models/patch_regressor.mspec; a model the pinned binary rejects is recorded as rejected and cannot be trained.",
-        "/docs/guides/train-the-regressor#check-and-train",
-    ),
+    Capability {
+        area: "Model",
+        label: "A pinned ModelSpec that checks the model",
+        detail: "ModelSpec 0.5.0 is pinned in models/modelspec.pin by version, commit and binary checksum; CI installs that binary and runs modelspec check on models/patch_regressor.mspec. A binary reporting another version is refused, and a model the pinned binary rejects is recorded as rejected and cannot be trained.",
+        status: "shipped",
+        evidence: Some(
+            "crates/patchback-model/tests/adapter.rs::a_rejected_source_cannot_be_trained",
+        ),
+        milestone: None,
+        href: "/docs/guides/train-the-regressor#check-and-train",
+    },
     planned(
         B,
         "Analysis",
@@ -556,17 +560,24 @@ mod tests {
     }
 
     #[test]
-    fn nothing_is_shipped_while_the_repository_holds_no_code() {
-        assert_eq!(count(CAPABILITIES, "shipped"), 0);
-        assert!(CAPABILITIES.iter().all(|c| c.evidence.is_none()));
+    fn only_shipped_capabilities_name_a_test() {
+        for capability in CAPABILITIES {
+            assert_eq!(
+                capability.evidence.is_some(),
+                capability.status == "shipped",
+                "{}",
+                capability.label
+            );
+        }
     }
 
     #[test]
     fn the_page_counts_the_capabilities_and_renders_the_table() {
         let page = page(CAPABILITIES, AS_OF);
+        let shipped = count(CAPABILITIES, "shipped");
         assert!(page.contains(&format!(
-            "0 shipped, 0 decided, {} planned",
-            CAPABILITIES.len()
+            "{shipped} shipped, 0 decided, {} planned",
+            CAPABILITIES.len() - shipped
         )));
         assert!(page.contains("import status from '@site/data/status.json';"));
         assert!(page.contains("<StatusTable data={status}"));
