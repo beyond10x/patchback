@@ -6,6 +6,8 @@ All notable changes to Patchback are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-23
+
 ### Added
 
 - `patchback-audio`: std-only WAV import and export. Mono or stereo (downmixed by the per-frame
@@ -52,3 +54,6 @@ All notable changes to Patchback are recorded here. The format follows
 - `patchback` parses its command line with clap derive, the one reviewed CLI crate (`DESIGN.md`
   revision 0.4, § 3); help, version and usage errors follow clap (usage errors exit 2), and the
   dependency gate admits `clap` with exactly its reviewed `Cargo.lock` closure.
+
+[Unreleased]: https://github.com/beyond10x/patchback/compare/0.1.0...HEAD
+[0.1.0]: https://github.com/beyond10x/patchback/releases/tag/0.1.0
