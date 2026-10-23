@@ -198,13 +198,17 @@ pub const CAPABILITIES: &[Capability] = &[
         "An external recording is imported only with its licence and provenance recorded beside it; a clip synthesized by Patchback carries its origin.",
         "/docs/concepts/guarantees#fixtures",
     ),
-    planned(
-        A,
-        "Dependencies",
-        "A dependency gate",
-        "An audit of the resolved Cargo.lock passes a workspace with no third-party application crate but clap, the one reviewed CLI parser, and its reviewed closure; it refuses a forbidden or unreviewed crate and any ModelSpec crate, and admits at most one approved audio I/O backend with its reviewed closure, only behind an optional feature.",
-        "/docs/concepts/guarantees#dependencies",
-    ),
+    Capability {
+        area: "Dependencies",
+        label: "A dependency gate",
+        detail: "An audit of the resolved Cargo.lock passes a workspace with no third-party application crate but clap, the one reviewed CLI parser, and its reviewed closure; it refuses a forbidden or unreviewed crate and any ModelSpec crate, and admits at most one approved audio I/O backend with its reviewed closure, only behind an optional feature.",
+        status: "shipped",
+        evidence: Some(
+            "crates/patchback-cli/tests/dependencies.rs::the_application_crates_take_no_third_party_crate_but_clap_and_its_closure",
+        ),
+        milestone: None,
+        href: "/docs/concepts/guarantees#dependencies",
+    },
     Capability {
         area: "Model",
         label: "A pinned ModelSpec that checks the model",

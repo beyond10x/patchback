@@ -6,7 +6,7 @@ at [README.md](README.md); the design is [DESIGN.md](DESIGN.md).
 
 ## State
 
-Milestone A in progress (DESIGN.md revision 0.5): the workspace crates, the clap-derived `patchback` CLI (no command implemented yet), the dependency gate, the ModelSpec pin and check, the parameter contracts and WAV import and export exist; `studio/` holds the patch studio prototype on fixture data. `spec/` holds the ESS domains and
+Milestone A in progress (DESIGN.md revision 0.6): the workspace crates, the clap-derived `patchback` CLI (`patch validate` and `analyze` implemented; `render`, `compare` and `fit` not yet), the dependency gate, the ModelSpec pin and check, the parameter contracts, WAV import and export, the `.patch` file format, patch graph validation and compilation, and the analysis core exist; `studio/` holds the patch studio prototype on fixture data. `spec/` holds the ESS domains and
 the authored conformance scenarios; `.engineering/` holds the AEP planning store with one epic per
 DESIGN.md § 13 milestone and draft stories whose acceptance is a list of named scenarios. The first
 implementation slice is DESIGN.md § 15 (Milestone A, no ML).
@@ -38,7 +38,7 @@ Entry points are the `Taskfile.yml` tasks (go-task):
   the flag; CI's Node 22 needs none), then `npm --prefix website run build`. `pages.yml`
   ("Documentation validation") builds it in CI; `b10x-docs-site.yml` ("Documentation site")
   deploys it to `https://beyond10x.github.io/patchback/` after a bot push to `main`.
-- Cargo builds run through `b10x-build-slot`. Never delete `target/` or `website/node_modules/`.
+- Cargo builds run directly, one target per tree, with `CARGO_INCREMENTAL=0`. Never delete `target/` or `website/node_modules/`.
 
 ## Planning and specification
 

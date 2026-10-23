@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-23T18:04:18Z",
+  "actor": "human:timo",
+  "artifact": "story:analysis-core",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "baseline main 5605754: analyze exits 3 (not implemented); treatment b1b50e4: analyze writes analysis.txt or refuses with nothing written; f0 octave cases of adversary pass 3 report the true pitch or PitchAmbiguous",
+    "reference": "b1b50e46d84c7e62bd516ab0282da34266d77fbb"
+  }
+}

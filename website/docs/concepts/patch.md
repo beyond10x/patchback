@@ -28,8 +28,12 @@ struct Node {
 }
 
 struct Edge {
-    from: PortAddress,
-    to: PortAddress,
+    from_node: u32,
+    from_port: PortName,
+    from_rate: PortRate,
+    to_node: u32,
+    to_port: PortName,
+    to_rate: PortRate,
 }
 
 enum PortRate { Audio, Control, Event }
@@ -43,13 +47,17 @@ stable module and parameter identifiers, never by their position in a user inter
 
 A patch is checked completely before a single sample is rendered. Compilation runs, in order:
 
-1. identifier checks;
+1. identifier checks, with the agreement of the two rates an edge states;
 2. parameter validation against each parameter's domain;
-3. port and rate checks;
+3. port checks against each module's port table;
 4. cycle checks;
-5. scheduling;
-6. buffer assignment;
-7. the DSP execution plan.
+5. resource caps;
+6. one edge per input port;
+7. scheduling;
+8. buffer assignment;
+9. the DSP execution plan.
+
+Where a patch has several faults, the refusal is the one this order reaches first.
 
 The renderer runs the plan. It never follows graph references inside the audio loop.
 `patchback patch validate` runs the checks on their own.

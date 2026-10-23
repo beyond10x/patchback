@@ -5,9 +5,10 @@ Give Patchback a recording of a synth and it gives back a patch: a small, editab
 patch, compares the rendering with the recording, and refines the patch until the two sound
 close. The output is a program you can open and tweak, not opaque audio from a neural decoder.
 
-**Status:** specification only. The ESS specification is in [spec/](spec/) and the plan in
-`.engineering/`; no application code yet. The first milestone works on one isolated monophonic synth
-note and uses no machine learning. The patch studio prototype in [studio/](studio/) draws modules,
+**Status:** Milestone A in progress. `patchback patch validate` checks a `.patch` file and
+`patchback analyze` measures a WAV; rendering, comparison and fitting are not implemented yet. The
+ESS specification is in [spec/](spec/) and the plan in `.engineering/`. The first milestone works on
+one isolated monophonic synth note and uses no machine learning. The patch studio prototype in [studio/](studio/) draws modules,
 patch graphs and a fit replay from illustrative fixture data (`task studio-dev`).
 
 Everything is Rust with no third-party ML, DSP or maths crates. The parameter regressor that

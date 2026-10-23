@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:patch-file-format
 kind: story
-status: active
+status: implemented
 title: Line-oriented .patch file format
 relations:
 - decomposes: epic:sound-engine
@@ -13,10 +13,11 @@ relations:
 scope:
 - confidence: inferred
   path: crates/patchback-core
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-23T12:38:04Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-10-23T12:38:04Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-10-23T18:04:22Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1,"review_outcome":1,"verification":1}}}
 ---
 # Line-oriented .patch file format
 

@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-23T18:04:18Z",
+  "actor": "human:timo",
+  "artifact": "story:analysis-core",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:analysis-core-adversary-3",
+    "reference": "b1b50e46d84c7e62bd516ab0282da34266d77fbb",
+    "review": "review-result:analysis-core-adversary-3",
+    "outcome": "fixed"
+  }
+}

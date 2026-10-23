@@ -95,10 +95,10 @@
     },
     {
       "area": "Dependencies",
-      "detail": "An audit of the resolved Cargo.lock passes a workspace with no third-party application crate but clap, the one reviewed CLI parser, and its reviewed closure; it refuses a forbidden or unreviewed crate and any ModelSpec crate, and admits at most one approved audio I/O backend with its reviewed closure, only behind an optional feature. Milestone A.",
+      "detail": "An audit of the resolved Cargo.lock passes a workspace with no third-party application crate but clap, the one reviewed CLI parser, and its reviewed closure; it refuses a forbidden or unreviewed crate and any ModelSpec crate, and admits at most one approved audio I/O backend with its reviewed closure, only behind an optional feature. Held by test the_application_crates_take_no_third_party_crate_but_clap_and_its_closure in crates/patchback-cli/tests/dependencies.rs.",
       "href": "/docs/concepts/guarantees#dependencies",
       "label": "A dependency gate",
-      "status": "planned"
+      "status": "shipped"
     },
     {
       "area": "Model",
