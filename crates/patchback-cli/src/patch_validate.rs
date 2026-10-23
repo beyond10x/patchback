@@ -12,8 +12,8 @@
 //!   `patchback: patch validate refused: <domain error>: "<file>": <where>: <reason>`, where
 //!   `<where>` is `line <n>` for a refusal of the file (absent for a condition of the whole
 //!   file), or the node (`node <id>`) or edge (its `.patch` line) for a refusal of the graph; a
-//!   refusal of the whole patch (format version, sample rate, topology, a cap) names no node; a
-//!   cycle names its nodes. An unreadable file is
+//!   refusal of the whole patch (format version, sample rate, topology, the fixed chain, a cap)
+//!   names no node; a cycle names its nodes. An unreadable file is
 //!   `patchback: patch validate refused: cannot read "<file>": <error>`.
 
 use std::fmt::Display;

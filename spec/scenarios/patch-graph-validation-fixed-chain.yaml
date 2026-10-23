@@ -1,0 +1,138 @@
+# DESIGN.md section 5.2: "The signal-chain topology is fixed": one node of each of NoteInput,
+# SawOscillator, Drive, LowpassFilter, AdsrEnvelope, Vca and Output, wired by the seven edges of the
+# section 5.2 diagram. A patch with no nodes, and the voice without its Output node (and the edge
+# into it), are not that chain and are refused by validation, after the port checks and before the
+# cycle check (section 5.1); neither compiles. The default voice is still valid. Which node or edge
+# is missing or extra is the validator's (an external outcome, see FixedChainMismatch).
+type: ess-scenario/1
+domain: patchback.patch
+scenario: patch-graph-validation-fixed-chain
+summary: A patch with no nodes, or the voice without its Output node, is not the fixed chain and is refused; the default voice is still valid.
+
+timeline:
+  - at: 2026-10-23T09:00:00Z
+    command: patchback.patch.DeclareTopology
+    actor: patchback.patch.Operator
+    input:
+      topology_id: 7f0c0000-0000-4000-8000-000000000016
+      name: subtractive-mono/1
+      parameters: []
+    outcome: declared
+
+  - at: 2026-10-23T09:00:01Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000118
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 7f0c0000-0000-4000-8000-000000000016
+      nodes: []
+      edges: []
+    outcome: loaded
+
+  - at: 2026-10-23T09:00:02Z
+    command: patchback.patch.ValidatePatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000118
+    outcome: fixed-chain-mismatch
+    error:
+      name: patchback.patch.FixedChainMismatch
+      fields:
+        patch_id: 7f0c0000-0000-4000-8000-000000000118
+    no_events: [patchback.patch.PatchValidated]
+
+  - at: 2026-10-23T09:00:03Z
+    command: patchback.patch.CompilePatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000118
+    outcome: not-validated
+    error:
+      name: patchback.patch.PatchStateConflict
+
+  - at: 2026-10-23T09:00:04Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000119
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 7f0c0000-0000-4000-8000-000000000016
+      nodes:
+        - {id: 1, kind: NoteInput, parameters: []}
+        - {id: 2, kind: SawOscillator, parameters: []}
+        - {id: 3, kind: Drive, parameters: [{name: drive, value: 6}]}
+        - {id: 4, kind: LowpassFilter, parameters: [{name: filter_cutoff, value: 1200}, {name: resonance_q, value: 0.7}]}
+        - {id: 5, kind: AdsrEnvelope, parameters: [{name: attack, value: 0.01}, {name: decay, value: 0.2}, {name: sustain, value: 0.6}, {name: release, value: 0.3}]}
+        - {id: 6, kind: Vca, parameters: []}
+      edges:
+        - {from_node: 1, from_port: pitch, from_rate: Control, to_node: 2, to_port: pitch, to_rate: Control}
+        - {from_node: 1, from_port: gate, from_rate: Event, to_node: 5, to_port: gate, to_rate: Event}
+        - {from_node: 2, from_port: out, from_rate: Audio, to_node: 3, to_port: in, to_rate: Audio}
+        - {from_node: 3, from_port: out, from_rate: Audio, to_node: 4, to_port: in, to_rate: Audio}
+        - {from_node: 4, from_port: out, from_rate: Audio, to_node: 6, to_port: in, to_rate: Audio}
+        - {from_node: 5, from_port: env, from_rate: Control, to_node: 6, to_port: gain, to_rate: Control}
+    outcome: loaded
+
+  - at: 2026-10-23T09:00:05Z
+    command: patchback.patch.ValidatePatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000119
+    outcome: fixed-chain-mismatch
+    error:
+      name: patchback.patch.FixedChainMismatch
+      fields:
+        patch_id: 7f0c0000-0000-4000-8000-000000000119
+    no_events: [patchback.patch.PatchValidated]
+
+  - at: 2026-10-23T09:00:06Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000120
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 7f0c0000-0000-4000-8000-000000000016
+      nodes:
+        - {id: 1, kind: NoteInput, parameters: []}
+        - {id: 2, kind: SawOscillator, parameters: []}
+        - {id: 3, kind: Drive, parameters: [{name: drive, value: 6}]}
+        - {id: 4, kind: LowpassFilter, parameters: [{name: filter_cutoff, value: 1200}, {name: resonance_q, value: 0.7}]}
+        - {id: 5, kind: AdsrEnvelope, parameters: [{name: attack, value: 0.01}, {name: decay, value: 0.2}, {name: sustain, value: 0.6}, {name: release, value: 0.3}]}
+        - {id: 6, kind: Vca, parameters: []}
+        - {id: 7, kind: Output, parameters: [{name: output_gain, value: -6}]}
+      edges:
+        - {from_node: 1, from_port: pitch, from_rate: Control, to_node: 2, to_port: pitch, to_rate: Control}
+        - {from_node: 1, from_port: gate, from_rate: Event, to_node: 5, to_port: gate, to_rate: Event}
+        - {from_node: 2, from_port: out, from_rate: Audio, to_node: 3, to_port: in, to_rate: Audio}
+        - {from_node: 3, from_port: out, from_rate: Audio, to_node: 4, to_port: in, to_rate: Audio}
+        - {from_node: 4, from_port: out, from_rate: Audio, to_node: 6, to_port: in, to_rate: Audio}
+        - {from_node: 5, from_port: env, from_rate: Control, to_node: 6, to_port: gain, to_rate: Control}
+        - {from_node: 6, from_port: out, from_rate: Audio, to_node: 7, to_port: in, to_rate: Audio}
+    outcome: loaded
+
+  - at: 2026-10-23T09:00:07Z
+    command: patchback.patch.ValidatePatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000120
+    outcome: validated
+    events:
+      - event: patchback.patch.PatchValidated
+
+assert:
+  - view: patchback.patch.Patches
+    contains:
+      patch_id: 7f0c0000-0000-4000-8000-000000000118
+      state: Loaded
+  - view: patchback.patch.Patches
+    contains:
+      patch_id: 7f0c0000-0000-4000-8000-000000000119
+      state: Loaded
+  - view: patchback.patch.Patches
+    contains:
+      patch_id: 7f0c0000-0000-4000-8000-000000000120
+      state: Validated

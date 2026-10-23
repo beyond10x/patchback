@@ -154,13 +154,16 @@ fn adversary_inputs_are_in_port_order_when_the_gain_source_has_the_lower_id() {
             LowpassFilter,
             vec![value("filter_cutoff", 1200.0), value("resonance_q", 0.7)],
         ),
+        // The fixed chain's drive stage (story:patch-review-fixes), between oscillator and filter.
+        node(5, Drive, vec![value("drive", 6.0)]),
         node(6, Vca, vec![]),
         node(7, Output, vec![value("output_gain", -6.0)]),
     ];
     voice.edges = vec![
         edge((1, "pitch", Control), (3, "pitch", Control)),
         edge((1, "gate", Event), (2, "gate", Event)),
-        edge((3, "out", Audio), (4, "in", Audio)),
+        edge((3, "out", Audio), (5, "in", Audio)),
+        edge((5, "out", Audio), (4, "in", Audio)),
         edge((4, "out", Audio), (6, "in", Audio)),
         edge((2, "env", Control), (6, "gain", Control)),
         edge((6, "out", Audio), (7, "in", Audio)),

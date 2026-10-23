@@ -159,6 +159,30 @@ types:
       - name: to_rate
         type: patchback.patch.PortRate
 
+  # One edge of a topology's fixed chain (section 5.2), by node kind and port: the patch's edge
+  # joins the nodes of those kinds, so it names no node identifier.
+  - name: patchback.patch.ChainEdge
+    kind: struct
+    fields:
+      - name: from_kind
+        type: patchback.patch.NodeKind
+      - name: from_port
+        type: patchback.patch.PortName
+      - name: to_kind
+        type: patchback.patch.NodeKind
+      - name: to_port
+        type: patchback.patch.PortName
+
+  # A node a FixedChainMismatch names: its identifier and its kind.
+  - name: patchback.patch.ChainNode
+    kind: struct
+    fields:
+      - name: id
+        type: Integer
+        summary: The node's identifier inside the patch (section 5.1, u32).
+      - name: kind
+        type: patchback.patch.NodeKind
+
 entities:
   - name: patchback.patch.Patch
     naming:
@@ -343,6 +367,37 @@ errors:
         type: patchback.patch.TopologyId
       - name: kind_family
         type: patchback.patch.ModuleFamily
+
+  # Section 5.2: "The signal-chain topology is fixed". The chain of subtractive-mono/1 is one node
+  # of each of NoteInput, SawOscillator, Drive, LowpassFilter, AdsrEnvelope, Vca and Output (one
+  # voice, one of each module, and one node per parameter contract of the eight-target vector),
+  # wired by the seven edges of the section 5.2 diagram over the section 5.1 port table:
+  # NoteInput pitch -> SawOscillator pitch, NoteInput gate -> AdsrEnvelope gate, SawOscillator out
+  # -> Drive in, Drive out -> LowpassFilter in, LowpassFilter out -> Vca in, AdsrEnvelope env -> Vca
+  # gain, Vca out -> Output in. Those edges feed every input port of the seven nodes, so an edge
+  # beyond them closes a cycle or feeds a taken input and is answered by those later outcomes.
+  # Of several nodes of one kind, the chain uses the one carrying the most chain edges, the lowest
+  # identifier among equals.
+  # UNMAPPED: this chain has no Delay node, so it refuses the Delay feedback paths of
+  # spec/scenarios/delayed-feedback-accepted.yaml and of patch 143 in
+  # delayed-feedback-refused.yaml. story:delayed-feedback must extend the chain definition for a
+  # Delay feedback path before those scenarios can hold.
+  - name: patchback.patch.FixedChainMismatch
+    summary: >-
+      The patch is not its topology's fixed chain (section 5.2): a kind of the chain has no node,
+      a kind has a second node, or an edge of the chain is missing.
+    fields:
+      - name: patch_id
+        type: patchback.patch.PatchId
+      - name: missing_kinds
+        type: List<patchback.patch.NodeKind>
+        summary: The kinds of the chain with no node.
+      - name: extra_nodes
+        type: List<patchback.patch.ChainNode>
+        summary: The nodes the chain does not use, by identifier.
+      - name: missing_edges
+        type: List<patchback.patch.ChainEdge>
+        summary: The edges of the chain no edge of the patch carries between nodes of their kinds.
 
   - name: patchback.patch.DelayTooShort
     summary: A Delay node has less than one sample of latency (section 5.4).
@@ -696,7 +751,8 @@ commands:
     naming:
       summary: >-
         Run the graph checks of section 5.1 on a loaded patch, in its order: identifiers,
-        parameters, ports and rates, cycles, resource caps, then one edge per input port. Only a
+        parameters, ports and rates, the fixed chain of section 5.2, cycles, resource caps, then
+        one edge per input port. Only a
         validated patch can be compiled. Where several checks fail, the outcome declared first
         answers.
     input:
@@ -783,6 +839,20 @@ commands:
         payload:
           patchback.patch.PortRateMismatch:
             patch_id: input.patch_id
+      # Section 5.2's fixed chain (see FixedChainMismatch). It reads the node kinds and ports the
+      # checks above admitted, so it follows them and precedes the cycle check; it is external
+      # because a predicate outcome would answer before parameter-contract (ESS-COMMAND-004).
+      # Which kinds are missing, which nodes extra and which chain edges missing are the
+      # validator's to name.
+      - name: fixed-chain-mismatch
+        external: the patch is not its topology's fixed chain of section 5.2
+        error: patchback.patch.FixedChainMismatch
+        payload:
+          patchback.patch.FixedChainMismatch:
+            patch_id: input.patch_id
+            missing_kinds: {generated: true}
+            extra_nodes: {generated: true}
+            missing_edges: {generated: true}
       # Cycle detection is a graph search the model cannot state: the validator finds a cycle
       # with no Delay node of at least one sample on it (section 5.4).
       - name: zero-delay-cycle

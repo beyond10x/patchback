@@ -1041,6 +1041,81 @@ fn a_fault_of_the_header_line_stops_the_scan() {
     );
 }
 
+/// The header line's shapes (story:patch-review-fixes): a header with too few or too many fields
+/// and a version this parser does not read is answered by the highest-ranked of its faults, as
+/// `LoadPatch` declares `unknown-version` before `malformed-record` and `malformed-number`.
+#[test]
+fn the_header_line_answers_its_highest_ranked_fault() {
+    let wrong_count = |found| PatchFileReason::WrongFieldCount {
+        record: "patchback-patch".to_owned(),
+        expected: 2,
+        found,
+    };
+    let cases = [
+        // A missing field: no version to rank.
+        ("patchback-patch\n", PatchFileReason::MissingFormatVersion),
+        // An extra field with the known version: the field count alone.
+        ("patchback-patch 1 extra\n", wrong_count(3)),
+        ("patchback-patch 1 extra more\n", wrong_count(4)),
+        // An extra field and an unknown version: the version outranks the field count.
+        (
+            "patchback-patch 2 extra\n",
+            PatchFileReason::UnknownFormatVersion { format_version: 2 },
+        ),
+        // Two extra fields and an unknown version.
+        (
+            "patchback-patch 2 extra more\n",
+            PatchFileReason::UnknownFormatVersion { format_version: 2 },
+        ),
+        (
+            "patchback-patch 0 1\n",
+            PatchFileReason::UnknownFormatVersion { format_version: 0 },
+        ),
+        // An extra field and a version that is not an integer: the field count outranks the
+        // malformed number.
+        ("patchback-patch x extra\n", wrong_count(3)),
+        ("patchback-patch 99999999999 extra\n", wrong_count(3)),
+    ];
+    for (header, reason) in cases {
+        let text = format!("{header}sample_rate_hz 48000\ntopology_id subtractive-mono/1\n");
+        refused_with(&text, Some(1), reason);
+    }
+    // With an unsupported rate on line 2: a header that reads as version 1 is ranked with the
+    // later lines, so the rate outranks its field count; any other header fault is answered alone.
+    let rate =
+        |header: &str| format!("{header}sample_rate_hz 44100\ntopology_id subtractive-mono/1\n");
+    let unsupported = PatchFileReason::UnsupportedSampleRate {
+        sample_rate_hz: 44_100,
+    };
+    refused_with(
+        &rate("patchback-patch 1 extra\n"),
+        Some(2),
+        unsupported.clone(),
+    );
+    refused_with(
+        &rate("patchback-patch 1 extra more\n"),
+        Some(2),
+        unsupported,
+    );
+    refused_with(
+        &rate("patchback-patch 2 extra\n"),
+        Some(1),
+        PatchFileReason::UnknownFormatVersion { format_version: 2 },
+    );
+    refused_with(&rate("patchback-patch x extra\n"), Some(1), wrong_count(3));
+    refused_with(
+        &rate("patchback-patch\n"),
+        Some(1),
+        PatchFileReason::MissingFormatVersion,
+    );
+    // A version-1 header with an extra field and nothing else wrong: the field count, line 1.
+    refused_with(
+        &rate("patchback-patch 1 extra\n").replace("44100", "48000"),
+        Some(1),
+        wrong_count(3),
+    );
+}
+
 #[test]
 fn past_the_file_bound_no_other_fault_is_ranked() {
     let mut text = String::from("patchback-patch 2\n");

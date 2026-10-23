@@ -50,12 +50,13 @@ A patch is checked completely before a single sample is rendered. Compilation ru
 1. identifier checks, with the agreement of the two rates an edge states;
 2. parameter validation against each parameter's domain;
 3. port checks against each module's port table;
-4. cycle checks;
-5. resource caps;
-6. one edge per input port;
-7. scheduling;
-8. buffer assignment;
-9. the DSP execution plan.
+4. the fixed chain: one module of each kind and every edge of the voice;
+5. cycle checks;
+6. resource caps;
+7. one edge per input port;
+8. scheduling;
+9. buffer assignment;
+10. the DSP execution plan.
 
 Where a patch has several faults, the refusal is the one this order reaches first.
 
