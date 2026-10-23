@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-23T11:38:53Z",
+  "actor": "human:timo",
+  "artifact": "story:wav-io",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:wav-io-adversary-1",
+    "reference": "9fb197d7514a501c960410025b8a0f1e0bf9bfb7",
+    "review": "review-result:wav-io-adversary-1",
+    "outcome": "fixed"
+  }
+}

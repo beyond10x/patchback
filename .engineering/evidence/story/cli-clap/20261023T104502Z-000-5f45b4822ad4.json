@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-23T10:45:02Z",
+  "actor": "human:timo",
+  "artifact": "story:cli-clap",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:cli-clap-adversary-1",
+    "reference": "a4503bd96694f59d43d34c5a6ff3263c05516b1b",
+    "review": "review-result:cli-clap-adversary-1",
+    "outcome": "fixed"
+  }
+}

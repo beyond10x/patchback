@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-23T11:56:33Z",
+  "actor": "human:timo",
+  "artifact": "story:modelspec-pin-and-check",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "baseline main 59b54b8: no models/modelspec.pin, no patchback-model adapter; treatment 80f0da1: pin 0.5.0 and adapter, 34 tests passed; pinned_binary passed against the real 0.5.0 binary with PATCHBACK_REQUIRE_MODELSPEC=1 in the unit run",
+    "reference": "80f0da15901116651e3e428deb8a44c339ad5301"
+  }
+}

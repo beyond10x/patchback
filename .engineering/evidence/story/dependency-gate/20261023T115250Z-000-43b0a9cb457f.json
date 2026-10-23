@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-23T11:52:50Z",
+  "actor": "human:timo",
+  "artifact": "story:dependency-gate",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:dependency-gate-adversary-1",
+    "reference": "fd97aa6b54a0f34b8652acf1fb760a17569e0713",
+    "review": "review-result:dependency-gate-adversary-1",
+    "outcome": "fixed"
+  }
+}

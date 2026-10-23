@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-23T11:56:33Z",
+  "actor": "human:timo",
+  "artifact": "story:cli-clap",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check, cargo build/clippy -D warnings/fmt --check on wave/a2 80f0da1 with ess 0.68.0: all exit 0; spec-conform 386 passed, 0 failed; dispatch 20 passed, adversary_a2 2 passed, dependencies 39 passed",
+    "reference": "80f0da15901116651e3e428deb8a44c339ad5301"
+  }
+}

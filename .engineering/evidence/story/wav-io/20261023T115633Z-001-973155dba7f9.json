@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-23T11:56:33Z",
+  "actor": "human:timo",
+  "artifact": "story:wav-io",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "baseline main 59b54b8: patchback-audio holds no WAV reader or writer; treatment 80f0da1: PCM16/float32 import and export, pipe input, 53 tests passed",
+    "reference": "80f0da15901116651e3e428deb8a44c339ad5301"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-23T11:56:33Z",
+  "actor": "human:timo",
+  "artifact": "story:cli-clap",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "baseline main 59b54b8: patchback-cli parses arguments with std::env and takes no third-party crate (main.rs header); treatment 80f0da1: clap derive with its 21-package reviewed closure, dispatch tests 20 passed",
+    "reference": "80f0da15901116651e3e428deb8a44c339ad5301"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-23T11:15:32Z",
+  "actor": "human:timo",
+  "artifact": "story:modelspec-pin-and-check",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:modelspec-pin-and-check-adversary-1",
+    "reference": "2d7bb6df04884f7d7f808905434ecb18d9dacd44",
+    "review": "review-result:modelspec-pin-and-check-adversary-1",
+    "outcome": "fixed"
+  }
+}

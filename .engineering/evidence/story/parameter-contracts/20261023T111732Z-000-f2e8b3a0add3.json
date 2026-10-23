@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-23T11:17:32Z",
+  "actor": "human:timo",
+  "artifact": "story:parameter-contracts",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:parameter-contracts-adversary-1",
+    "reference": "7fb924b0388d964bb8fc563cde12c11ad0dc4ad4",
+    "review": "review-result:parameter-contracts-adversary-1",
+    "outcome": "fixed"
+  }
+}

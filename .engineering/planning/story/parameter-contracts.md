@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:parameter-contracts
 kind: story
-status: active
+status: implemented
 title: Parameter contracts for the subtractive-mono/1 voice
 relations:
 - decomposes: epic:sound-engine
@@ -10,12 +10,61 @@ relations:
 - depends_on: story:workspace-scaffold
 - serves: vision:patchback
 scope:
-- confidence: inferred
-  path: crates/patchback-core
-revision: 5
+- confidence: cited
+  path: .engineering/planning/approval-record/non-finite-seam.md
+- confidence: cited
+  path: .engineering/planning/story/parameter-contracts.md
+- confidence: cited
+  path: CHANGELOG.md
+- confidence: cited
+  path: crates/patchback-core/src/lib.rs
+- confidence: cited
+  path: crates/patchback-core/src/parameter.rs
+- confidence: cited
+  path: crates/patchback-core/tests/parameter_contracts.rs
+- confidence: cited
+  path: crates/patchback-core/tests/parameter_contracts_adversary.rs
+- confidence: cited
+  path: crates/patchback-docs/src/status.rs
+- confidence: cited
+  path: spec/domains/patch.yaml
+- confidence: cited
+  path: spec/ess-inputs.yaml
+- confidence: cited
+  path: spec/scenarios/parameter-contracts-clamp.yaml
+- confidence: cited
+  path: spec/scenarios/parameter-contracts-invalid-contract.yaml
+- confidence: cited
+  path: spec/scenarios/parameter-contracts-unknown-path.yaml
+- confidence: cited
+  path: website/data/ess/patchback.ess-docs.json
+- confidence: cited
+  path: website/data/status.json
+- confidence: cited
+  path: website/docs/reference/ess/patchback-analysis.md
+- confidence: cited
+  path: website/docs/reference/ess/patchback-audio.md
+- confidence: cited
+  path: website/docs/reference/ess/patchback-dataset.md
+- confidence: cited
+  path: website/docs/reference/ess/patchback-dependency.md
+- confidence: cited
+  path: website/docs/reference/ess/patchback-fit.md
+- confidence: cited
+  path: website/docs/reference/ess/patchback-model.md
+- confidence: cited
+  path: website/docs/reference/ess/patchback-patch.md
+- confidence: cited
+  path: website/docs/reference/ess/patchback-score.md
+- confidence: cited
+  path: website/docs/reference/ess/patchback-studio.md
+- confidence: cited
+  path: website/docs/status.mdx
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-23T09:26:42Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-10-23T09:26:42Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-10-23T11:56:33Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":1,"review_outcome":1,"verification":1}}}
 ---
 # Parameter contracts for the subtractive-mono/1 voice
 

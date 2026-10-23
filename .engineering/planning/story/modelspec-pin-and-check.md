@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:modelspec-pin-and-check
 kind: story
-status: active
+status: implemented
 title: Pinned ModelSpec and model check
 relations:
 - informed_by: executable-system-specification:patchback-contracts
@@ -10,14 +10,37 @@ relations:
 - depends_on: story:workspace-scaffold
 - serves: vision:patchback
 scope:
-- confidence: inferred
-  path: crates/patchback-model
-- confidence: inferred
+- confidence: cited
+  path: .github/workflows/check.yml
+- confidence: cited
+  path: CHANGELOG.md
+- confidence: cited
+  path: crates/patchback-docs/src/status.rs
+- confidence: cited
+  path: crates/patchback-model/src/lib.rs
+- confidence: cited
+  path: crates/patchback-model/tests/adapter.rs
+- confidence: cited
+  path: crates/patchback-model/tests/adversary.rs
+- confidence: cited
+  path: crates/patchback-model/tests/bare_name.rs
+- confidence: cited
+  path: crates/patchback-model/tests/model_source.rs
+- confidence: cited
+  path: crates/patchback-model/tests/pinned_binary.rs
+- confidence: cited
+  path: models/modelspec.pin
+- confidence: cited
   path: models/patch_regressor.mspec
-revision: 5
+- confidence: cited
+  path: website/data/status.json
+- confidence: cited
+  path: website/docs/status.mdx
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-23T09:26:42Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-10-23T09:26:42Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-10-23T11:56:33Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":1,"review_outcome":1,"verification":1}}}
 ---
 # Pinned ModelSpec and model check
 
