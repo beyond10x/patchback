@@ -1,11 +1,14 @@
 # DESIGN.md section 2 invariant 2 and section 5.2: a contract maps p in [0,1] onto a physical
 # domain, so its default is a normalized value in [0,1], its domain is not empty, and an
 # exponential mapping (at_zero * (at_one/at_zero)^p) needs a lower end above zero. Paths are
-# stable identifiers (section 5.1), so one topology does not declare a path twice.
+# stable identifiers (section 5.1), so one topology does not declare a path twice; an index is a
+# position in the model's normalized target vector (section 5.2), so it is not declared twice either.
+# Gap (ESS 0.68.0): a NaN or infinite range end cannot be written in the model's Decimal; the
+# refusal of a non-finite bound is held by crates/patchback-core/tests/parameter_contracts.rs.
 type: ess-scenario/1
 domain: patchback.patch
 scenario: parameter-contracts-invalid-contract
-summary: A contract with a default outside [0,1], an exponential domain starting at zero, or a repeated path is refused.
+summary: A contract with a default outside [0,1], an exponential domain starting at zero, a reversed domain, a repeated path or a repeated index is refused.
 
 timeline:
   - at: 2026-10-22T09:00:00Z
@@ -46,4 +49,31 @@ timeline:
     outcome: duplicate-path
     error:
       name: patchback.patch.DuplicateParameterPath
+    no_events: [patchback.patch.TopologyDeclared]
+
+  - at: 2026-10-22T09:00:03Z
+    command: patchback.patch.DeclareTopology
+    actor: patchback.patch.Operator
+    input:
+      topology_id: 7f0c0000-0000-4000-8000-000000000002
+      name: subtractive-mono/1
+      parameters:
+        - {path: decay, index: 1, unit: Seconds, mapping: Exponential, physical_at_zero: 0.005, physical_at_one: 2, default_normalized: 0.5, clamp: ClampToUnitInterval}
+        - {path: release, index: 1, unit: Seconds, mapping: Exponential, physical_at_zero: 0.005, physical_at_one: 2, default_normalized: 0.5, clamp: ClampToUnitInterval}
+    outcome: duplicate-index
+    error:
+      name: patchback.patch.DuplicateParameterIndex
+    no_events: [patchback.patch.TopologyDeclared]
+
+  - at: 2026-10-22T09:00:04Z
+    command: patchback.patch.DeclareTopology
+    actor: patchback.patch.Operator
+    input:
+      topology_id: 7f0c0000-0000-4000-8000-000000000002
+      name: subtractive-mono/1
+      parameters:
+        - {path: resonance_q, index: 5, unit: Dimensionless, mapping: Linear, physical_at_zero: 12, physical_at_one: 0.5, default_normalized: 0.5, clamp: ClampToUnitInterval}
+    outcome: invalid-contract
+    error:
+      name: patchback.patch.InvalidParameterContract
     no_events: [patchback.patch.TopologyDeclared]

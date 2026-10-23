@@ -29,6 +29,10 @@ All notable changes to Patchback are recorded here. The format follows
 - `task check`: validates the specification, runs its conformance suite against the interpreted
   reference target, validates the planning store, checks that every story names existing
   acceptance scenarios, and checks the generated documentation pages.
+- `patchback-core` parameter contracts: the `subtractive-mono/1` topology with its eight
+  contracts of `DESIGN.md` § 5.2 (placeholder defaults), forward and inverse mappings, clamping
+  of normalized values with a recorded clamp, and refusal of non-finite values and invalid
+  contracts.
 
 ### Changed
 
