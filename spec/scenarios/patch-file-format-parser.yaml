@@ -1,10 +1,10 @@
-# DESIGN.md section 11: the parser refuses malformed numbers and unbounded lengths. Both are the
-# parser's verdict on the raw text (grammar and bounds are UNMAPPED), so each is selected as an
-# external outcome; an unknown topology reference is refused too.
+# DESIGN.md section 11: the parser refuses malformed numbers, unbounded lengths and lines that are
+# not records of the grammar. Each is the parser's verdict on the raw text (grammar and bounds are
+# UNMAPPED), so each is selected as an external outcome; an unknown topology reference is refused too.
 type: ess-scenario/1
 domain: patchback.patch
 scenario: patch-file-format-parser
-summary: A malformed number, an over-long line and an unknown topology reference make the .patch file refused.
+summary: A malformed number, an over-long line, a line outside the grammar and an unknown topology reference make the .patch file refused.
 
 timeline:
   - at: 2026-10-22T09:00:00Z
@@ -47,6 +47,21 @@ timeline:
     no_events: [patchback.patch.PatchLoaded]
 
   - at: 2026-10-22T09:00:03Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000123
+      format_version: 1
+      sample_rate_hz: 48000
+      topology_id: 7f0c0000-0000-4000-8000-000000000023
+      nodes: []
+      edges: []
+    outcome: malformed-record
+    error:
+      name: patchback.patch.MalformedRecord
+    no_events: [patchback.patch.PatchLoaded]
+
+  - at: 2026-10-22T09:00:04Z
     command: patchback.patch.LoadPatch
     actor: patchback.patch.Operator
     input:

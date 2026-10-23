@@ -6,6 +6,15 @@ All notable changes to Patchback are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `patchback-core::patch`: the patch types and the line-oriented `.patch` file (story
+  patch-file-format). `parse_patch`, `read_patch` and `read_patch_file` load a patch,
+  unvalidated, and `write_patch` emits the canonical form, bit-exact on read back; unknown
+  versions, duplicate keys or ids, malformed numbers, unsupported rates, lines outside the
+  grammar and lengths past the provisional bounds are refused with the line, a file with several
+  faults by the one `LoadPatch` declares first.
+
 ## [0.1.0] - 2026-10-23
 
 ### Added

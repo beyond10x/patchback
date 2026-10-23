@@ -105,13 +105,17 @@ pub const CAPABILITIES: &[Capability] = &[
         "Identifiers, parameter domains, port rates and cycles are checked, then the graph is compiled into an execution plan. patchback patch validate runs the checks alone.",
         "/docs/concepts/patch",
     ),
-    planned(
-        A,
-        "Patch",
-        "The line-oriented .patch file",
-        "A versioned, human-readable patch file in physical units, read by every command that takes a patch and written in canonical form. Unknown versions, duplicate keys or IDs, malformed numbers, unsupported rates and unbounded lengths are refused.",
-        "/docs/reference/files#patch-patch",
-    ),
+    Capability {
+        area: "Patch",
+        label: "The line-oriented .patch file",
+        detail: "A versioned, human-readable patch file in physical units, parsed into a loaded, unvalidated patch and written in canonical form; write then parse is bit-exact. Unknown versions, duplicate keys or IDs, malformed numbers, unsupported rates, lines outside the grammar and lengths past the provisional bounds are refused with the line, and nothing is loaded. No command reads it yet.",
+        status: "shipped",
+        evidence: Some(
+            "crates/patchback-core/tests/patch_file_format.rs::default_voice_write_then_parse_is_identity",
+        ),
+        milestone: None,
+        href: "/docs/reference/files#patch-patch",
+    },
     Capability {
         area: "Patch",
         label: "Parameter contracts for the subtractive voice",
