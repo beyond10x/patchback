@@ -1,10 +1,12 @@
 # DESIGN.md section 5.2: "clamp p to [0,1]"; section 8.1: "clamp with an explicit warning".
 # A value inside [0,1] is set as given; one outside is clamped and the warning event carries both.
 # The physical value stored is the contract's mapping of the applied p (numeric obligation).
+# A topology's indices are exactly 0..n-1 (section 5.2), so the one contract declared here has index 0.
+# The path is resolved before the value: an out-of-range value on an unknown path answers unknown-path.
 type: ess-scenario/1
 domain: patchback.patch
 scenario: parameter-contracts-clamp
-summary: A normalized value inside [0,1] is set as given; 1.4 and -0.2 are clamped to 1 and 0 with a warning.
+summary: A normalized value inside [0,1] is set as given; 1.4 and -0.2 are clamped to 1 and 0 with a warning; 1.4 on an unknown path is refused, not clamped.
 
 timeline:
   - at: 2026-10-22T09:00:00Z
@@ -14,7 +16,7 @@ timeline:
       topology_id: 7f0c0000-0000-4000-8000-000000000003
       name: subtractive-mono/1
       parameters:
-        - {path: filter_cutoff, index: 4, unit: Hertz, mapping: Exponential, physical_at_zero: 40, physical_at_one: 16000, default_normalized: 0.5, clamp: ClampToUnitInterval}
+        - {path: filter_cutoff, index: 0, unit: Hertz, mapping: Exponential, physical_at_zero: 40, physical_at_one: 16000, default_normalized: 0.5, clamp: ClampToUnitInterval}
     outcome: declared
 
   - at: 2026-10-22T09:00:01Z
@@ -70,3 +72,15 @@ timeline:
         payload:
           submitted: -0.2
           applied: 0
+
+  - at: 2026-10-22T09:00:05Z
+    command: patchback.patch.SetParameter
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000103
+      path: lfo_rate
+      normalized_value: 1.4
+    outcome: unknown-path
+    error:
+      name: patchback.patch.UnknownParameterPath
+    no_events: [patchback.patch.ParameterSet, patchback.patch.ParameterClamped]

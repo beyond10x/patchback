@@ -338,6 +338,10 @@ fn the_inverse_refuses_values_no_normalized_value_maps_to() {
     assert!(close(gain.to_normalized(-48.0).unwrap(), -1.0, 1.0));
 }
 
+/// A topology name other than `subtractive-mono/1`, so a refusal is seen to carry the name it was
+/// given rather than a constant.
+const OTHER: &str = "test-voice/1";
+
 #[test]
 fn an_invalid_contract_is_refused_with_a_typed_reason() {
     use InvalidContractReason::*;
@@ -371,47 +375,136 @@ fn an_invalid_contract_is_refused_with_a_typed_reason() {
         ),
     ];
     for (break_it, reason) in cases {
-        let mut broken = contract("release", 3);
+        let mut broken = contract("release", 1);
         break_it(&mut broken);
-        let expected = TopologyError::InvalidParameterContract {
-            path: "release".to_owned(),
-            reason,
-        };
-        assert_eq!(broken.validate(), Err(expected.clone()), "{broken:?}");
+        assert_eq!(broken.validate(), Err(reason), "{broken:?}");
         assert_eq!(
-            Topology::new(SUBTRACTIVE_MONO, vec![contract("attack", 0), broken]),
-            Err(expected)
+            Topology::new(OTHER, vec![contract("attack", 0), broken]),
+            Err(TopologyError::InvalidParameterContract {
+                name: OTHER.to_owned(),
+                path: "release".to_owned(),
+                reason,
+            })
         );
     }
-    let mut linear_from_zero = contract("sustain", 2);
+    let mut linear_from_zero = contract("sustain", 0);
     linear_from_zero.mapping = ParameterMapping::Linear;
     linear_from_zero.physical_at_zero = 0.0;
     assert_eq!(linear_from_zero.validate(), Ok(()));
 }
 
+/// § 2 invariant 4: a contract whose ends are finite but whose linear width `high - low` or
+/// exponential ratio `high / low` overflows an f64 would map some `p` to a non-finite value, so it
+/// is refused.
+#[test]
+fn a_range_whose_width_or_ratio_overflows_is_refused() {
+    let mut wide = contract("wide", 0);
+    wide.mapping = ParameterMapping::Linear;
+    wide.physical_at_zero = -1e308;
+    wide.physical_at_one = 1e308;
+    let mut steep = contract("steep", 0);
+    steep.physical_at_zero = f64::from_bits(1);
+    steep.physical_at_one = 1.0;
+    for broken in [wide, steep] {
+        assert_eq!(
+            broken.validate(),
+            Err(InvalidContractReason::NonFiniteSpan),
+            "{broken:?}"
+        );
+        let path = broken.path.clone();
+        assert_eq!(
+            Topology::new(OTHER, vec![broken]),
+            Err(TopologyError::InvalidParameterContract {
+                name: OTHER.to_owned(),
+                path,
+                reason: InvalidContractReason::NonFiniteSpan,
+            })
+        );
+    }
+    let mut widest_finite = contract("widest_finite", 0);
+    widest_finite.mapping = ParameterMapping::Linear;
+    widest_finite.physical_at_zero = -f64::MAX / 2.0;
+    widest_finite.physical_at_one = f64::MAX / 2.0;
+    assert_eq!(widest_finite.validate(), Ok(()));
+    for p in [0.0, 0.5, 1.0] {
+        assert!(widest_finite.to_physical(p).is_finite());
+    }
+}
+
 #[test]
 fn a_repeated_path_or_index_is_refused() {
     assert_eq!(
-        Topology::new(
-            SUBTRACTIVE_MONO,
-            vec![contract("decay", 1), contract("decay", 3)]
-        ),
+        Topology::new(OTHER, vec![contract("decay", 0), contract("decay", 1)]),
         Err(TopologyError::DuplicateParameterPath {
+            name: OTHER.to_owned(),
             path: "decay".to_owned()
         })
     );
     assert_eq!(
-        Topology::new(
-            SUBTRACTIVE_MONO,
-            vec![contract("decay", 1), contract("release", 1)]
+        Topology::new(OTHER, vec![contract("decay", 1), contract("release", 1)]),
+        Err(TopologyError::DuplicateParameterIndex {
+            name: OTHER.to_owned(),
+            index: 1
+        })
+    );
+    assert!(Topology::new(OTHER, vec![contract("decay", 1), contract("release", 0)]).is_ok());
+}
+
+/// § 5.2: an index is the position in the normalized target vector, so the indices of n contracts
+/// are exactly 0..n-1 (coordinator decision, wave a2 correction 1). Distinct indices that leave a
+/// gap put one of them at n or above, which is refused as an invalid contract naming it.
+#[test]
+fn the_indices_are_exactly_zero_to_n_minus_one() {
+    for (indices, outside) in [(vec![1], "p1"), (vec![0, 2], "p2"), (vec![3, 0, 1], "p3")] {
+        let contracts = indices
+            .iter()
+            .map(|&i| contract(&format!("p{i}"), i))
+            .collect();
+        assert_eq!(
+            Topology::new(OTHER, contracts),
+            Err(TopologyError::InvalidParameterContract {
+                name: OTHER.to_owned(),
+                path: outside.to_owned(),
+                reason: InvalidContractReason::IndexOutsideTargetVector,
+            }),
+            "{indices:?}"
+        );
+    }
+    let shuffled = [2, 0, 1]
+        .iter()
+        .map(|&i| contract(&format!("p{i}"), i))
+        .collect();
+    assert!(Topology::new(OTHER, shuffled).is_ok());
+    assert!(Topology::new(OTHER, Vec::new()).is_ok());
+}
+
+/// The topology errors carry the topology's name, as `patchback.patch`'s
+/// `DuplicateParameterPath`, `DuplicateParameterIndex` and `InvalidParameterContract` do.
+#[test]
+fn a_topology_refusal_names_the_topology() {
+    let mut invalid = contract("attack", 0);
+    invalid.default_normalized = 2.0;
+    for (contracts, display) in [
+        (
+            vec![contract("decay", 0), contract("decay", 1)],
+            "topology test-voice/1: parameter path decay is declared twice",
         ),
-        Err(TopologyError::DuplicateParameterIndex { index: 1 })
-    );
-    assert!(
-        Topology::new(
-            SUBTRACTIVE_MONO,
-            vec![contract("decay", 1), contract("release", 3)]
-        )
-        .is_ok()
-    );
+        (
+            vec![contract("decay", 0), contract("release", 0)],
+            "topology test-voice/1: parameter index 0 is declared twice",
+        ),
+        (
+            vec![invalid],
+            "topology test-voice/1: invalid parameter contract attack: the normalized default is not in [0, 1]",
+        ),
+    ] {
+        let error = Topology::new(OTHER, contracts).unwrap_err();
+        let name = match &error {
+            TopologyError::InvalidParameterContract { name, .. }
+            | TopologyError::DuplicateParameterPath { name, .. }
+            | TopologyError::DuplicateParameterIndex { name, .. } => name,
+        };
+        assert_eq!(name, OTHER);
+        assert_eq!(error.to_string(), display);
+    }
 }

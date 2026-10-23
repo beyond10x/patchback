@@ -69,8 +69,15 @@ pub enum InvalidContractReason {
     EmptyDomain,
     /// An exponential mapping whose range does not start above zero.
     ExponentialDomainNotPositive,
+    /// Both ends are finite, but the linear width `physical_at_one - physical_at_zero` or the
+    /// exponential ratio `physical_at_one / physical_at_zero` is not, so some `p` would map to a
+    /// non-finite value (§ 2 invariant 4).
+    NonFiniteSpan,
     /// The default is not a normalized value in `[0, 1]` (NaN included).
     DefaultOutsideUnitInterval,
+    /// The index is not below the number of contracts of the topology: the indices of `n`
+    /// contracts are exactly `0..n` (§ 5.2, the position in the normalized target vector).
+    IndexOutsideTargetVector,
 }
 
 impl fmt::Display for InvalidContractReason {
@@ -83,22 +90,32 @@ impl fmt::Display for InvalidContractReason {
             Self::ExponentialDomainNotPositive => {
                 "an exponential mapping needs a physical range that starts above zero"
             }
+            Self::NonFiniteSpan => {
+                "the width or ratio of the physical range is not finite in an f64"
+            }
             Self::DefaultOutsideUnitInterval => "the normalized default is not in [0, 1]",
+            Self::IndexOutsideTargetVector => {
+                "the index is not below the number of contracts of the topology"
+            }
         })
     }
 }
 
-/// A topology declaration refused (`DeclareTopology` errors of `patchback.patch`).
+/// A topology declaration refused (`DeclareTopology` errors of `patchback.patch`). Each names the
+/// topology, as the domain's errors do.
 #[derive(Clone, Debug, PartialEq)]
 pub enum TopologyError {
     InvalidParameterContract {
+        name: String,
         path: String,
         reason: InvalidContractReason,
     },
     DuplicateParameterPath {
+        name: String,
         path: String,
     },
     DuplicateParameterIndex {
+        name: String,
         index: usize,
     },
 }
@@ -106,14 +123,23 @@ pub enum TopologyError {
 impl fmt::Display for TopologyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidParameterContract { path, reason } => {
-                write!(f, "invalid parameter contract {path}: {reason}")
+            Self::InvalidParameterContract { name, path, reason } => {
+                write!(
+                    f,
+                    "topology {name}: invalid parameter contract {path}: {reason}"
+                )
             }
-            Self::DuplicateParameterPath { path } => {
-                write!(f, "parameter path {path} is declared twice")
+            Self::DuplicateParameterPath { name, path } => {
+                write!(
+                    f,
+                    "topology {name}: parameter path {path} is declared twice"
+                )
             }
-            Self::DuplicateParameterIndex { index } => {
-                write!(f, "parameter index {index} is declared twice")
+            Self::DuplicateParameterIndex { name, index } => {
+                write!(
+                    f,
+                    "topology {name}: parameter index {index} is declared twice"
+                )
             }
         }
     }
@@ -195,26 +221,27 @@ impl std::error::Error for PhysicalValueError {}
 
 impl ParameterContract {
     /// Refuses a contract whose range is not finite, empty or reversed, whose exponential range
-    /// does not start above zero, or whose default is not in `[0, 1]`.
-    pub fn validate(&self) -> Result<(), TopologyError> {
+    /// does not start above zero, whose width or ratio overflows, or whose default is not in
+    /// `[0, 1]`. The index is checked by [`Topology::new`], which knows how many contracts there
+    /// are.
+    pub fn validate(&self) -> Result<(), InvalidContractReason> {
         let (low, high) = (self.physical_at_zero, self.physical_at_one);
-        let reason = if !low.is_finite() || !high.is_finite() {
-            Some(InvalidContractReason::NonFiniteBound)
-        } else if high <= low {
-            Some(InvalidContractReason::EmptyDomain)
-        } else if self.mapping == ParameterMapping::Exponential && low <= 0.0 {
-            Some(InvalidContractReason::ExponentialDomainNotPositive)
-        } else if !(0.0..=1.0).contains(&self.default_normalized) {
-            Some(InvalidContractReason::DefaultOutsideUnitInterval)
-        } else {
-            None
+        let span = match self.mapping {
+            ParameterMapping::Exponential => high / low,
+            ParameterMapping::Linear => high - low,
         };
-        match reason {
-            Some(reason) => Err(TopologyError::InvalidParameterContract {
-                path: self.path.clone(),
-                reason,
-            }),
-            None => Ok(()),
+        if !low.is_finite() || !high.is_finite() {
+            Err(InvalidContractReason::NonFiniteBound)
+        } else if high <= low {
+            Err(InvalidContractReason::EmptyDomain)
+        } else if self.mapping == ParameterMapping::Exponential && low <= 0.0 {
+            Err(InvalidContractReason::ExponentialDomainNotPositive)
+        } else if !span.is_finite() {
+            Err(InvalidContractReason::NonFiniteSpan)
+        } else if !(0.0..=1.0).contains(&self.default_normalized) {
+            Err(InvalidContractReason::DefaultOutsideUnitInterval)
+        } else {
+            Ok(())
         }
     }
 
@@ -303,28 +330,44 @@ pub const PLACEHOLDER_DEFAULT_NORMALIZED: f64 = 0.5;
 
 impl Topology {
     /// Declares a topology. Refuses a repeated path, then a repeated index, then the first
-    /// invalid contract, in the order of `patchback.patch.DeclareTopology`'s outcomes.
+    /// invalid contract, in the order of `patchback.patch.DeclareTopology`'s outcomes. A contract
+    /// whose index is not below the number of contracts is invalid: the indices of `n`
+    /// contracts are exactly `0..n`, the positions of the normalized target vector (§ 5.2).
     pub fn new(
         name: impl Into<String>,
         contracts: Vec<ParameterContract>,
     ) -> Result<Self, TopologyError> {
+        let name = name.into();
         let mut paths = HashSet::new();
         if let Some(contract) = contracts.iter().find(|c| !paths.insert(c.path.as_str())) {
             return Err(TopologyError::DuplicateParameterPath {
+                name,
                 path: contract.path.clone(),
             });
         }
         let mut indices = HashSet::new();
         if let Some(contract) = contracts.iter().find(|c| !indices.insert(c.index)) {
             return Err(TopologyError::DuplicateParameterIndex {
+                name,
                 index: contract.index,
             });
         }
-        contracts.iter().try_for_each(ParameterContract::validate)?;
-        Ok(Self {
-            name: name.into(),
-            contracts,
-        })
+        for contract in &contracts {
+            let in_target_vector = if contract.index < contracts.len() {
+                Ok(())
+            } else {
+                Err(InvalidContractReason::IndexOutsideTargetVector)
+            };
+            let checked = contract.validate().and(in_target_vector);
+            if let Err(reason) = checked {
+                return Err(TopologyError::InvalidParameterContract {
+                    name,
+                    path: contract.path.clone(),
+                    reason,
+                });
+            }
+        }
+        Ok(Self { name, contracts })
     }
 
     /// The fixed subtractive voice of § 5.2: eight contracts in the order of its table.

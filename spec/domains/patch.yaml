@@ -357,7 +357,7 @@ errors:
         type: patchback.patch.PatchId
 
   - name: patchback.patch.InvalidParameterContract
-    summary: A contract's default lies outside [0,1], its domain is empty, or an exponential domain does not start above zero.
+    summary: A contract's default lies outside [0,1], its domain is empty, an exponential domain does not start above zero, or its index is not below the number of contracts (indices are exactly 0..n-1).
     fields:
       - name: name
         type: patchback.patch.TopologyName
@@ -429,6 +429,8 @@ commands:
                 - c.default_normalized > 1
                 - c.physical_at_one <= c.physical_at_zero
                 - all: [c.mapping == Exponential, c.physical_at_zero <= 0]
+                - c.index < 0
+                - c.index >= parameters.count
         error: patchback.patch.InvalidParameterContract
         payload:
           patchback.patch.InvalidParameterContract:
@@ -798,6 +800,22 @@ commands:
         payload:
           patchback.patch.PatchNotFound:
             patch_id: input.patch_id
+      # The path is resolved before the value is read, so an unknown path answers whatever the
+      # value; then a non-finite value is refused; only then is a finite value clamped.
+      - name: unknown-path
+        external: the path names no parameter contract of the patch's topology
+        error: patchback.patch.UnknownParameterPath
+        payload:
+          patchback.patch.UnknownParameterPath:
+            patch_id: input.patch_id
+            path: input.path
+      - name: non-finite
+        external: the normalized value is NaN or infinite
+        error: patchback.patch.NonFiniteParameterValue
+        payload:
+          patchback.patch.NonFiniteParameterValue:
+            patch_id: input.patch_id
+            path: input.path
       - name: clamped
         when:
           any:
@@ -812,20 +830,6 @@ commands:
             path: input.path
             submitted: input.normalized_value
             applied: {expr: "max(0, min(1, input.normalized_value))"}
-      - name: non-finite
-        external: the normalized value is NaN or infinite
-        error: patchback.patch.NonFiniteParameterValue
-        payload:
-          patchback.patch.NonFiniteParameterValue:
-            patch_id: input.patch_id
-            path: input.path
-      - name: unknown-path
-        external: the path names no parameter contract of the patch's topology
-        error: patchback.patch.UnknownParameterPath
-        payload:
-          patchback.patch.UnknownParameterPath:
-            patch_id: input.patch_id
-            path: input.path
       - name: set
         moves: patchback.patch.Patch.edit
         instance: patch_id

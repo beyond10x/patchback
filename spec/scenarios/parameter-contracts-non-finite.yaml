@@ -36,6 +36,11 @@ timeline:
     input:
       patch_id: 7f0c0000-0000-4000-8000-000000000104
       path: attack
+      # Gap (ESS 0.68.0): a Decimal input cannot be NaN or infinite (.nan, .inf, NaN, Infinity and
+      # "NaN" are refused as ESS-AUTHOR-015, "expected Decimal, found null"). 0.5 stands in for
+      # NaN/Infinity; the outcome is external, and the refusal of NaN, +Infinity and -Infinity is
+      # held by crates/patchback-core/tests/parameter_contracts.rs
+      # (a_non_finite_value_is_refused_naming_the_parameter).
       normalized_value: 0.5
     outcome: non-finite
     error:

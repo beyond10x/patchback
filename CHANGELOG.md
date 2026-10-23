@@ -31,8 +31,9 @@ All notable changes to Patchback are recorded here. The format follows
   acceptance scenarios, and checks the generated documentation pages.
 - `patchback-core` parameter contracts: the `subtractive-mono/1` topology with its eight
   contracts of `DESIGN.md` § 5.2 (placeholder defaults), forward and inverse mappings, clamping
-  of normalized values with a recorded clamp, and refusal of non-finite values and invalid
-  contracts.
+  of normalized values with a recorded clamp, and refusal of non-finite values and of invalid
+  contracts (including indices other than 0..n-1 and ranges whose width or ratio overflows),
+  each refusal naming the topology.
 
 ### Changed
 
