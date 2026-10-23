@@ -25,10 +25,10 @@
     },
     {
       "area": "Patch",
-      "detail": "Eight parameters, each with an index, a stable path, a normalized-to-physical mapping, a physical range and a default. An out-of-range normalized value is clamped and the clamp recorded; a non-finite value is refused. Milestone A.",
+      "detail": "Eight parameters, each with an index, a stable path, a normalized-to-physical mapping and its inverse, a physical range and a default; the defaults are placeholders until the design sets them. An out-of-range normalized value is clamped and the clamp recorded; a non-finite value and an invalid contract are refused. Held by test subtractive_mono_declares_the_eight_contracts_in_design_order in crates/patchback-core/tests/parameter_contracts.rs.",
       "href": "/docs/reference/parameters",
       "label": "Parameter contracts for the subtractive voice",
-      "status": "planned"
+      "status": "shipped"
     },
     {
       "area": "Score",

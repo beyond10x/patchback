@@ -33,6 +33,11 @@ All notable changes to Patchback are recorded here. The format follows
   DESIGN.md § 8.1 model; `patchback-model` runs the pinned binary's `modelspec check` on it,
   refuses a binary that reports another version, and keeps a rejected model from training. CI
   installs the pinned binary by checksum and runs that check.
+- `patchback-core` parameter contracts: the `subtractive-mono/1` topology with its eight
+  contracts of `DESIGN.md` § 5.2 (placeholder defaults), forward and inverse mappings, clamping
+  of normalized values with a recorded clamp, and refusal of non-finite values and of invalid
+  contracts (including indices other than 0..n-1 and ranges whose width or ratio overflows),
+  each refusal naming the topology.
 
 ### Changed
 

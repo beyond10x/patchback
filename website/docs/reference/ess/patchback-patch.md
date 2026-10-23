@@ -291,11 +291,13 @@ It takes:
 - `name` — `patchback.patch.TopologyName`
 - `parameters` — `List<patchback.patch.ParameterContract>`
 
-It has three outcomes.
+It has four outcomes.
 
 **`duplicate-path`** — Taken when `not (distinct c in parameters by c.path as string)` holds of the input. No entity in this specification changes. It reports `patchback.patch.DuplicateParameterPath`, carrying `name`. It emits nothing. A test reaches it by constructing an input that satisfies that condition.
 
-**`invalid-contract`** — Taken when `exists c in parameters: ((c.default_normalized < 0 or c.default_normalized > 1 or c.physical_at_one <= c.physical_at_zero or (c.mapping == Exponential and c.physical_at_zero <= 0)))` holds of the input. No entity in this specification changes. It reports `patchback.patch.InvalidParameterContract`, carrying `name`. It emits nothing. A test reaches it by constructing an input that satisfies that condition.
+**`duplicate-index`** — Taken when `not (distinct c in parameters by c.index as integer)` holds of the input. No entity in this specification changes. It reports `patchback.patch.DuplicateParameterIndex`, carrying `name`. It emits nothing. A test reaches it by constructing an input that satisfies that condition.
+
+**`invalid-contract`** — Taken when `exists c in parameters: ((c.default_normalized < 0 or c.default_normalized > 1 or c.physical_at_one <= c.physical_at_zero or (c.mapping == Exponential and c.physical_at_zero <= 0) or c.index < 0 or c.index >= parameters.count))` holds of the input. No entity in this specification changes. It reports `patchback.patch.InvalidParameterContract`, carrying `name`. It emits nothing. A test reaches it by constructing an input that satisfies that condition.
 
 **`declared`** — The default branch, taken when no other outcome's condition matched. It creates a `patchback.patch.Topology`, which starts in `Declared`. The new instance's identity is published as `topology_id` on `patchback.patch.TopologyDeclared`. It emits `patchback.patch.TopologyDeclared`. It sets `name` from `input.name`, `parameters` from `input.parameters`, `admits_square_sine` from `"false"`, `admits_highpass_bandpass` from `"false"`, `admits_lfo` from `"false"`, `admits_delay` from `"false"` and `admits_noise` from `"false"`. A test reaches it by constructing an input that satisfies no other outcome's condition.
 
@@ -354,11 +356,11 @@ It has five outcomes.
 
 **`no-such-patch`** — Taken when the identity the command names is one no record carries, before any other answer for it. No entity in this specification changes. It reports `patchback.patch.PatchNotFound`, carrying `patch_id`. It emits nothing. A test reaches it by sending an identity no record carries, arranging nothing.
 
-**`clamped`** — Taken when `(normalized_value < 0 or normalized_value > 1)` holds of the input. It moves a `patchback.patch.Patch` from `Compiled`, `Loaded` and `Validated` to `Loaded`, along the declared move `edit`. The instance is the one named by the input field `patch_id`. It emits `patchback.patch.ParameterClamped`. A test reaches it by constructing an input that satisfies that condition.
+**`unknown-path`** — Decided outside the input: the path names no parameter contract of the patch's topology. No predicate over the input reaches this branch, and saying `when: false` instead would have claimed it is unreachable, which is a different and false statement. No entity in this specification changes. It reports `patchback.patch.UnknownParameterPath`, carrying `patch_id` and `path`. It emits nothing. A test reaches it by injecting the declared fault, because no input can.
 
 **`non-finite`** — Decided outside the input: the normalized value is NaN or infinite. No predicate over the input reaches this branch, and saying `when: false` instead would have claimed it is unreachable, which is a different and false statement. No entity in this specification changes. It reports `patchback.patch.NonFiniteParameterValue`, carrying `patch_id` and `path`. It emits nothing. A test reaches it by injecting the declared fault, because no input can.
 
-**`unknown-path`** — Decided outside the input: the path names no parameter contract of the patch's topology. No predicate over the input reaches this branch, and saying `when: false` instead would have claimed it is unreachable, which is a different and false statement. No entity in this specification changes. It reports `patchback.patch.UnknownParameterPath`, carrying `patch_id` and `path`. It emits nothing. A test reaches it by injecting the declared fault, because no input can.
+**`clamped`** — Taken when `(normalized_value < 0 or normalized_value > 1)` holds of the input. It moves a `patchback.patch.Patch` from `Compiled`, `Loaded` and `Validated` to `Loaded`, along the declared move `edit`. The instance is the one named by the input field `patch_id`. It emits `patchback.patch.ParameterClamped`. A test reaches it by constructing an input that satisfies that condition.
 
 **`set`** — The default branch, taken when no other outcome's condition matched. It moves a `patchback.patch.Patch` from `Compiled`, `Loaded` and `Validated` to `Loaded`, along the declared move `edit`. The instance is the one named by the input field `patch_id`. It emits `patchback.patch.ParameterSet`. A test reaches it by constructing an input that satisfies no other outcome's condition.
 
@@ -518,6 +520,16 @@ It carries:
 
 Reported by `patchback.patch.LoadPatch` on its `duplicate-id` outcome.
 
+### `DuplicateParameterIndex`
+
+Two contracts of one topology claim the same position in the normalized target vector.
+
+It carries:
+
+- `name` — `patchback.patch.TopologyName`
+
+Reported by `patchback.patch.DeclareTopology` on its `duplicate-index` outcome.
+
 ### `DuplicateParameterPath`
 
 It carries:
@@ -548,7 +560,7 @@ Reported by `patchback.patch.ValidatePatch` on its `incompatible-rates` outcome.
 
 ### `InvalidParameterContract`
 
-A contract's default lies outside [0,1], its domain is empty, or an exponential domain does not start above zero.
+A contract's default lies outside [0,1], its domain is empty, an exponential domain does not start above zero, or its index is not below the number of contracts (indices are exactly 0..n-1).
 
 It carries:
 
@@ -724,4 +736,4 @@ It may invoke [`AdmitModuleFamily`](#admitmodulefamily), [`CompilePatch`](#compi
 
 ---
 
-Generated from patchback v1 · model digest `37a05f66a63a2719f841a1723151e4fbd96f99400520c16a476544afa0d255db` · contract digest `slice-sha256/2:7a385b9a23f0a1c18301221077ddffa1684d60c93131c35d58abfba59154ce03`. Do not edit this file; change the specification and regenerate it with `task docs-generate`.
+Generated from patchback v1 · model digest `f80f0d134d35e026feb52f9bb8282b711ee918cf0ec4b264e03655d5d2ec45a4` · contract digest `slice-sha256/2:92596d22777a06b770c273b2e6ea1c8f429b95fea670bf11679844e5c298d5a9`. Do not edit this file; change the specification and regenerate it with `task docs-generate`.

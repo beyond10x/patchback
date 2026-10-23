@@ -110,13 +110,17 @@ pub const CAPABILITIES: &[Capability] = &[
         "A versioned, human-readable patch file in physical units, read by every command that takes a patch and written in canonical form. Unknown versions, duplicate keys or IDs, malformed numbers, unsupported rates and unbounded lengths are refused.",
         "/docs/reference/files#patch-patch",
     ),
-    planned(
-        A,
-        "Patch",
-        "Parameter contracts for the subtractive voice",
-        "Eight parameters, each with an index, a stable path, a normalized-to-physical mapping, a physical range and a default. An out-of-range normalized value is clamped and the clamp recorded; a non-finite value is refused.",
-        "/docs/reference/parameters",
-    ),
+    Capability {
+        area: "Patch",
+        label: "Parameter contracts for the subtractive voice",
+        detail: "Eight parameters, each with an index, a stable path, a normalized-to-physical mapping and its inverse, a physical range and a default; the defaults are placeholders until the design sets them. An out-of-range normalized value is clamped and the clamp recorded; a non-finite value and an invalid contract are refused.",
+        status: "shipped",
+        evidence: Some(
+            "crates/patchback-core/tests/parameter_contracts.rs::subtractive_mono_declares_the_eight_contracts_in_design_order",
+        ),
+        milestone: None,
+        href: "/docs/reference/parameters",
+    },
     planned(
         A,
         "Score",
@@ -561,9 +565,16 @@ mod tests {
 
     #[test]
     fn only_shipped_capabilities_name_a_test() {
+        assert!(count(CAPABILITIES, "shipped") > 0);
         for capability in CAPABILITIES {
             assert_eq!(
                 capability.evidence.is_some(),
+                capability.status == "shipped",
+                "{}",
+                capability.label
+            );
+            assert_eq!(
+                capability.milestone.is_none(),
                 capability.status == "shipped",
                 "{}",
                 capability.label
@@ -575,9 +586,14 @@ mod tests {
     fn the_page_counts_the_capabilities_and_renders_the_table() {
         let page = page(CAPABILITIES, AS_OF);
         let shipped = count(CAPABILITIES, "shipped");
+        let decided = count(CAPABILITIES, "decided");
+        assert_eq!(
+            shipped + decided + count(CAPABILITIES, "planned"),
+            CAPABILITIES.len()
+        );
         assert!(page.contains(&format!(
-            "{shipped} shipped, 0 decided, {} planned",
-            CAPABILITIES.len() - shipped
+            "{shipped} shipped, {decided} decided, {} planned",
+            CAPABILITIES.len() - shipped - decided
         )));
         assert!(page.contains("import status from '@site/data/status.json';"));
         assert!(page.contains("<StatusTable data={status}"));

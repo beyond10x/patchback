@@ -23,6 +23,7 @@ types:
   # UNMAPPED: DESIGN.md section 5.1 says parameters are addressed by "stable module/parameter
   # identifiers" and section 10 types ControlEvent.parameter_path as a String; neither gives the
   # path syntax (a bare name such as attack, or module-qualified such as adsr.attack). Open question.
+  # The scenarios and patchback-core use bare snake_case names until the owner decides.
   - name: patchback.patch.ParameterPath
     kind: newtype
     of: String
@@ -356,12 +357,18 @@ errors:
         type: patchback.patch.PatchId
 
   - name: patchback.patch.InvalidParameterContract
-    summary: A contract's default lies outside [0,1], its domain is empty, or an exponential domain does not start above zero.
+    summary: A contract's default lies outside [0,1], its domain is empty, an exponential domain does not start above zero, or its index is not below the number of contracts (indices are exactly 0..n-1).
     fields:
       - name: name
         type: patchback.patch.TopologyName
 
   - name: patchback.patch.DuplicateParameterPath
+    fields:
+      - name: name
+        type: patchback.patch.TopologyName
+
+  - name: patchback.patch.DuplicateParameterIndex
+    summary: Two contracts of one topology claim the same position in the normalized target vector.
     fields:
       - name: name
         type: patchback.patch.TopologyName
@@ -405,6 +412,12 @@ commands:
         payload:
           patchback.patch.DuplicateParameterPath:
             name: input.name
+      - name: duplicate-index
+        when: {not: {distinct: {in: parameters, as: c, by: c.index}}}
+        error: patchback.patch.DuplicateParameterIndex
+        payload:
+          patchback.patch.DuplicateParameterIndex:
+            name: input.name
       - name: invalid-contract
         when:
           exists:
@@ -416,6 +429,8 @@ commands:
                 - c.default_normalized > 1
                 - c.physical_at_one <= c.physical_at_zero
                 - all: [c.mapping == Exponential, c.physical_at_zero <= 0]
+                - c.index < 0
+                - c.index >= parameters.count
         error: patchback.patch.InvalidParameterContract
         payload:
           patchback.patch.InvalidParameterContract:
@@ -785,6 +800,22 @@ commands:
         payload:
           patchback.patch.PatchNotFound:
             patch_id: input.patch_id
+      # The path is resolved before the value is read, so an unknown path answers whatever the
+      # value; then a non-finite value is refused; only then is a finite value clamped.
+      - name: unknown-path
+        external: the path names no parameter contract of the patch's topology
+        error: patchback.patch.UnknownParameterPath
+        payload:
+          patchback.patch.UnknownParameterPath:
+            patch_id: input.patch_id
+            path: input.path
+      - name: non-finite
+        external: the normalized value is NaN or infinite
+        error: patchback.patch.NonFiniteParameterValue
+        payload:
+          patchback.patch.NonFiniteParameterValue:
+            patch_id: input.patch_id
+            path: input.path
       - name: clamped
         when:
           any:
@@ -799,20 +830,6 @@ commands:
             path: input.path
             submitted: input.normalized_value
             applied: {expr: "max(0, min(1, input.normalized_value))"}
-      - name: non-finite
-        external: the normalized value is NaN or infinite
-        error: patchback.patch.NonFiniteParameterValue
-        payload:
-          patchback.patch.NonFiniteParameterValue:
-            patch_id: input.patch_id
-            path: input.path
-      - name: unknown-path
-        external: the path names no parameter contract of the patch's topology
-        error: patchback.patch.UnknownParameterPath
-        payload:
-          patchback.patch.UnknownParameterPath:
-            patch_id: input.patch_id
-            path: input.path
       - name: set
         moves: patchback.patch.Patch.edit
         instance: patch_id
