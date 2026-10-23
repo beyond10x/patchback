@@ -107,6 +107,63 @@ fn an_unknown_subcommand_is_named_and_exits_2() {
     }
 }
 
+/// `patchback <command> --help` and `-h` print the usage to stdout and exit 0.
+fn assert_help_after(command: &[&str]) {
+    for flag in ["--help", "-h"] {
+        let mut argv = command.to_vec();
+        argv.push(flag);
+        let out = run(&argv);
+        assert_eq!(out.status.code(), Some(0), "{argv:?}");
+        assert!(out.stderr.is_empty(), "{argv:?}: {}", text(&out.stderr));
+        assert_usage(&text(&out.stdout));
+    }
+}
+
+#[test]
+fn help_after_patch_prints_usage_and_exits_0() {
+    assert_help_after(&["patch"]);
+}
+
+#[test]
+fn help_after_patch_validate_prints_usage_and_exits_0() {
+    assert_help_after(&["patch", "validate"]);
+}
+
+#[test]
+fn help_after_render_prints_usage_and_exits_0() {
+    assert_help_after(&["render"]);
+}
+
+#[test]
+fn help_after_analyze_prints_usage_and_exits_0() {
+    assert_help_after(&["analyze"]);
+}
+
+#[test]
+fn help_after_compare_prints_usage_and_exits_0() {
+    assert_help_after(&["compare"]);
+}
+
+#[test]
+fn help_after_fit_prints_usage_and_exits_0() {
+    assert_help_after(&["fit"]);
+}
+
+#[test]
+fn help_after_an_argument_of_a_recognised_command_prints_usage_and_exits_0() {
+    assert_help_after(&["render", "song.patch"]);
+    assert_help_after(&["patch", "validate", "song.patch"]);
+}
+
+#[test]
+fn help_after_an_unknown_command_still_names_it_and_exits_2() {
+    for argv in [&["generate", "--help"][..], &["patch", "render", "-h"][..]] {
+        let out = run(argv);
+        assert_eq!(out.status.code(), Some(2), "{argv:?}");
+        assert!(out.stdout.is_empty(), "{argv:?}");
+    }
+}
+
 #[test]
 fn patch_without_validate_is_refused_and_exits_2() {
     let out = run(&["patch"]);

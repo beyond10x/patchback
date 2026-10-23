@@ -9,7 +9,7 @@
 //!
 //! | Status | Meaning |
 //! |---|---|
-//! | 0 | `--help`, `-h` or `--version` printed to stdout |
+//! | 0 | `--help`, `-h` or `--version` printed to stdout; also `--help` or `-h` anywhere after a recognised command (`patch`, `patch validate`, `render`, `analyze`, `compare`, `fit`), which prints the usage |
 //! | 2 | usage error: no arguments (usage to stderr), an unknown command, or `patch` without `validate` |
 //! | 3 | a recognised command that is not implemented yet |
 //!
@@ -48,6 +48,9 @@ enum Outcome {
 
 fn dispatch(args: &[String]) -> Outcome {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    if arguments_of_recognised(&args).is_some_and(|rest| rest.iter().copied().any(is_help)) {
+        return Outcome::Stdout(USAGE_TEXT.to_owned());
+    }
     match args.as_slice() {
         [] => Outcome::Stderr(USAGE_TEXT.to_owned(), USAGE),
         ["--help" | "-h", ..] => Outcome::Stdout(USAGE_TEXT.to_owned()),
@@ -60,6 +63,22 @@ fn dispatch(args: &[String]) -> Outcome {
         ["patch", other, ..] => unknown(&format!("patch {other}")),
         [command @ ("render" | "analyze" | "compare" | "fit"), ..] => not_implemented(command),
         [other, ..] => unknown(other),
+    }
+}
+
+fn is_help(arg: &str) -> bool {
+    matches!(arg, "--help" | "-h")
+}
+
+/// The arguments after a recognised command (`patch`, `patch validate`, `render`, `analyze`,
+/// `compare`, `fit`), or `None` when the command line does not start with one. `patch` followed
+/// by anything but a help flag is not recognised here, so `patch render -h` stays unknown.
+fn arguments_of_recognised<'a>(args: &'a [&'a str]) -> Option<&'a [&'a str]> {
+    match args {
+        ["patch", "validate", rest @ ..] => Some(rest),
+        ["patch", rest @ ..] if rest.first().is_none_or(|arg| is_help(arg)) => Some(rest),
+        ["render" | "analyze" | "compare" | "fit", rest @ ..] => Some(rest),
+        _ => None,
     }
 }
 
