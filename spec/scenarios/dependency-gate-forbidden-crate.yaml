@@ -1,6 +1,7 @@
 # DESIGN.md 3: ML / tensor / numerical crates are forbidden (e.g. ndarray, rustfft, tch, burn);
 # DSP, serialization and PRNG are internal modules; invariant 7: no hidden third-party ML/DSP
-# stack. Every category but audio I/O is refused, and an unknown audit is refused.
+# stack. Every category but audio I/O and CLI parsing is refused (CLI parsing admits only clap,
+# dependency-gate-cli-parser), and an unknown audit is refused.
 type: ess-scenario/1
 domain: patchback.dependency
 scenario: dependency-gate-forbidden-crate

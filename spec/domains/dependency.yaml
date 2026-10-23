@@ -2,8 +2,9 @@ domain: patchback.dependency
 
 summary: >-
   The dependency gate (DESIGN.md § 3, § 12.2, invariant 7): an audit of the application-level crates
-  of one revision. External audio I/O is the only permitted category, as at most one approved
-  backend behind an optional feature; every other third-party application crate is refused.
+  of one revision. Two categories are permitted: external audio I/O, as at most one approved
+  backend behind an optional feature, and CLI parsing, as the one approved `clap`; every other
+  third-party application crate is refused.
 
 # UNMAPPED: § 3 applies the rule to "application-level dependencies" and exempts the upstream and
 # transitive build requirements of ModelSpec and the audio backend, without saying how the audit
@@ -24,12 +25,13 @@ types:
     naming:
       summary: A crates.io package name as it appears in the dependency graph.
 
-  # The § 3 table's categories; § 1 "External audio I/O is the only permitted application
-  # dependency category".
+  # The § 3 table's categories; the header's dependency policy permits external audio I/O and CLI
+  # parsing (clap, derive) only.
   - name: patchback.dependency.CrateCategory
     kind: enum
     variants:
       - AudioIo
+      - CliParsing
       - MachineLearning
       - Tensor
       - Numerical
@@ -62,6 +64,9 @@ entities:
       - name: audio_backend_count
         type: Integer
         summary: How many audio I/O backends the audit has admitted; at most one (§ 3).
+      - name: cli_parser
+        type: Optional<patchback.dependency.CrateName>
+        summary: The admitted CLI-parsing crate, if any; only `clap` (§ 3).
     # UNMAPPED: § 3 "CI audits dependency changes and rejects unreviewed additions" and ADR-007
     # "approve at most one backend for live audio later" do not say where an approval is recorded
     # (an allow-list file, an ADR, a reviewer sign-off). The approval arrives as an input flag
@@ -94,9 +99,9 @@ errors:
 
   - name: patchback.dependency.ForbiddenCrate
     summary: >-
-      A third-party application crate outside the audio I/O category: ML, tensor, numerical, DSP,
-      mathematics, serialization, PRNG, test or application-framework crates are internal Rust
-      modules or `std` only (§ 1, § 3, invariant 7).
+      A third-party application crate outside the permitted categories: ML, tensor, numerical,
+      DSP, mathematics, serialization, PRNG, test or application-framework crates are internal
+      Rust modules or `std` only (§ 1, § 3, invariant 7), and the one CLI-parsing crate is `clap`.
     fields:
       - name: crate_name
         type: patchback.dependency.CrateName
@@ -104,7 +109,7 @@ errors:
         type: patchback.dependency.CrateCategory
 
   - name: patchback.dependency.UnapprovedCrate
-    summary: An audio I/O crate that is not explicitly approved; CI rejects unreviewed additions (§ 3, § 12.2).
+    summary: An audio I/O or CLI-parsing crate that is not explicitly approved; CI rejects unreviewed additions (§ 3, § 12.2).
     fields:
       - name: crate_name
         type: patchback.dependency.CrateName
@@ -146,6 +151,7 @@ commands:
           revision: input.revision
           audio_backend: {cleared: true}
           audio_backend_count: 0
+          cli_parser: {cleared: true}
         emits: [patchback.dependency.DependencyAuditStarted]
         payload:
           patchback.dependency.DependencyAuditStarted:
@@ -159,7 +165,7 @@ commands:
       display: Record a crate
       summary: >-
         Record one third-party application crate of the revision; only one approved audio I/O
-        backend behind an optional feature is admitted.
+        backend behind an optional feature, and an approved `clap` for CLI parsing, are admitted.
     input:
       - name: dependency_audit_id
         type: patchback.dependency.DependencyAuditId
@@ -176,12 +182,20 @@ commands:
         example: true
     outcomes:
       - name: forbidden-crate
-        when: category != AudioIo
+        when: {all: [category != AudioIo, category != CliParsing]}
         error: patchback.dependency.ForbiddenCrate
         payload:
           patchback.dependency.ForbiddenCrate:
             crate_name: input.crate_name
             category: input.category
+      - name: cli-parser-not-clap
+        when: {all: [category == CliParsing, crate_name != "clap"]}
+        error: patchback.dependency.ForbiddenCrate
+        payload:
+          patchback.dependency.ForbiddenCrate:
+            crate_name: input.crate_name
+            category: input.category
+        summary: "`clap` is the one reviewed CLI-parsing crate (§ 3); any other is refused, approved or not."
       - name: unapproved-crate
         when: approved == false
         error: patchback.dependency.UnapprovedCrate
@@ -189,7 +203,7 @@ commands:
           patchback.dependency.UnapprovedCrate:
             crate_name: input.crate_name
       - name: not-optional
-        when: behind_optional_feature == false
+        when: {all: [category == AudioIo, behind_optional_feature == false]}
         error: patchback.dependency.AudioBackendNotOptional
         payload:
           patchback.dependency.AudioBackendNotOptional:
@@ -208,6 +222,7 @@ commands:
           patchback.dependency.AuditConcluded:
             state: {subject: state}
       - name: second-audio-backend
+        when: category == AudioIo
         when_subject:
           predicate: audio_backend_count >= 1
         error: patchback.dependency.SecondAudioBackend
@@ -215,6 +230,20 @@ commands:
           patchback.dependency.SecondAudioBackend:
             crate_name: input.crate_name
             audio_backend: {subject: audio_backend}
+      - name: cli-parser-admitted
+        when: category == CliParsing
+        updates: patchback.dependency.DependencyAudit
+        instance: dependency_audit_id
+        sets:
+          cli_parser: input.crate_name
+        emits: [patchback.dependency.CliParserAdmitted]
+        payload:
+          patchback.dependency.CliParserAdmitted:
+            dependency_audit_id: input.dependency_audit_id
+            crate_name: input.crate_name
+        summary: >-
+          The approved `clap` is admitted. It is not an audio backend, so it neither counts toward
+          nor is refused by the one-backend limit, and it needs no optional feature.
       - name: audio-backend-admitted
         updates: patchback.dependency.DependencyAudit
         instance: dependency_audit_id
@@ -234,7 +263,8 @@ commands:
       display: Conclude the dependency audit
       summary: >-
         Pass the audit: every recorded crate was admitted, so the revision has no third-party
-        application crate beyond at most one approved optional audio I/O backend.
+        application crate beyond clap with its reviewed closure and at most one approved optional
+        audio I/O backend.
     input:
       - name: dependency_audit_id
         type: patchback.dependency.DependencyAuditId
@@ -275,6 +305,13 @@ events:
       - name: crate_name
         type: patchback.dependency.CrateName
 
+  - name: patchback.dependency.CliParserAdmitted
+    fields:
+      - name: dependency_audit_id
+        type: patchback.dependency.DependencyAuditId
+      - name: crate_name
+        type: patchback.dependency.CrateName
+
   - name: patchback.dependency.DependencyAuditPassed
     fields:
       - name: dependency_audit_id
@@ -295,6 +332,8 @@ views:
         type: Optional<patchback.dependency.CrateName>
       - name: audio_backend_count
         type: Integer
+      - name: cli_parser
+        type: Optional<patchback.dependency.CrateName>
     naming:
       wire: dependency-audits
       display: Dependency audits

@@ -38,6 +38,7 @@ scenarios:
   - scenarios/dense-data-files-shape-mismatch.yaml
   - scenarios/dense-data-files-written.yaml
   - scenarios/dependency-gate-audio-backend.yaml
+  - scenarios/dependency-gate-cli-parser.yaml
   - scenarios/dependency-gate-forbidden-crate.yaml
   - scenarios/dependency-gate-no-crates-passes.yaml
   - scenarios/engine-baseline-target-met-at-boundary.yaml

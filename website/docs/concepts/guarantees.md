@@ -35,7 +35,8 @@ and identifiers, malformed numbers, unsupported rates and unbounded lengths.
 
 Patchback is Rust and the standard library. It uses no ML, tensor, DSP, FFT, maths or
 serialization crates. It reads and writes WAV itself, so offline use needs no third-party
-runtime crate at all. Live sound-card I/O, when it comes, uses at most one audio I/O crate
+runtime crate beyond `clap`, the one reviewed command-line parser, and the packages it brings in.
+Live sound-card I/O, when it comes, uses at most one audio I/O crate
 behind an optional feature. Training goes through a pinned, tested release of
 [ModelSpec](https://beyond10x.github.io/modelspec/)
 ([GitHub](https://github.com/beyond10x/modelspec)); the application contracts are specified

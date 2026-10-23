@@ -12,7 +12,8 @@ All notable changes to Patchback are recorded here. The format follows
   `patchback-audio`, `patchback-analysis`, `patchback-dataset`, `patchback-model` and
   `patchback-fit`, and `patchback-cli` with the `patchback` binary, which recognises `patch
   validate`, `render`, `analyze`, `compare` and `fit` but implements none of them yet. No
-  application crate takes a third-party crate, and a test holds that.
+  application crate takes a third-party crate other than `clap` and its reviewed closure, and a
+  test holds that.
 - `DESIGN.md` revision 0.3: the technical design. The product and its CLI are named `patchback`,
   ESS is required for the specification only (ADR-008), the patch studio is a developer tool
   outside the runtime dependency policy (ADR-011), and § 17 lists the open questions.
@@ -28,3 +29,9 @@ All notable changes to Patchback are recorded here. The format follows
 - `task check`: validates the specification, runs its conformance suite against the interpreted
   reference target, validates the planning store, checks that every story names existing
   acceptance scenarios, and checks the generated documentation pages.
+
+### Changed
+
+- `patchback` parses its command line with clap derive, the one reviewed CLI crate (`DESIGN.md`
+  revision 0.4, § 3); help, version and usage errors follow clap (usage errors exit 2), and the
+  dependency gate admits `clap` with exactly its reviewed `Cargo.lock` closure.

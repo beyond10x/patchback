@@ -1,10 +1,10 @@
 # Patchback — Technical Design
 
 **Status:** Proposed architecture / implementation-ready MVP scope  
-**Revision:** 0.3  
-**Date:** 2026-10-22  
+**Revision:** 0.4  
+**Date:** 2026-10-23  
 **Primary stack:** Rust + [Beyond10x ModelSpec](https://github.com/beyond10x/modelspec)  
-**Dependency policy:** No third-party ML, DSP, mathematics, serialization, or application frameworks. External audio I/O is the **only** permitted application dependency category.
+**Dependency policy:** No third-party ML, DSP, mathematics, serialization, or application frameworks. External audio I/O and CLI parsing (`clap` with `derive`, the one reviewed command-line crate) are the **only** permitted application dependency categories.
 
 > **Design principle:** Do not synthesize opaque audio with a neural decoder. Infer a small, executable, editable DSP program and the events that drive it, render that program, and improve it against the reference recording.
 
@@ -71,6 +71,7 @@ Sources: [ModelSpec README](https://github.com/beyond10x/modelspec), [current CL
 | Model specification, training | Beyond10x **ModelSpec**, pinned to a tested version/commit |
 | Audio file I/O | Implement minimal WAV reader/writer with `std`; no crate required for offline MVP |
 | Live sound-card I/O | At most **one** external audio I/O backend (e.g. `cpal`), isolated behind an optional feature |
+| CLI parsing | clap (derive), required by the workspace rule; the one reviewed command-line crate |
 | DSP, FFT, pitch/onset, optimizer | Internal Rust modules only |
 | Serialization, PRNG, tests | Internal Rust modules and `std` |
 | ML / tensor / numerical crates | **Forbidden** (e.g. PyTorch, TorchSynth, ndarray, rustfft, tch, burn) |
@@ -78,7 +79,7 @@ Sources: [ModelSpec README](https://github.com/beyond10x/modelspec), [current CL
 | ESS | Required **specification** tool: `spec/` holds the application contracts and conformance scenarios, validated by `task check`; **not** a runtime or ML dependency (ADR-008) |
 | Patch studio (`studio/`) | Separate developer tool in Vue 3 + TypeScript + Vite + pnpm, **outside** this policy (ADR-011, § 16). It is not linked into, shipped with or required by the Rust application; its live server half is Rust `std` only |
 
-The rule applies to application-level dependencies. ModelSpec and an optional audio backend have their own upstream/transitive build requirements; these do **not** grant permission to add unrelated application dependencies. CI audits dependency changes and rejects unreviewed additions. An offline first milestone can be built with **zero** third-party runtime crates.
+The rule applies to application-level dependencies. ModelSpec, an optional audio backend and `clap` have their own upstream/transitive build requirements; these do **not** grant permission to add unrelated application dependencies. CI audits dependency changes and rejects unreviewed additions: the `Cargo.lock` gate admits `clap` and exactly the reviewed packages of its resolved closure, and a package that later enters that closure fails the gate until it is reviewed. An offline first milestone can be built with no third-party runtime crate beyond `clap` and that closure.
 
 ## 4. End-to-end architecture
 
@@ -444,7 +445,7 @@ Use a small internally parsed **line-oriented, versioned** format for `.patch`, 
 | ModelSpec bridge | `.mspec` checks, CPU training succeeds on **real generated data** (not only its built-in synthetic teacher), weights export, inference test passes |
 | Sound matching | On a held-out synthetic set, the closed-loop optimizer reduces median audio loss versus a fixed default-patch baseline; raw-model-only result is also reported |
 | External audio | At least one independently recorded isolated monophonic synth note produces a valid editable patch, reconstructed WAV, and diagnostic report |
-| Dependency gate | Dependency audit shows no extra application crates beyond an explicitly approved optional audio I/O backend and pinned ModelSpec tooling |
+| Dependency gate | Dependency audit shows no extra application crates beyond `clap` (CLI parsing) with its reviewed closure, an explicitly approved optional audio I/O backend and pinned ModelSpec tooling |
 
 For the first quality review, target **≥20% reduction in median normalized audio loss** versus the default patch over a seeded holdout set; treat this as a **go/no-go experiment target**, not a guaranteed result. Record wall-clock time, render evaluations, and listening examples alongside numerical metrics. Maintain a fixed sample-rate/build/device configuration when comparing runs.
 
@@ -589,6 +590,7 @@ What this document does not settle. Each item is an `UNMAPPED:` marker in `spec/
 
 ## Changelog
 
+- **0.4 (2026-10-23):** § 3 and the dependency policy admit CLI parsing as a second permitted category: `clap` with `derive`, required by the workspace rule, is the one reviewed command-line crate, and the `Cargo.lock` gate admits exactly its reviewed closure; § 12.2's dependency gate names it.
 - **0.3 (2026-10-22):** § 5.1 `Node`/`Edge` agree with the specification (flat edge record, nested values) and the MVP ports are listed; § 5.2 gains the default column required by invariant 2, open as OQ-1; § 10 binds a sequence to a sample rate, not one patch, so one sequence drives every fit candidate, and an out-of-range control value is clamped per § 5.2 (OQ-27); § 11 adds the versioned `trace.events` artifact; § 3, § 4.1 and ADR-011 admit the patch studio as a developer tool outside the runtime policy; new § 16 (patch studio, spectra computed in Rust) and § 17 (open questions, OQ-1 to OQ-28).
 - **0.2 (2026-10-22):** ESS is a required specification tool (ADR-008).
 

@@ -6,7 +6,7 @@ at [README.md](README.md); the design is [DESIGN.md](DESIGN.md).
 
 ## State
 
-Specification only (DESIGN.md revision 0.3). No application code exists yet; `studio/` holds the patch studio prototype on fixture data. `spec/` holds the ESS domains and
+Milestone A in progress (DESIGN.md revision 0.4): the workspace crates and the `patchback` CLI skeleton exist, no command is implemented yet; `studio/` holds the patch studio prototype on fixture data. `spec/` holds the ESS domains and
 the authored conformance scenarios; `.engineering/` holds the AEP planning store with one epic per
 DESIGN.md § 13 milestone and draft stories whose acceptance is a list of named scenarios. The first
 implementation slice is DESIGN.md § 15 (Milestone A, no ML).
