@@ -6,6 +6,15 @@ All notable changes to Patchback are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `patchback compare --reference <wav> --candidate <wav>`, `patchback-fit` and
+  `patchback_analysis::cross_correlation` (story audio-comparison): the candidate is aligned by
+  up to the provisional 4 800 frames, then the log-spectral, envelope, transient and band-energy
+  terms and their weighted sum by the DESIGN.md weights 0.45, 0.25, 0.15 and 0.15 are printed as
+  `key value` lines with the lag; clips at different rates and lengths alignment cannot absorb
+  are refused with one line and exit 1.
+
 ## [0.2.0] - 2026-10-23
 
 ### Added

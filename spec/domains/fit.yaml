@@ -701,10 +701,19 @@ commands:
     # predicate reads one row and cannot compare it with a second, so the mismatch stays external.
     # UNMAPPED: whether the rate refusal is kept for a future second internal rate, or dropped as
     # unreachable while every clip is 48 kHz, is the owner's call.
+    # Kept for now: patchback_fit::compare checks it before any length or alignment check.
     # UNMAPPED: DESIGN.md 9.1 says "Time alignment and note matching must be performed before
     # computing these losses" and states no tolerance: how far two lengths may differ before
     # alignment cannot absorb it (a fixed frame count, a fraction of the reference, or the note
     # tail) is not settled. Open question for the owner.
+    # Implemented by patchback_fit::compare and `patchback compare` (story audio-comparison): the
+    # weights are the DESIGN.md 9.1 initial values as constants (patchback_fit::LOSS_WEIGHTS) and
+    # the command line takes none, so input.weights is always those values; the tolerance is the
+    # provisional patchback_fit::ALIGNMENT_TOLERANCE_FRAMES, 4 800 frames. The implemented refusals
+    # carry the two rates and the two frame counts, which a clip id here does not.
+    # UNMAPPED: no outcome covers a clip longer than the analysis bound of 60 s, which an imported
+    # clip may exceed (it may run to 10 minutes). The implementation refuses it with
+    # patchback.analysis.DurationOverBound, as the analysis does. Open question for the owner.
     outcomes:
       - name: unknown-reference
         when_related: {via: input.reference_clip_id, exists: false}

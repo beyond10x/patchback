@@ -16,6 +16,8 @@
 //!   confidence, refused as [`AnalysisError::PitchAmbiguous`] below [`F0_CONFIDENCE_THRESHOLD`], as
 //!   [`AnalysisError::PitchOutOfRange`] outside [`F0_MIN_HZ`] to [`F0_MAX_HZ`] and as
 //!   [`AnalysisError::ClipTooShortForPitch`] in a clip too short to search.
+//! - [`cross_correlation`]: `sum_n a[n] b[n + d]` over a bounded lag range, by blocks of [`fft`],
+//!   for the time alignment of the comparison loss (DESIGN.md § 9.1).
 //! - [`analyze`]: the whole of `patchback analyze` over one clip.
 //!
 //! Every function refuses a non-finite input value ([`AnalysisError::NonFiniteSamples`]) and
@@ -32,6 +34,7 @@
 
 mod analyze;
 mod complex;
+mod correlation;
 mod descriptors;
 mod error;
 mod fft;
@@ -43,6 +46,7 @@ pub use analyze::{
     Analysis, AnalysisConfig, FrameDescriptors, StftAnalysis, StftConfig, analyze, analyze_clip,
 };
 pub use complex::Complex;
+pub use correlation::{cross_correlation, cross_correlation_fft_length};
 pub use descriptors::{
     BAND_COUNT, log_band_energies, peak, rms, spectral_centroid, spectral_flatness, spectral_flux,
     spectral_rolloff,

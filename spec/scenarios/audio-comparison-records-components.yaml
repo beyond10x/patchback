@@ -1,7 +1,7 @@
 # DESIGN.md 9.1: four loss components, a weighted sum, and "The loss code must log its component
 # values for every candidate." The component values are measured by the loss code (generated);
-# the weights used are recorded with the comparison. The weights are illustrative: DESIGN.md 9.1
-# sets none (UNMAPPED in spec/domains/fit.yaml, LossWeights).
+# the weights used are recorded with the comparison. The weights are the initial values of
+# DESIGN.md 9.1, the ones the loss code uses (patchback_fit::LOSS_WEIGHTS).
 type: ess-scenario/1
 domain: patchback.fit
 scenario: audio-comparison-records-components
@@ -50,14 +50,14 @@ timeline:
     input:
       reference_clip_id: {$instance: reference}
       candidate_clip_id: {$instance: candidate}
-      weights: {log_spectral: 0.4, envelope: 0.3, transient: 0.2, band_energy: 0.1}
+      weights: {log_spectral: 0.45, envelope: 0.25, transient: 0.15, band_energy: 0.15}
     outcome: compared
     events:
       - event: patchback.fit.AudioCompared
         payload:
           reference_clip_id: {$instance: reference}
           candidate_clip_id: {$instance: candidate}
-          weights: {log_spectral: 0.4, envelope: 0.3, transient: 0.2, band_energy: 0.1}
+          weights: {log_spectral: 0.45, envelope: 0.25, transient: 0.15, band_energy: 0.15}
     capture: {instance: comparison, event: patchback.fit.AudioCompared, field: comparison_id}
 
   - at: 2026-10-22T11:00:01Z
@@ -66,7 +66,7 @@ timeline:
     input:
       reference_clip_id: {$instance: reference}
       candidate_clip_id: 1c4a2e90-0000-4000-8000-000000000099
-      weights: {log_spectral: 0.4, envelope: 0.3, transient: 0.2, band_energy: 0.1}
+      weights: {log_spectral: 0.45, envelope: 0.25, transient: 0.15, band_energy: 0.15}
     outcome: unknown-candidate
     error:
       name: patchback.fit.ClipNotFound

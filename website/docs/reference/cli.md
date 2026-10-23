@@ -105,11 +105,46 @@ patchback compare --reference reference.wav --candidate results/reconstructed.wa
 
 | Argument | Meaning |
 | --- | --- |
-| `--reference` | The recording to match |
-| `--candidate` | The rendering to judge against it |
+| `--reference` | The recording to match: mono or stereo, PCM16 or float32, 48 kHz |
+| `--candidate` | The rendering to judge against it, in the same format |
 
-Aligns the two in time and reports the log-spectral, envelope, transient and band-energy terms
-and their weighted sum. See [the comparison](../concepts/closed-loop.md#the-comparison).
+Aligns the candidate with the reference in time, shifting it by up to 4 800 samples (100 ms),
+then reports the log-spectral, envelope, transient and band-energy terms and their weighted sum.
+See [the comparison](../concepts/closed-loop.md#the-comparison). The weights are the initial
+values of the design, 0.45, 0.25, 0.15 and 0.15; the command takes none. The tolerance, the
+spectral floor and the term definitions are provisional and documented in the `patchback-fit`
+crate.
+
+It prints one `key value` line per value to stdout, always these keys in this order:
+
+```text
+loss 0.23438711898344936
+log_spectral 0.3627212920136793
+envelope 0.2500002344751215
+transient 0.0576014540255528
+band_energy 0.0001484056978689425
+weight_log_spectral 0.45
+weight_envelope 0.25
+weight_transient 0.15
+weight_band_energy 0.15
+lag_frames 0
+```
+
+Every term is between 0 and 1, and 0 when the two recordings are the same. `lag_frames` is the
+shift applied to the candidate; a positive value means the candidate was late. A refused
+comparison prints one line to stderr naming the error:
+
+```text
+patchback: compare refused: patchback.fit.ClipNotFound: no clip at "missing.wav" (reference)
+patchback: compare refused: patchback.fit.LengthOutsideAlignment: the reference has 48000 frames and the candidate 52801; they differ by 4801, more than the 4800 frames time alignment absorbs
+patchback: compare refused: patchback.audio.UnsupportedSampleRate: candidate "candidate.wav": unsupported sample rate 44100 Hz; only 48000 Hz
+```
+
+| Exit status | Meaning |
+| --- | --- |
+| 0 | Compared: the values are on stdout |
+| 1 | Refused: a missing or unreadable file, a WAV import refuses, lengths alignment cannot absorb, or a recording longer than the 60 s the analysis takes |
+| 2 | Usage error: `--reference` or `--candidate` missing, or an argument the command does not take |
 
 ## patchback generate-dataset
 

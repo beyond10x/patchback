@@ -147,6 +147,7 @@ dependencies = [
  "patchback-analysis",
  "patchback-audio",
  "patchback-core",
+ "patchback-fit",
 ]
 
 [[package]]
@@ -172,6 +173,10 @@ version = "0.2.0"
 [[package]]
 name = "patchback-fit"
 version = "0.2.0"
+dependencies = [
+ "patchback-analysis",
+ "patchback-audio",
+]
 
 [[package]]
 name = "patchback-model"
