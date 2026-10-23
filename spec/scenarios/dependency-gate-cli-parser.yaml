@@ -1,4 +1,4 @@
-# DESIGN.md 3: "CLI parsing: clap (derive), required by the workspace rule; the one reviewed
+# DESIGN.md 3, CLI parsing: "clap (derive), required by the workspace rule; the one reviewed
 # command-line crate"; "CI audits dependency changes and rejects unreviewed additions". An
 # unapproved clap and an approved CLI parser that is not clap are refused; an approved clap is
 # admitted beside an admitted audio backend without counting as one, and the audit passes.

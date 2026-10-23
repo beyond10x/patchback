@@ -1,5 +1,5 @@
-# DESIGN.md 3: "An offline first milestone can be built with zero third-party runtime crates";
-# 12.2 Dependency gate. An audit with no recorded crate passes, and a passed audit takes no more
+# DESIGN.md 3: "An offline first milestone can be built with no third-party runtime crate beyond
+# `clap` and that closure"; 12.2 Dependency gate. An audit with no recorded crate passes, and a passed audit takes no more
 # crates.
 type: ess-scenario/1
 domain: patchback.dependency

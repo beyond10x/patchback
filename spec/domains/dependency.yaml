@@ -263,7 +263,8 @@ commands:
       display: Conclude the dependency audit
       summary: >-
         Pass the audit: every recorded crate was admitted, so the revision has no third-party
-        application crate beyond at most one approved optional audio I/O backend.
+        application crate beyond clap with its reviewed closure and at most one approved optional
+        audio I/O backend.
     input:
       - name: dependency_audit_id
         type: patchback.dependency.DependencyAuditId
