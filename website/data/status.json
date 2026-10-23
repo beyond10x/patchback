@@ -4,10 +4,10 @@
   "items": [
     {
       "area": "Audio",
-      "detail": "Mono, or stereo downmixed explicitly to mono; PCM16 or IEEE float32 at 48 kHz. Truncated chunks, size overflow, non-finite samples and unsupported formats are refused. Milestone A.",
+      "detail": "Mono, or stereo downmixed to mono by the per-frame mean and recorded; PCM16 or IEEE float32 at 48 kHz, written back byte-exact. Truncated chunks, size overflow, non-finite samples, unsupported formats and files past the frame bound are refused. Held by test pcm16_roundtrip_is_byte_exact in crates/patchback-audio/tests/wav.rs.",
       "href": "/docs/reference/files#reference-audio",
       "label": "WAV input and output without an audio crate",
-      "status": "planned"
+      "status": "shipped"
     },
     {
       "area": "Patch",

@@ -1,9 +1,10 @@
 # DESIGN.md 13 Milestone A: "std-only WAV input/output"; 12.1: "valid PCM16/f32 roundtrip".
-# The byte-level roundtrip is a numeric obligation, not part of this scenario.
+# The byte-level roundtrip is a numeric obligation, not part of this scenario. A PCM16 export of a
+# sample outside [-1, 1] is refused (external: the clip's samples are not modelled).
 type: ess-scenario/1
 domain: patchback.audio
 scenario: wav-io-export
-summary: An imported clip is written as PCM16 and as float32 WAV; exporting a clip nobody imported is refused.
+summary: An imported clip is written as PCM16 and as float32 WAV; a PCM16 export of a sample outside [-1, 1] and exporting a clip nobody imported are refused.
 
 arrange:
   - instance: clip
@@ -57,6 +58,17 @@ timeline:
     capture: {instance: f32-file, event: patchback.audio.WavExported, field: wav_file_id}
 
   - at: 2026-10-22T09:00:03Z
+    command: patchback.audio.ExportWav
+    actor: patchback.audio.Operator
+    input:
+      audio_clip_id: {$instance: clip}
+      path: out-loud-pcm16.wav
+      sample_format: Pcm16
+    outcome: sample-out-of-range
+    error:
+      name: patchback.audio.SampleOutOfRange
+
+  - at: 2026-10-22T09:00:04Z
     command: patchback.audio.ExportWav
     actor: patchback.audio.Operator
     input:

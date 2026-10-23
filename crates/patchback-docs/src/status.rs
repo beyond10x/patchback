@@ -89,13 +89,15 @@ const fn planned(
 
 /// Every capability the site claims, in the order the status table lists them.
 pub const CAPABILITIES: &[Capability] = &[
-    planned(
-        A,
-        "Audio",
-        "WAV input and output without an audio crate",
-        "Mono, or stereo downmixed explicitly to mono; PCM16 or IEEE float32 at 48 kHz. Truncated chunks, size overflow, non-finite samples and unsupported formats are refused.",
-        "/docs/reference/files#reference-audio",
-    ),
+    Capability {
+        area: "Audio",
+        label: "WAV input and output without an audio crate",
+        detail: "Mono, or stereo downmixed to mono by the per-frame mean and recorded; PCM16 or IEEE float32 at 48 kHz, written back byte-exact. Truncated chunks, size overflow, non-finite samples, unsupported formats and files past the frame bound are refused.",
+        status: "shipped",
+        evidence: Some("crates/patchback-audio/tests/wav.rs::pcm16_roundtrip_is_byte_exact"),
+        milestone: None,
+        href: "/docs/reference/files#reference-audio",
+    },
     planned(
         A,
         "Patch",
@@ -580,6 +582,8 @@ mod tests {
                 capability.label
             );
         }
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        assert!(document(&root).is_ok());
     }
 
     #[test]
