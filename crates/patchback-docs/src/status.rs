@@ -21,7 +21,7 @@ pub const FILE: &str = "status.json";
 pub const PAGE: &str = "status.mdx";
 
 /// The date [`CAPABILITIES`] was last checked against `main` and the planning store.
-pub const AS_OF: &str = "2026-10-22";
+pub const AS_OF: &str = "2026-10-23";
 
 /// A milestone of DESIGN.md § 13 and the epic that carries it.
 #[derive(Clone, Copy)]
@@ -105,6 +105,27 @@ pub const CAPABILITIES: &[Capability] = &[
     ),
     planned(
         A,
+        "Patch",
+        "The line-oriented .patch file",
+        "A versioned, human-readable patch file in physical units, read by every command that takes a patch and written in canonical form. Unknown versions, duplicate keys or IDs, malformed numbers, unsupported rates and unbounded lengths are refused.",
+        "/docs/reference/files#patch-patch",
+    ),
+    planned(
+        A,
+        "Patch",
+        "Parameter contracts for the subtractive voice",
+        "Eight parameters, each with an index, a stable path, a normalized-to-physical mapping, a physical range and a default. An out-of-range normalized value is clamped and the clamp recorded; a non-finite value is refused.",
+        "/docs/reference/parameters",
+    ),
+    planned(
+        A,
+        "Score",
+        "Note events and the .events file",
+        "A versioned list of sample-timestamped note events at the patch sample rate. Notes that end before they start, overlap in a monophonic sequence or fall outside the MIDI or velocity range are refused.",
+        "/docs/reference/files#events-events",
+    ),
+    planned(
+        A,
         "Sound engine",
         "The fixed subtractive voice",
         "One monophonic voice at 48 kHz: anti-aliased saw oscillator, drive, resonant lowpass, ADSR and output gain, driven by note events.",
@@ -144,6 +165,34 @@ pub const CAPABILITIES: &[Capability] = &[
         "The fit run's five files",
         "patch.patch, notes.events, reconstructed.wav, report.txt and run.meta in the output directory.",
         "/docs/reference/files#a-fit-run",
+    ),
+    planned(
+        A,
+        "Fit",
+        "A baseline against the default patch",
+        "Over a seeded holdout of clips synthesized by Patchback, the fit's median normalized audio loss is compared with the default patch's, with wall-clock time, render evaluations and listening examples recorded.",
+        "/docs/concepts/closed-loop#the-starting-point",
+    ),
+    planned(
+        A,
+        "Audio",
+        "Provenance for every fixture",
+        "An external recording is imported only with its licence and provenance recorded beside it; a clip synthesized by Patchback carries its origin.",
+        "/docs/concepts/guarantees#fixtures",
+    ),
+    planned(
+        A,
+        "Dependencies",
+        "A dependency gate",
+        "An audit passes a workspace with no third-party application crate, refuses a forbidden or unreviewed crate, and admits at most one approved optional audio I/O backend.",
+        "/docs/concepts/guarantees#dependencies",
+    ),
+    planned(
+        A,
+        "Model",
+        "A pinned ModelSpec that checks the model",
+        "One pinned ModelSpec release runs modelspec check on models/patch_regressor.mspec; a model the pinned binary rejects is recorded as rejected and cannot be trained.",
+        "/docs/guides/train-the-regressor#check-and-train",
     ),
     planned(
         B,
@@ -279,8 +328,9 @@ fn check_evidence(root: &Path, label: &str, reference: &str) -> Result<String, S
 /// The `status:` of a milestone's epic, read from its front matter.
 fn epic_status(root: &Path, label: &str, epic: &str) -> Result<String, String> {
     let path = root.join(format!(".engineering/planning/epic/{epic}.md"));
-    let text = fs::read_to_string(&path)
-        .map_err(|e| format!("{label}: the milestone epic {epic} is not in the planning store: {e}"))?;
+    let text = fs::read_to_string(&path).map_err(|e| {
+        format!("{label}: the milestone epic {epic} is not in the planning store: {e}")
+    })?;
     text.lines()
         .skip(1)
         .take_while(|line| *line != "---")
@@ -301,7 +351,11 @@ pub fn document_for(
         let label = capability.label;
         let detail = match (capability.status, capability.evidence, capability.milestone) {
             ("shipped", Some(evidence), None) => {
-                format!("{} {}", capability.detail, check_evidence(root, label, evidence)?)
+                format!(
+                    "{} {}",
+                    capability.detail,
+                    check_evidence(root, label, evidence)?
+                )
             }
             ("shipped", _, _) => {
                 return Err(format!(
@@ -468,7 +522,8 @@ mod tests {
     #[test]
     fn planned_items_name_their_milestone_not_the_planning_id() {
         let root = repo("planned");
-        let (text, warnings) = document_for(&root, &[item("planned", None, Some(A))], AS_OF).unwrap();
+        let (text, warnings) =
+            document_for(&root, &[item("planned", None, Some(A))], AS_OF).unwrap();
         assert!(warnings.is_empty());
         let document: Value = serde_json::from_str(&text).unwrap();
         assert_eq!(document["format"], "b10x-status/1");
@@ -478,7 +533,8 @@ mod tests {
             name: "Milestone Z",
             epic: "done",
         };
-        let (_, warnings) = document_for(&root, &[item("planned", None, Some(done))], AS_OF).unwrap();
+        let (_, warnings) =
+            document_for(&root, &[item("planned", None, Some(done))], AS_OF).unwrap();
         assert_eq!(warnings.len(), 1);
         let gone = Milestone {
             name: "Milestone Y",
@@ -487,7 +543,11 @@ mod tests {
         for refused in [
             item("planned", None, None),
             item("planned", None, Some(gone)),
-            item("planned", Some("crates/x/tests/render.rs::renders_repeatably"), Some(A)),
+            item(
+                "planned",
+                Some("crates/x/tests/render.rs::renders_repeatably"),
+                Some(A),
+            ),
             item("someday", None, Some(A)),
         ] {
             assert!(document_for(&root, &[refused], AS_OF).is_err());

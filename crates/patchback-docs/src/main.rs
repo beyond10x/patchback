@@ -41,7 +41,14 @@ const LANDING: &str = "website/product.json";
 const BASE_URL: &str = "/patchback/";
 
 /// Strings no published page may contain: local paths and planning-store ids.
-const PRIVATE: &[&str] = &["/home/", "/Users/", "story:", "epic:", "task:", "initiative:"];
+const PRIVATE: &[&str] = &[
+    "/home/",
+    "/Users/",
+    "story:",
+    "epic:",
+    "task:",
+    "initiative:",
+];
 
 #[derive(Parser)]
 #[command(about = "Generate and check the derived pages of the Patchback documentation site")]
@@ -497,10 +504,8 @@ mod tests {
     use super::*;
 
     fn scratch(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "patchback-docs-test-{name}-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("patchback-docs-test-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir

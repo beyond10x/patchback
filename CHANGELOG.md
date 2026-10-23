@@ -8,6 +8,11 @@ All notable changes to Patchback are recorded here. The format follows
 
 ### Added
 
+- The Cargo workspace of DESIGN.md § 4.1: library crates `patchback-core`, `patchback-dsp`,
+  `patchback-audio`, `patchback-analysis`, `patchback-dataset`, `patchback-model` and
+  `patchback-fit`, and `patchback-cli` with the `patchback` binary, which recognises `patch
+  validate`, `render`, `analyze`, `compare` and `fit` but implements none of them yet. No
+  application crate takes a third-party crate, and a test holds that.
 - `DESIGN.md` revision 0.3: the technical design. The product and its CLI are named `patchback`,
   ESS is required for the specification only (ADR-008), the patch studio is a developer tool
   outside the runtime dependency policy (ADR-011), and § 17 lists the open questions.

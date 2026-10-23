@@ -172,7 +172,10 @@ mod tests {
     fn domain_pages_carry_the_header_and_no_ess_banner() {
         let (title, summary, page) = domain_page(SAMPLE).unwrap();
         assert_eq!(title, "Patches");
-        assert_eq!(summary, "An editable DSP program. Validated before it runs.");
+        assert_eq!(
+            summary,
+            "An editable DSP program. Validated before it runs."
+        );
         assert!(page.starts_with(&format!(
             "---\n{}\ntitle: \"Patches domain\"\n",
             crate::FRONT_MATTER_HEADER

@@ -28,6 +28,8 @@ Entry points are the `Taskfile.yml` tasks (go-task):
   (`website/docs/reference/ess/`, `website/docs/status.mdx`, `website/data/`) from `spec/` and the
   capability list in `crates/patchback-docs/src/status.rs`. Run it after every `spec/` change.
 - `task docs-check`: `generate --check` plus `cargo test -p patchback-docs`.
+- `task rust-test`: `cargo test --locked --workspace`; holds the dependency gate
+  (`crates/patchback-cli/tests/dependencies.rs`) and the CLI dispatch tests.
 - `task check`: all of the above; the gate. CI (`check.yml`) runs it.
 - Site build: `npm --prefix website ci --allow-git=root` (npm 12 refuses Git dependencies without
   the flag; CI's Node 22 needs none), then `npm --prefix website run build`. `pages.yml`
