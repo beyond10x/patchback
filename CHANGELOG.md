@@ -6,6 +6,16 @@ All notable changes to Patchback are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `patchback-core::score`: note events and the line-oriented `notes.events` file (story
+  note-events). `parse_events`, `read_events` and `read_events_file` load a `NoteSequence` of
+  sample-timestamped `NoteEvent`s, and `write_events` emits the canonical form, bit-exact on read
+  back; notes that do not end after they start, overlap, or fall outside MIDI 0 to 127 or velocity
+  0 to 1, unknown versions, duplicate keys, malformed numbers, lines outside the grammar and
+  lengths past the provisional bounds (`MAX_NOTES` included) are refused with the line, a file
+  with several faults by the one `LoadNoteSequence` declares first.
+
 ## [0.2.0] - 2026-10-23
 
 ### Added

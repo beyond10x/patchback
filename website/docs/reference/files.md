@@ -130,8 +130,76 @@ refused. An output port feeds any number of edges.
 
 ## Events: `.events`
 
-A versioned list of [note and control events](../concepts/events.md), timed in samples at the
-patch's sample rate.
+`notes.events` is a versioned list of [note events](../concepts/events.md), timed in samples at
+the patch's sample rate. It holds notes only; control automation gets its own file,
+`controls.events`.
+
+```text
+patchback-notes 1
+sample_rate_hz 48000
+patch_id 7f0c0000-0000-4000-8000-000000000151
+note 0 24000 45 0.8
+note 24000 48000 52 0.6
+```
+
+### Records
+
+The file is UTF-8 text, one record per line, fields separated by whitespace. There are no
+comments and no blank lines. After the header, records may come in any order.
+
+| Record | Fields | Occurs |
+| --- | --- | --- |
+| `patchback-notes` | the format version, `1` | first line, once |
+| `sample_rate_hz` | the sample rate the notes are timed at | once |
+| `patch_id` | the patch the sequence was written for, a lower-case UUID | once |
+| `note_estimation_id` | the note estimation it was written from, a lower-case UUID | at most once |
+| `note` | start sample, end sample, MIDI note, velocity | once per note |
+
+Sample positions, the MIDI note, the version and the rate are unsigned decimal integers, so a
+negative value is a malformed number. A velocity is a finite decimal of the
+[`.patch` grammar](#numbers), read as a 32-bit float.
+
+A note ends after it starts, its MIDI note is 0 to 127, and its velocity is between 0 and 1.
+The sequence is monophonic: no note starts while another sounds, and no two notes start on the
+same sample. A note may start on the sample the previous one ends.
+
+The parser reads the sample rate as written. Whether it matches the rate of the patch that
+renders the sequence, and whether that patch exists, is checked when the sequence is bound to
+its patch.
+
+### Bounds
+
+| Constant | Value | Bounds |
+| --- | --- | --- |
+| `MAX_LINE_BYTES` | 256 | bytes in one line |
+| `MAX_FILE_BYTES` | 8,388,608 | bytes in the file |
+| `MAX_NOTES` | 65,536 | `note` records |
+
+All three are provisional.
+
+### Refusals
+
+A refused file loads no sequence. A file with several faults is refused with the one that ranks
+first, and a fault on a line names that line:
+
+1. unknown format version
+2. a note that does not end after it starts
+3. a MIDI note above 127
+4. a velocity outside 0 to 1
+5. a note overlapping a note on an earlier line
+6. duplicate key
+7. malformed record
+8. malformed number
+9. a bound exceeded
+
+A file past the byte bound, or with a fault on its first line, is refused for that fault alone.
+
+### Canonical form
+
+The writer emits the header, `sample_rate_hz`, `patch_id`, `note_estimation_id` if there is
+one, then the notes in start order. A velocity is written as the shortest text that reads back
+to the same value. Writing and then reading gives the same sequence bit for bit, and sample
+positions are exact up to the largest 64-bit value.
 
 ## A fit run
 

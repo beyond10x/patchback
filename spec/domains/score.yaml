@@ -68,7 +68,9 @@ entities:
       - name: notes
         type: List<patchback.score.NoteEvent>
       # UNMAPPED: section 11 lists one notes.events file; it does not say whether control
-      # automation (section 10 ControlEvent) shares that file or has its own. Open question.
+      # automation (section 10 ControlEvent) shares that file or has its own. Open question in
+      # DESIGN.md section 17 OQ-9; approval-record:control-events-file gives controls their own
+      # controls.events v1, so notes.events (src/score.rs) holds notes only.
       - name: controls
         type: List<patchback.score.ControlEvent>
       # Section 10 V1 estimates "an event sequence" from audio; the score keeps the sequence and
@@ -164,6 +166,21 @@ errors:
     fields:
       - name: format_version
         type: Integer
+
+  - name: patchback.score.DuplicateKey
+    summary: The header or a key of the .events file appears twice (section 11).
+    fields:
+      - name: note_sequence_id
+        type: patchback.score.NoteSequenceId
+
+  - name: patchback.score.MalformedRecord
+    summary: >-
+      A line is not a record of the .events grammar (section 11): no header line, an unknown
+      record, a blank line, a wrong field count, a missing key, an identifier that is not a UUID,
+      or text that is not UTF-8.
+    fields:
+      - name: note_sequence_id
+        type: patchback.score.NoteSequenceId
 
   - name: patchback.score.MalformedNumber
     summary: A numeric token of the .events file does not parse as a finite number (section 11).
@@ -275,6 +292,9 @@ commands:
         payload:
           patchback.score.UnknownFormatVersion:
             format_version: input.format_version
+      # UNMAPPED: the .events grammar (src/score.rs) writes sample positions as unsigned integers,
+      # as the .patch grammar does, so a negative start_sample in a file is answered as
+      # malformed-number (MalformedNumber), not here; the guard below holds for the model input.
       - name: invalid-timing
         when:
           exists:
@@ -288,6 +308,9 @@ commands:
         payload:
           patchback.score.InvalidNoteTiming:
             note_sequence_id: input.note_sequence_id
+      # UNMAPPED: the .events grammar (src/score.rs) writes the MIDI note as an unsigned integer,
+      # so a negative midi_note in a file is answered as malformed-number (MalformedNumber), not
+      # here; the guard below holds for the model input.
       - name: midi-out-of-range
         when:
           exists:
@@ -360,8 +383,22 @@ commands:
           patchback.score.SampleRateMismatch:
             note_sequence_id: input.note_sequence_id
             sample_rate_hz: input.sample_rate_hz
-      # UNMAPPED: section 11 names malformed numbers and unbounded lengths, section 12.3 a bound on
-      # the note count; no grammar or bound value is given. Both are the parser's.
+      # UNMAPPED: section 11 names duplicate keys, malformed numbers and unbounded lengths, section
+      # 12.3 a bound on the note count; no grammar or bound value is given. All are the parser's,
+      # outside the model. patchback-core (src/score.rs) states the notes.events grammar and three
+      # provisional bounds until DESIGN.md section 17 OQ-6 sets them.
+      - name: duplicate-key
+        external: the header or a key appears twice in the .events file
+        error: patchback.score.DuplicateKey
+        payload:
+          patchback.score.DuplicateKey:
+            note_sequence_id: input.note_sequence_id
+      - name: malformed-record
+        external: a line is not a record of the .events grammar
+        error: patchback.score.MalformedRecord
+        payload:
+          patchback.score.MalformedRecord:
+            note_sequence_id: input.note_sequence_id
       - name: malformed-number
         external: a numeric token does not parse as a finite decimal number
         error: patchback.score.MalformedNumber
