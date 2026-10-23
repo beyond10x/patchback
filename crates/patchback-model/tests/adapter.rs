@@ -101,7 +101,7 @@ fn standins() -> &'static Path {
         fs::set_permissions(&plain, fs::Permissions::from_mode(0o644)).unwrap();
         let unreadable = dir.join("unreadable.mspec");
         fs::write(&unreadable, "model X {}\n").unwrap();
-        fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o000)).unwrap();
+        fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o644)).unwrap();
         fs::create_dir_all(dir.join("a-directory.mspec")).unwrap();
         dir
     })
@@ -352,10 +352,28 @@ fn a_check_that_cannot_spawn_leaves_the_source_unchecked() {
     assert_eq!(source.state(), ModelSourceState::Unchecked);
 }
 
+/// Mode 000 on a file for as long as the guard lives. A file left unreadable under `target/` makes
+/// `git` fail when a worktree is archived, so the mode goes back to 0644 even when the test panics.
+struct Unreadable(PathBuf);
+
+impl Unreadable {
+    fn new(path: PathBuf) -> Self {
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
+        Unreadable(path)
+    }
+}
+
+impl Drop for Unreadable {
+    fn drop(&mut self) {
+        let _ = fs::set_permissions(&self.0, fs::Permissions::from_mode(0o644));
+    }
+}
+
 /// Fix 1: a source that is missing, a directory or unreadable is refused before any spawn, and the
 /// source stays `Unchecked`; the binary's exit 1 for an unreadable path is not its verdict.
 #[test]
 fn an_unreadable_source_is_refused_before_any_spawn_and_stays_unchecked() {
+    let _unreadable = Unreadable::new(standins().join("unreadable.mspec"));
     let marker = standins().join("records-was-asked-to-check");
     let modelspec = open("records");
     for path in [
