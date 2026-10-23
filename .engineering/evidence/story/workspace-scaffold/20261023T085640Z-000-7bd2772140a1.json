@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-23T08:56:40Z",
+  "actor": "human:timo",
+  "artifact": "story:workspace-scaffold",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:workspace-scaffold-adversary-2",
+    "reference": "24e05c2ad520ad1facb88d457c4b2923514c215d",
+    "review": "review-result:workspace-scaffold-adversary-2",
+    "outcome": "fixed"
+  }
+}

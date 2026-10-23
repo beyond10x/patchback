@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-23T08:58:29Z",
+  "actor": "human:timo",
+  "artifact": "story:workspace-scaffold",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "baseline main 69e87fd: workspace members [patchback-docs] only, no patchback binary; treatment 23caa70: nine members, patchback dispatch tests 14 passed, Cargo.lock gate 11 passed",
+    "reference": "23caa70514826a047435f3f18856a48f2b151ef8"
+  }
+}

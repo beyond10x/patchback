@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-23T08:58:29Z",
+  "actor": "human:timo",
+  "artifact": "story:workspace-scaffold",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check, cargo build/clippy -D warnings/fmt --check on wave/a1 23caa70 with ess 0.68.0: all exit 0; rust-test 11+14+1+19 passed; spec-conform 382 passed",
+    "reference": "23caa70514826a047435f3f18856a48f2b151ef8"
+  }
+}
