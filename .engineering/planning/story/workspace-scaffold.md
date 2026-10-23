@@ -2,11 +2,12 @@
 format: aep.planning-md/3
 id: story:workspace-scaffold
 kind: story
-status: draft
+status: active
 title: 'Workspace scaffold: crates, CLI dispatch, capability list'
 relations:
 - decomposes: epic:sound-engine
 - informed_by: executable-system-specification:patchback-contracts
+- serves: vision:patchback
 scope:
 - confidence: inferred
   path: Cargo.toml
@@ -14,7 +15,10 @@ scope:
   path: crates/patchback-cli/src/main.rs
 - confidence: inferred
   path: crates/patchback-docs/src/status.rs
-revision: 2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-23T08:26:33Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-10-23T08:26:33Z", actor: "human:timo", revision: 4}
 ---
 # Workspace scaffold: crates, CLI dispatch, capability list
 
