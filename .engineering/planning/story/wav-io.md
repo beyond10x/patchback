@@ -2,16 +2,20 @@
 format: aep.planning-md/3
 id: story:wav-io
 kind: story
-status: draft
+status: active
 title: std-only WAV import and export
 relations:
 - decomposes: epic:sound-engine
 - informed_by: executable-system-specification:patchback-contracts
 - depends_on: story:workspace-scaffold
+- serves: vision:patchback
 scope:
 - confidence: inferred
   path: crates/patchback-audio
-revision: 2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-23T09:26:43Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-10-23T09:26:43Z", actor: "human:timo", revision: 4}
 ---
 # std-only WAV import and export
 

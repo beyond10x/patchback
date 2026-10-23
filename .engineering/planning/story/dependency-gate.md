@@ -2,18 +2,22 @@
 format: aep.planning-md/3
 id: story:dependency-gate
 kind: story
-status: draft
+status: active
 title: Dependency gate
 relations:
 - decomposes: epic:sound-engine
 - informed_by: executable-system-specification:patchback-contracts
 - depends_on: story:workspace-scaffold
+- serves: vision:patchback
 scope:
 - confidence: inferred
   path: .github/workflows/check.yml
 - confidence: inferred
   path: Taskfile.yml
-revision: 2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-23T09:26:41Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-10-23T09:26:41Z", actor: "human:timo", revision: 4}
 ---
 # Dependency gate
 

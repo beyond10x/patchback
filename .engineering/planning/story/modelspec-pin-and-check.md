@@ -2,18 +2,22 @@
 format: aep.planning-md/3
 id: story:modelspec-pin-and-check
 kind: story
-status: draft
+status: active
 title: Pinned ModelSpec and model check
 relations:
 - informed_by: executable-system-specification:patchback-contracts
 - decomposes: epic:sound-engine
 - depends_on: story:workspace-scaffold
+- serves: vision:patchback
 scope:
 - confidence: inferred
   path: crates/patchback-model
 - confidence: inferred
   path: models/patch_regressor.mspec
-revision: 3
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-23T09:26:42Z", actor: "human:timo", revision: 4}
+- {from: "proposed", to: "active", at: "2026-10-23T09:26:42Z", actor: "human:timo", revision: 5}
 ---
 # Pinned ModelSpec and model check
 
