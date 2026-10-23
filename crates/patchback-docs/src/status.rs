@@ -131,13 +131,17 @@ pub const CAPABILITIES: &[Capability] = &[
         milestone: None,
         href: "/docs/reference/parameters",
     },
-    planned(
-        A,
-        "Score",
-        "Note events and the .events file",
-        "A versioned list of sample-timestamped note events at the patch sample rate. Notes that end before they start, overlap in a monophonic sequence or fall outside the MIDI or velocity range are refused.",
-        "/docs/reference/files#events-events",
-    ),
+    Capability {
+        area: "Score",
+        label: "Note events and the notes.events file",
+        detail: "A versioned, line-oriented list of sample-timestamped note events, parsed into a note sequence and written in canonical form; write then parse is bit-exact and sample offsets are exact. Notes that do not end after they start, overlap in a monophonic sequence or fall outside the MIDI or velocity range, unknown versions, duplicate keys, malformed numbers, lines outside the grammar and lengths past the provisional bounds are refused with the line, and nothing is loaded. Notes only; checking the rate against the rendering patch comes with rendering.",
+        status: "shipped",
+        evidence: Some(
+            "crates/patchback-core/tests/note_events.rs::write_then_parse_is_identity_over_generated_sequences",
+        ),
+        milestone: None,
+        href: "/docs/reference/files#events-events",
+    },
     planned(
         A,
         "Sound engine",
