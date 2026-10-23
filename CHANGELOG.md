@@ -6,6 +6,15 @@ All notable changes to Patchback are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `patchback analyze --input <wav> --out <dir>` and `patchback-analysis`: std-only radix-2 FFT,
+  Hann-windowed STFT at 512, 2048 and 8192 samples, RMS and peak envelopes, spectral centroid,
+  rolloff, flatness, log-band energies, spectral flux and YIN-style f0, written to a versioned
+  `analysis.txt`; silence, an ambiguous or out-of-range pitch, a clip too short for the f0 search,
+  non-finite samples and sizes past the provisional bounds are refused and nothing is written
+  (story:analysis-core).
+
 ## [0.1.0] - 2026-10-23
 
 ### Added

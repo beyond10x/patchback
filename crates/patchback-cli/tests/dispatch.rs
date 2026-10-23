@@ -1,16 +1,11 @@
 //! The `patchback` binary's dispatch on clap derive: help, version, the not-yet-implemented
-//! subcommands and clap's usage errors, each with its exit status and output.
+//! subcommands, `analyze` and clap's usage errors, each with its exit status and output; what
+//! `analyze` computes and refuses is in `tests/analyze.rs`.
 
 use std::process::{Command, Output};
 
-/// The subcommands DESIGN.md § 11 names that the scaffold recognises, as typed.
-const STUBS: &[&[&str]] = &[
-    &["patch", "validate"],
-    &["render"],
-    &["analyze"],
-    &["compare"],
-    &["fit"],
-];
+/// The subcommands DESIGN.md § 11 names that are recognised and not implemented yet, as typed.
+const STUBS: &[&[&str]] = &[&["patch", "validate"], &["render"], &["compare"], &["fit"]];
 
 /// The top-level commands the root help lists.
 const TOP_LEVEL: &[&str] = &["patch", "render", "analyze", "compare", "fit"];
@@ -120,11 +115,6 @@ fn render_is_not_implemented_and_exits_3() {
 }
 
 #[test]
-fn analyze_is_not_implemented_and_exits_3() {
-    assert_not_implemented(&["analyze"]);
-}
-
-#[test]
 fn compare_is_not_implemented_and_exits_3() {
     assert_not_implemented(&["compare"]);
 }
@@ -143,6 +133,27 @@ fn an_argument_a_stub_does_not_take_is_a_usage_error_and_exits_2() {
             assert_usage_error(&argv, extra);
         }
     }
+}
+
+#[test]
+fn analyze_with_an_argument_it_does_not_take_is_a_usage_error_and_exits_2() {
+    let base = ["analyze", "--input", "a.wav", "--out", "analysis"];
+    for extra in ["--anything", "song.patch"] {
+        let mut argv = base.to_vec();
+        argv.push(extra);
+        assert_usage_error(&argv, extra);
+    }
+}
+
+#[test]
+fn analyze_without_its_arguments_is_a_usage_error_and_exits_2() {
+    let out = run(&["analyze"]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(out.stdout.is_empty());
+    let stderr = text(&out.stderr);
+    assert!(stderr.starts_with("error: "), "{stderr}");
+    assert!(stderr.contains("--input <INPUT>"), "{stderr}");
+    assert!(stderr.contains("--out <OUT>"), "{stderr}");
 }
 
 #[test]

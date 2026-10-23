@@ -391,7 +391,7 @@ It takes:
 - `hop_length` — `Integer`
 - `window` — `patchback.analysis.WindowKind`
 
-It has 10 outcomes.
+It has 13 outcomes.
 
 **`empty`** — A clip with no frames is refused; no analysis exists. Taken when `frame_count <= 0` holds of the input. No entity in this specification changes. It reports `patchback.analysis.EmptyAudio`, carrying `frame_count`. It emits nothing. A test reaches it by constructing an input that satisfies that condition.
 
@@ -405,11 +405,17 @@ It has 10 outcomes.
 
 **`duration-over-bound`** — Decided outside the input: the frame count exceeds the configured analysis duration bound. No predicate over the input reaches this branch, and saying `when: false` instead would have claimed it is unreachable, which is a different and false statement. No entity in this specification changes. It reports `patchback.analysis.DurationOverBound`, carrying `frame_count`. It emits nothing. A test reaches it by injecting the declared fault, because no input can.
 
+**`frame-count-over-bound`** — Decided outside the input: the STFTs of the requested FFT lengths and the hop together exceed the configured magnitude bound. No predicate over the input reaches this branch, and saying `when: false` instead would have claimed it is unreachable, which is a different and false statement. No entity in this specification changes. It reports `patchback.analysis.FrameCountOverBound`, carrying `fft_length`, `hop_length` and `frame_count`. It emits nothing. A test reaches it by injecting the declared fault, because no input can.
+
 **`non-finite`** — Decided outside the input: the analyser finds a NaN or infinite sample in the clip. No predicate over the input reaches this branch, and saying `when: false` instead would have claimed it is unreachable, which is a different and false statement. No entity in this specification changes. It reports `patchback.analysis.NonFiniteSamples`, carrying `frame_count`. It emits nothing. A test reaches it by injecting the declared fault, because no input can.
 
 **`silent`** — Silence is reported as a typed diagnostic, not a failure of the analyser. Decided outside the input: silence detection finds no signal above the silence threshold. No predicate over the input reaches this branch, and saying `when: false` instead would have claimed it is unreachable, which is a different and false statement. No entity in this specification changes. It reports `patchback.analysis.SilentInput`, carrying `audio_clip_id`. It emits nothing. A test reaches it by injecting the declared fault, because no input can.
 
+**`clip-too-short-for-pitch`** — Decided outside the input: the clip is too short for the f0 estimator to search its lag range. No predicate over the input reaches this branch, and saying `when: false` instead would have claimed it is unreachable, which is a different and false statement. No entity in this specification changes. It reports `patchback.analysis.ClipTooShortForPitch`, carrying `audio_clip_id`, `frame_count` and `required_frame_count`. It emits nothing. A test reaches it by injecting the declared fault, because no input can.
+
 **`pitch-ambiguous`** — An ambiguous pitch is reported with its diagnostic, never guessed. Decided outside the input: the monophonic f0 estimate is below the confidence threshold. No predicate over the input reaches this branch, and saying `when: false` instead would have claimed it is unreachable, which is a different and false statement. No entity in this specification changes. It reports `patchback.analysis.PitchAmbiguous`, carrying `audio_clip_id` and `confidence`. It emits nothing. A test reaches it by injecting the declared fault, because no input can.
+
+**`pitch-out-of-range`** — A pitch outside the range is refused, never reported at another octave. Decided outside the input: the monophonic f0 lies outside the searched f0 range. No predicate over the input reaches this branch, and saying `when: false` instead would have claimed it is unreachable, which is a different and false statement. No entity in this specification changes. It reports `patchback.analysis.PitchOutOfRange`, carrying `audio_clip_id` and `bound_hz`. It emits nothing. A test reaches it by injecting the declared fault, because no input can.
 
 **`analyzed`** — The descriptors are written to out_dir with the FFT lengths, hop and window that produced them. The default branch, taken when no other outcome's condition matched. It creates a `patchback.analysis.Analysis`, which starts in `Complete`. The new instance's identity is published as `analysis_id` on `patchback.analysis.AudioAnalyzed`. It emits `patchback.analysis.AudioAnalyzed`. It sets `audio_clip_id` from `input.audio_clip_id`, `out_dir` from `input.out_dir`, `sample_rate_hz` from `input.sample_rate_hz`, `frame_count` from `input.frame_count`, `fft_lengths` from `input.fft_lengths`, `hop_length` from `input.hop_length` and `window` from `input.window`. A test reaches it by constructing an input that satisfies no other outcome's condition.
 
@@ -651,6 +657,18 @@ Nothing in this system reacts to it.
 
 ## Errors
 
+### `ClipTooShortForPitch`
+
+The clip is too short for the f0 estimator to search its whole lag range; refused rather than reported as ambiguous (DESIGN.md 6.2).
+
+It carries:
+
+- `audio_clip_id` — `patchback.audio.AudioClipId`
+- `frame_count` — `Integer`
+- `required_frame_count` — `Integer`
+
+Reported by `patchback.analysis.AnalyzeAudio` on its `clip-too-short-for-pitch` outcome.
+
 ### `DatasetSplitNotFound`
 
 No dataset split has this identity; no statistics are computed.
@@ -796,6 +814,18 @@ It carries:
 
 Reported by `patchback.analysis.AnalyzeAudio` on its `fft-over-bound` outcome.
 
+### `FrameCountOverBound`
+
+The STFTs of the requested FFT lengths and the hop would hold more magnitudes (frames times bins, summed over the STFTs) than the configured bound; refused before anything is computed (DESIGN.md 12.3).
+
+It carries:
+
+- `fft_length` — `Integer`
+- `hop_length` — `Integer`
+- `frame_count` — `Integer`
+
+Reported by `patchback.analysis.AnalyzeAudio` on its `frame-count-over-bound` outcome.
+
 ### `InvalidHopLength`
 
 The STFT hop is not a positive number of samples.
@@ -870,6 +900,17 @@ It carries:
 
 Reported by `patchback.analysis.AnalyzeAudio` on its `pitch-ambiguous` outcome.
 
+### `PitchOutOfRange`
+
+The monophonic f0 lies outside the searched f0 range; refused rather than reported at another octave or pinned to the range edge (DESIGN.md 6.2 "surfaced rather than guessed away").
+
+It carries:
+
+- `audio_clip_id` — `patchback.audio.AudioClipId`
+- `bound_hz` — `Decimal`
+
+Reported by `patchback.analysis.AnalyzeAudio` on its `pitch-out-of-range` outcome.
+
 ### `PolyphonicInput`
 
 More than one simultaneous note was found; polyphony is outside the MVP and is surfaced, not guessed away (DESIGN.md 2 non-goals, 6.2, 10).
@@ -923,4 +964,4 @@ It may invoke [`AmendFeatureContract`](#amendfeaturecontract), [`AnalyzeAudio`](
 
 ---
 
-Generated from patchback v1 · model digest `c0e45e273045c4c1f1c9fbc635f181079fb649874461451760a6b84e6335a1e2` · contract digest `slice-sha256/2:f1d3646cbebe6812eb58c02a7e1a23199126e450d3329ee9af5b2967ca1630a3`. Do not edit this file; change the specification and regenerate it with `task docs-generate`.
+Generated from patchback v1 · model digest `94c2caae824138b76626d834c924bce74700ae430e0ed9e7e803bba98ea2fec6` · contract digest `slice-sha256/2:7ad2561d681bda7247aff4e44fc70dc7764f2cab6c78a023753ce71884ccc9ec`. Do not edit this file; change the specification and regenerate it with `task docs-generate`.

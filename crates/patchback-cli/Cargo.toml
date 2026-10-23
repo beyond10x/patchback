@@ -12,3 +12,5 @@ path = "src/main.rs"
 
 [dependencies]
 clap.workspace = true
+patchback-analysis = { path = "../patchback-analysis" }
+patchback-audio = { path = "../patchback-audio" }

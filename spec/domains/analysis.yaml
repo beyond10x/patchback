@@ -117,7 +117,9 @@ entities:
         summary: STFT hop in samples.
       # UNMAPPED: DESIGN.md 6.3 asks for "consistent overlap/window conventions" and names no hop
       # or overlap; whether the hop is one value for every frame size or a fixed fraction of each
-      # is open. This model records one hop as given.
+      # is open. This model records one hop as given. The provisional implementation
+      # (patchback-analysis HOP_DIVISOR) takes half of each FFT length, so one run has one hop
+      # per FFT length (256, 1024, 4096), which this single field does not carry.
       - name: window
         type: patchback.analysis.WindowKind
     invariants:
@@ -302,6 +304,21 @@ errors:
       - name: frame_count
         type: Integer
 
+  - name: patchback.analysis.FrameCountOverBound
+    summary: >-
+      The STFTs of the requested FFT lengths and the hop would hold more magnitudes (frames times
+      bins, summed over the STFTs) than the configured bound; refused before anything is computed
+      (DESIGN.md 12.3).
+    fields:
+      - name: fft_length
+        type: Integer
+        summary: The FFT length of the STFT at which the running total passes the bound.
+      - name: hop_length
+        type: Integer
+      - name: frame_count
+        type: Integer
+        summary: The frame count of that STFT, the frame count of the clip divided by the hop, rounded up.
+
   - name: patchback.analysis.FftLengthOverBound
     summary: A requested FFT length is above the configured FFT length bound (DESIGN.md 12.3).
     fields:
@@ -331,6 +348,33 @@ errors:
       - name: confidence
         type: Decimal
         summary: The f0 estimator's confidence, below the threshold.
+
+  - name: patchback.analysis.PitchOutOfRange
+    summary: >-
+      The monophonic f0 lies outside the searched f0 range; refused rather than reported at
+      another octave or pinned to the range edge (DESIGN.md 6.2 "surfaced rather than guessed
+      away").
+    fields:
+      - name: audio_clip_id
+        type: patchback.audio.AudioClipId
+      - name: bound_hz
+        type: Decimal
+        summary: The edge of the f0 range the pitch lies beyond.
+
+  - name: patchback.analysis.ClipTooShortForPitch
+    summary: >-
+      The clip is too short for the f0 estimator to search its whole lag range; refused rather
+      than reported as ambiguous (DESIGN.md 6.2).
+    fields:
+      - name: audio_clip_id
+        type: patchback.audio.AudioClipId
+      - name: frame_count
+        type: Integer
+      - name: required_frame_count
+        type: Integer
+        summary: >-
+          More than frame_count: the fewest frames any estimate needs when the clip holds fewer,
+          otherwise the frame count that searches the whole lag range.
 
   - name: patchback.analysis.SilentInput
     summary: Silence detection found no signal to analyse (DESIGN.md 6.2, 7.1).
@@ -512,6 +556,12 @@ commands:
         payload:
           patchback.analysis.DurationOverBound: {frame_count: input.frame_count}
 
+      - name: frame-count-over-bound
+        external: the STFTs of the requested FFT lengths and the hop together exceed the configured magnitude bound
+        error: patchback.analysis.FrameCountOverBound
+        payload:
+          patchback.analysis.FrameCountOverBound: {fft_length: {generated: true}, hop_length: input.hop_length, frame_count: {generated: true}}
+
       - name: non-finite
         external: the analyser finds a NaN or infinite sample in the clip
         error: patchback.analysis.NonFiniteSamples
@@ -525,6 +575,12 @@ commands:
           patchback.analysis.SilentInput: {audio_clip_id: input.audio_clip_id}
         summary: Silence is reported as a typed diagnostic, not a failure of the analyser.
 
+      - name: clip-too-short-for-pitch
+        external: the clip is too short for the f0 estimator to search its lag range
+        error: patchback.analysis.ClipTooShortForPitch
+        payload:
+          patchback.analysis.ClipTooShortForPitch: {audio_clip_id: input.audio_clip_id, frame_count: input.frame_count, required_frame_count: {generated: true}}
+
       # UNMAPPED: DESIGN.md 6.2 refuses a low-confidence f0 estimate and gives no confidence
       # threshold; it also does not say whether the other descriptors are still written when only
       # the f0 estimate is refused. This model refuses the analysis.
@@ -534,6 +590,14 @@ commands:
         payload:
           patchback.analysis.PitchAmbiguous: {audio_clip_id: input.audio_clip_id, confidence: {generated: true}}
         summary: An ambiguous pitch is reported with its diagnostic, never guessed.
+
+      # UNMAPPED: DESIGN.md 6.2 names no f0 search range; the bounds are provisional constants.
+      - name: pitch-out-of-range
+        external: the monophonic f0 lies outside the searched f0 range
+        error: patchback.analysis.PitchOutOfRange
+        payload:
+          patchback.analysis.PitchOutOfRange: {audio_clip_id: input.audio_clip_id, bound_hz: {generated: true}}
+        summary: A pitch outside the range is refused, never reported at another octave.
 
       - name: analyzed
         creates: patchback.analysis.Analysis
