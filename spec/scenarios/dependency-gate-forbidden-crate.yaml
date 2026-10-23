@@ -1,11 +1,12 @@
 # DESIGN.md 3: ML / tensor / numerical crates are forbidden (e.g. ndarray, rustfft, tch, burn);
 # DSP, serialization and PRNG are internal modules; invariant 7: no hidden third-party ML/DSP
 # stack. Every category but audio I/O and CLI parsing is refused (CLI parsing admits only clap,
-# dependency-gate-cli-parser), and an unknown audit is refused.
+# dependency-gate-cli-parser), and an unknown audit is refused. DESIGN.md 8.2: "Run `modelspec
+# train` as a subprocess from Rust `std::process::Command`", so a ModelSpec crate is refused too.
 type: ess-scenario/1
 domain: patchback.dependency
 scenario: dependency-gate-forbidden-crate
-summary: ndarray (tensor), rustfft (DSP), burn (ML) and serde (serialization) are refused with ForbiddenCrate.
+summary: ndarray (tensor), rustfft (DSP), burn (ML), serde (serialization) and a ModelSpec crate are refused with ForbiddenCrate.
 
 arrange:
   - instance: audit
@@ -73,6 +74,19 @@ timeline:
       name: patchback.dependency.ForbiddenCrate
 
   - at: 2026-10-22T14:10:05Z
+    command: patchback.dependency.RecordCrate
+    actor: patchback.dependency.Auditor
+    input:
+      dependency_audit_id: {$instance: audit}
+      crate_name: modelspec
+      category: ModelSpec
+      approved: true
+      behind_optional_feature: true
+    outcome: forbidden-crate
+    error:
+      name: patchback.dependency.ForbiddenCrate
+
+  - at: 2026-10-22T14:10:06Z
     command: patchback.dependency.RecordCrate
     actor: patchback.dependency.Auditor
     input:

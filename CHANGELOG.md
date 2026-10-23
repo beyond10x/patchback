@@ -26,6 +26,10 @@ All notable changes to Patchback are recorded here. The format follows
   and a dark-only theme, and the generator of its status and specification reference pages.
 - `studio/`: the patch studio prototype (Vue 3, TypeScript, Vite, pnpm), which draws the module
   catalogue, patch graphs, a fit replay and the end result from illustrative fixture data.
+- `task dependency-audit`: the dependency gate alone, also run by `task check`. Besides `clap`
+  and its reviewed closure it admits at most one approved audio I/O backend, with its own
+  reviewed closure and only behind an optional feature, refuses any ModelSpec crate, and names
+  each refused package with its reason, one per line.
 - `task check`: validates the specification, runs its conformance suite against the interpreted
   reference target, validates the planning store, checks that every story names existing
   acceptance scenarios, and checks the generated documentation pages.

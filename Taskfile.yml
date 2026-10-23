@@ -62,6 +62,10 @@ tasks:
       - cargo run --locked -p patchback-docs -- generate --check
       - cargo test --locked -p patchback-docs
 
+  dependency-audit:
+    cmds:
+      - cargo test --locked -p patchback-cli --test dependencies
+
   rust-test:
     cmds:
       - cargo test --locked --workspace
@@ -101,4 +105,5 @@ tasks:
       - task: plan-validate
       - task: acceptance-check
       - task: docs-check
+      - task: dependency-audit
       - task: rust-test

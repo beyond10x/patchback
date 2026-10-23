@@ -6,13 +6,13 @@ summary: >-
   backend behind an optional feature, and CLI parsing, as the one approved `clap`; every other
   third-party application crate is refused.
 
-# UNMAPPED: § 3 applies the rule to "application-level dependencies" and exempts the upstream and
-# transitive build requirements of ModelSpec and the audio backend, without saying how the audit
-# tells them apart (direct `[dependencies]` of workspace crates, or the resolved graph minus those
-# subtrees). Each recorded crate is taken as application-level. Open question.
-# UNMAPPED: § 12.2 admits "pinned ModelSpec tooling" beside the audio backend. § 8.2 runs ModelSpec
-# as a subprocess, so it is not modelled as a crate; whether a ModelSpec crate may ever appear in
-# the audit is unsettled. Open question.
+# Settled in wave a2 (story:dependency-gate), held by crates/patchback-cli/tests/dependencies.rs:
+# the audit judges the full resolved closure of the application crates in Cargo.lock, so the
+# upstream and transitive build requirements of clap and of an approved audio backend are
+# recorded and reviewed by exact name and version like any other crate (each entry crate's
+# reviewed closure); a package outside a reviewed closure is refused. § 12.2's "pinned ModelSpec
+# tooling" is the ModelSpec binary, which § 8.2 runs as a subprocess; a ModelSpec crate is never
+# admitted and is recorded under the ModelSpec category, which is refused.
 
 types:
   - name: patchback.dependency.DependencyAuditId
@@ -41,6 +41,7 @@ types:
       - Prng
       - Testing
       - ApplicationFramework
+      - ModelSpec
       - Other
     naming:
       summary: What a crate is for, as the reviewer classified it (§ 3).
@@ -67,10 +68,10 @@ entities:
       - name: cli_parser
         type: Optional<patchback.dependency.CrateName>
         summary: The admitted CLI-parsing crate, if any; only `clap` (§ 3).
-    # UNMAPPED: § 3 "CI audits dependency changes and rejects unreviewed additions" and ADR-007
-    # "approve at most one backend for live audio later" do not say where an approval is recorded
-    # (an allow-list file, an ADR, a reviewer sign-off). The approval arrives as an input flag
-    # here. Open question.
+    # Settled in wave a2 (story:dependency-gate): an approval is an AEP approval record that names
+    # the crate, entered with its id, exact version and reviewed closure in the gate's allow list
+    # (`AUDIO_BACKENDS` in crates/patchback-cli/tests/dependencies.rs). The `approved` input flag
+    # stands for that entry.
     lifecycle:
       initial: Open
       states: [Open, Passed]
@@ -101,7 +102,8 @@ errors:
     summary: >-
       A third-party application crate outside the permitted categories: ML, tensor, numerical,
       DSP, mathematics, serialization, PRNG, test or application-framework crates are internal
-      Rust modules or `std` only (§ 1, § 3, invariant 7), and the one CLI-parsing crate is `clap`.
+      Rust modules or `std` only (§ 1, § 3, invariant 7), the one CLI-parsing crate is `clap`, and
+      a ModelSpec crate is never admitted because ModelSpec runs as a subprocess (§ 8.2).
     fields:
       - name: crate_name
         type: patchback.dependency.CrateName
