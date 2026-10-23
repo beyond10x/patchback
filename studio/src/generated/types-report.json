@@ -1,14 +1,14 @@
 {
   "format": "ess-types-report/3",
-  "source_digest": "6d0c266ecaa72621021d98b39451bb0d9aeebaae328221b102774f55b596d2fd",
+  "source_digest": "295086981db1382e7ea73acd85646a026c39afc65e749a0ae7df6d56b197c1a2",
   "input": {
     "kind": "model",
     "system": "patchback",
     "specification_version": "v1",
-    "contract_digest": "slice-sha256/2:d87f692ef19bf356b05951f6debde7fe8a7d7352a1bf2f4a5e21142cf6ba3560",
-    "projection_digest": "2a7c0d438b1e1cac22b5cc730981dc567ff8da1582cf1013256ead823f97db87"
+    "contract_digest": "slice-sha256/2:243bfa9d64e56c3038573e74888228aae885e3fe5a97c7cdefbbd08baa04ff6d",
+    "projection_digest": "b5b7d11ed10ec9c2582db5ec79e47b4ffec16f169416a7f340b385a8932e2e05"
   },
-  "generator_version": "0.67.0",
+  "generator_version": "0.68.0",
   "target": "typescript",
   "configuration": {
     "language": "typescript"
