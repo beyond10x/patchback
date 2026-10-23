@@ -32,6 +32,8 @@ Entry points are the `Taskfile.yml` tasks (go-task):
   (`crates/patchback-cli/tests/dependencies.rs`) and the CLI dispatch tests.
 - `task dependency-audit`: runs the dependency gate alone.
 - `task check`: all of the above; the gate. CI (`check.yml`) runs it.
+- `task release-check TAG=<version>`: refuses unless the tag is a bare version, equals
+  `[workspace.package] version` in `Cargo.toml`, and `CHANGELOG.md` has `## [<version>] - <date>`.
 - Site build: `npm --prefix website ci --allow-git=root` (npm 12 refuses Git dependencies without
   the flag; CI's Node 22 needs none), then `npm --prefix website run build`. `pages.yml`
   ("Documentation validation") builds it in CI; `b10x-docs-site.yml` ("Documentation site")
@@ -74,5 +76,24 @@ Entry points are the `Taskfile.yml` tasks (go-task):
 ## Delivery
 
 All commits and pushes are `b10x-bot[bot]` through `b10x-gates bot --repository
-beyond10x/patchback`. Common Gates (`shared-gates.yml`) are enrolled in `gates-policy`. Releases,
-once code exists, follow the modelspec pattern: bare-version tags, Keep a Changelog 1.1.0.
+beyond10x/patchback`. Common Gates (`shared-gates.yml`) are enrolled in `gates-policy`.
+
+## Releases
+
+Patchback releases from source at bare-version tags (`0.1.0`, no `v`), after every merged wave;
+every crate inherits the workspace version and nothing is on a registry.
+
+- `CHANGELOG.md` follows Keep a Changelog 1.1.0. Changes collect under `## [Unreleased]`, one line
+  per change a user sees, naming the public item in backticks and its story id where it fits.
+- A release commit on `main` sets `[workspace.package] version` in `Cargo.toml` and `Cargo.lock`,
+  turns `## [Unreleased]` into `## [<version>] - <date>` under a new empty `## [Unreleased]`, and
+  moves the link references at the bottom. `task release-check TAG=<version>` passes on it.
+- `check` and `Shared source gates` are green on that commit before it is tagged.
+- The tag is the bot's, on that commit:
+  `b10x-gates bot --repository beyond10x/patchback -- tag -a <version> -m "Patchback <version>" <commit>`,
+  then `b10x-gates bot --repository beyond10x/patchback -- push origin <version>`.
+- `.github/workflows/release.yml` runs on the tag: `release-check`, then `check.yml`, then it builds
+  the `patchback` binary for Linux x86_64 and creates the GitHub Release with the version's
+  CHANGELOG section as notes, `patchback-<version>-x86_64-unknown-linux-gnu` and its `.sha256`.
+- A release is finished when the tag, the green `release` run and the Release with both assets are
+  verified. Never move or delete a pushed tag; fix forward with the next version.
