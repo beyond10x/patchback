@@ -2,17 +2,21 @@
 format: aep.planning-md/3
 id: story:patch-file-format
 kind: story
-status: draft
+status: active
 title: Line-oriented .patch file format
 relations:
 - decomposes: epic:sound-engine
 - informed_by: executable-system-specification:patchback-contracts
 - depends_on: story:parameter-contracts
 - depends_on: story:workspace-scaffold
+- serves: vision:patchback
 scope:
 - confidence: inferred
   path: crates/patchback-core
-revision: 2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-23T12:38:04Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-10-23T12:38:04Z", actor: "human:timo", revision: 4}
 ---
 # Line-oriented .patch file format
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:patch-graph-validation
 kind: story
-status: draft
+status: active
 title: Patch graph validation and compilation
 relations:
 - decomposes: epic:sound-engine
@@ -10,10 +10,14 @@ relations:
 - depends_on: story:parameter-contracts
 - depends_on: story:workspace-scaffold
 - depends_on: story:patch-file-format
+- serves: vision:patchback
 scope:
 - confidence: inferred
   path: crates/patchback-core
-revision: 3
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-23T12:38:04Z", actor: "human:timo", revision: 4}
+- {from: "proposed", to: "active", at: "2026-10-23T12:38:04Z", actor: "human:timo", revision: 5}
 ---
 # Patch graph validation and compilation
 
