@@ -89,13 +89,15 @@ const fn planned(
 
 /// Every capability the site claims, in the order the status table lists them.
 pub const CAPABILITIES: &[Capability] = &[
-    planned(
-        A,
-        "Audio",
-        "WAV input and output without an audio crate",
-        "Mono, or stereo downmixed explicitly to mono; PCM16 or IEEE float32 at 48 kHz. Truncated chunks, size overflow, non-finite samples and unsupported formats are refused.",
-        "/docs/reference/files#reference-audio",
-    ),
+    Capability {
+        area: "Audio",
+        label: "WAV input and output without an audio crate",
+        detail: "Mono, or stereo downmixed to mono by the per-frame mean and recorded; PCM16 or IEEE float32 at 48 kHz, written back byte-exact. Truncated chunks, size overflow, non-finite samples, unsupported formats and files past the frame bound are refused.",
+        status: "shipped",
+        evidence: Some("crates/patchback-audio/tests/wav.rs::pcm16_roundtrip_is_byte_exact"),
+        milestone: None,
+        href: "/docs/reference/files#reference-audio",
+    },
     planned(
         A,
         "Patch",
@@ -556,17 +558,27 @@ mod tests {
     }
 
     #[test]
-    fn nothing_is_shipped_while_the_repository_holds_no_code() {
-        assert_eq!(count(CAPABILITIES, "shipped"), 0);
-        assert!(CAPABILITIES.iter().all(|c| c.evidence.is_none()));
+    fn exactly_the_shipped_capabilities_name_a_test() {
+        assert!(count(CAPABILITIES, "shipped") > 0);
+        for capability in CAPABILITIES {
+            assert_eq!(
+                capability.status == "shipped",
+                capability.evidence.is_some(),
+                "{}",
+                capability.label
+            );
+        }
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        assert!(document(&root).is_ok());
     }
 
     #[test]
     fn the_page_counts_the_capabilities_and_renders_the_table() {
         let page = page(CAPABILITIES, AS_OF);
+        let shipped = count(CAPABILITIES, "shipped");
         assert!(page.contains(&format!(
-            "0 shipped, 0 decided, {} planned",
-            CAPABILITIES.len()
+            "{shipped} shipped, 0 decided, {} planned",
+            CAPABILITIES.len() - shipped
         )));
         assert!(page.contains("import status from '@site/data/status.json';"));
         assert!(page.contains("<StatusTable data={status}"));

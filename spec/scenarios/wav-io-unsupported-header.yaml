@@ -1,9 +1,10 @@
 # DESIGN.md 5.3: "explicit rejection of unsupported sample rates (no silent conversion)";
 # 6.1: PCM16 or IEEE float32 only, one or two channels; 12.1: "unsupported format".
+# WAVE_FORMAT_EXTENSIBLE (tag 65534) is refused even around PCM16 (UNMAPPED in the domain).
 type: ess-scenario/1
 domain: patchback.audio
 scenario: wav-io-unsupported-header
-summary: A 44.1 kHz file, a PCM24 file and a six-channel file are each refused and no clip is created.
+summary: A 44.1 kHz file, a PCM24 file, a six-channel file and a WAVE_FORMAT_EXTENSIBLE PCM16 file are each refused and no clip is created.
 
 timeline:
   - at: 2026-10-22T09:00:00Z
@@ -50,3 +51,18 @@ timeline:
     outcome: unsupported-channel-count
     error:
       name: patchback.audio.UnsupportedChannelCount
+
+  - at: 2026-10-22T09:00:03Z
+    command: patchback.audio.ImportWav
+    actor: patchback.audio.Operator
+    input:
+      path: extensible-pcm16.wav
+      origin: PatchbackSynthesized
+      sample_rate_hz: 48000
+      channel_count: 1
+      format_tag: 65534
+      bits_per_sample: 16
+      frame_count: 48000
+    outcome: unsupported-sample-format
+    error:
+      name: patchback.audio.UnsupportedSampleFormat

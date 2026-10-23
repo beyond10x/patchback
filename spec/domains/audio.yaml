@@ -232,6 +232,14 @@ errors:
       - name: frame_count
         type: Integer
 
+  - name: patchback.audio.SampleOutOfRange
+    summary: >-
+      A PCM16 export met a sample outside [-1, 1]; it is refused rather than clipped, and no file
+      is written.
+    fields:
+      - name: path
+        type: String
+
   - name: patchback.audio.ClipNotFound
     summary: No clip carries the identity given.
     fields:
@@ -317,7 +325,8 @@ commands:
     # whether "explicitly" means an operator opt-in (stereo refused without it) or a recorded
     # downmix the system always performs. This model downmixes and records `downmixed: true`.
     # UNMAPPED: WAVE_FORMAT_EXTENSIBLE (tag 65534) wrapping PCM16 or float32 is not mentioned;
-    # this model refuses it as an unsupported format.
+    # this model refuses it as an unsupported format, and so does the reader.
+    # The downmix is the per-frame mean (left + right) / 2 (patchback_audio::downmix_frame).
     outcomes:
       - name: provenance-missing
         when: {all: [origin == ExternalRecording, not defined(provenance)]}
@@ -386,7 +395,8 @@ commands:
 
       # UNMAPPED: DESIGN.md 6.1 and 12.3 require a frame/duration bound and name no value (6.1
       # gives "roughly 0.5-2 seconds" as the analysis unit, not as a limit). Until the owner sets
-      # the bound it is an external refusal rather than a guard on frame_count.
+      # the bound it is an external refusal rather than a guard on frame_count. The reader holds
+      # a provisional bound, patchback_audio::MAX_FRAMES (ten minutes at 48 kHz, 28800000 frames).
       - name: too-long
         external: the frame count exceeds the configured input duration bound
         error: patchback.audio.InputTooLong
@@ -465,13 +475,21 @@ commands:
       - name: sample_format
         type: patchback.audio.WavSampleFormat
     # UNMAPPED: no section says what a PCM16 export does with float samples outside [-1, 1]
-    # (refuse, or clip and report as 5.3 requires of the output stage). Open question.
+    # (refuse, or clip and report as 5.3 requires of the output stage). Open question. Until the
+    # owner decides, the writer (patchback_audio::encode) refuses, never clips silently; the clip's
+    # samples are not modelled, so the refusal is external.
     outcomes:
       - name: no-such-clip
         when_related: {via: input.audio_clip_id, exists: false}
         error: patchback.audio.ClipNotFound
         payload:
           patchback.audio.ClipNotFound: {audio_clip_id: input.audio_clip_id}
+
+      - name: sample-out-of-range
+        external: the WAV writer finds a sample outside [-1, 1] while writing PCM16
+        error: patchback.audio.SampleOutOfRange
+        payload:
+          patchback.audio.SampleOutOfRange: {path: input.path}
 
       - name: exported
         creates: patchback.audio.WavFile

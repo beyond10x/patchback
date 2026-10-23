@@ -8,6 +8,10 @@ All notable changes to Patchback are recorded here. The format follows
 
 ### Added
 
+- `patchback-audio`: std-only WAV import and export. Mono or stereo (downmixed by the per-frame
+  mean, and recorded) PCM16 or float32 at 48 kHz is read into a clip and written back
+  byte-exact; unsupported headers, truncated or corrupt chunks, non-finite samples, files past
+  the provisional ten-minute frame bound and PCM16 export of samples outside [-1, 1] are refused.
 - The Cargo workspace of DESIGN.md § 4.1: library crates `patchback-core`, `patchback-dsp`,
   `patchback-audio`, `patchback-analysis`, `patchback-dataset`, `patchback-model` and
   `patchback-fit`, and `patchback-cli` with the `patchback` binary, which recognises `patch
