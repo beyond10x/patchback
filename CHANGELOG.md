@@ -6,6 +6,15 @@ All notable changes to Patchback are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `patchback patch validate` and `validate` in `patchback-core::patch` (story
+  patch-review-fixes): a `subtractive-mono/1` patch that is not the fixed § 5.2 chain is refused
+  as `FixedChainMismatch`, naming the missing kinds, the nodes the chain does not use and the
+  chain edges no edge carries; a header with an extra field and an unknown version is refused as
+  `UnknownFormatVersion`, not `MalformedRecord`; and a version-1 header with an extra field no
+  longer hides a higher-ranked fault on a later line, such as `UnsupportedSampleRate`.
+
 ## [0.2.0] - 2026-10-23
 
 ### Added

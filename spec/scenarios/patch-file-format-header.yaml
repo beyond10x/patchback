@@ -1,10 +1,14 @@
 # DESIGN.md section 11: the .patch format is line-oriented and versioned, and the parser refuses
 # an unknown version; section 10 fixes the analysis rate at 48 kHz, so a patch at any other rate
 # is refused (unsupported rate). A refused file creates no patch.
+# The last step is the header line `patchback-patch 3 extra`: a version this parser does not read
+# and a field too many. The model sees only the version; LoadPatch declares unknown-version before
+# malformed-record, so the version answers (patchback-core src/patch/file.rs ranks the header
+# line's faults; test the_header_line_answers_its_highest_ranked_fault).
 type: ess-scenario/1
 domain: patchback.patch
 scenario: patch-file-format-header
-summary: A .patch file with an unknown format version or an unsupported sample rate is refused and no patch is created.
+summary: A .patch file with an unknown format version, even on a header line with a field too many, or an unsupported sample rate is refused and no patch is created.
 
 timeline:
   - at: 2026-10-22T09:00:00Z
@@ -67,3 +71,20 @@ timeline:
         payload:
           patch_id: 7f0c0000-0000-4000-8000-000000000121
           topology_id: 7f0c0000-0000-4000-8000-000000000021
+
+  - at: 2026-10-22T09:00:04Z
+    command: patchback.patch.LoadPatch
+    actor: patchback.patch.Operator
+    input:
+      patch_id: 7f0c0000-0000-4000-8000-000000000124
+      format_version: 3
+      sample_rate_hz: 48000
+      topology_id: 7f0c0000-0000-4000-8000-000000000021
+      nodes: []
+      edges: []
+    outcome: unknown-version
+    error:
+      name: patchback.patch.UnknownFormatVersion
+      fields:
+        format_version: 3
+    no_events: [patchback.patch.PatchLoaded]

@@ -26,8 +26,8 @@ them starts a server or needs a network.
 patchback patch validate patches/example.patch
 ```
 
-Loads a `.patch` file, runs the identifier, rate, parameter, port, cycle and resource-cap
-checks, and compiles the patch into an execution plan. It renders nothing and writes nothing.
+Loads a `.patch` file, runs the identifier, rate, parameter, port, fixed-chain, cycle and
+resource-cap checks, and compiles the patch into an execution plan. It renders nothing and writes nothing.
 The order of the checks is in [the file reference](./files.md#loading-then-validating). See
 [patches](../concepts/patch.md).
 
@@ -48,7 +48,10 @@ fault is: the line of the file, or the node or edge (as its `.patch` line):
 patchback: patch validate refused: patchback.patch.MalformedRecord: "patches/example.patch": line 5: a `node` record has 3 fields, this one has 4
 patchback: patch validate refused: patchback.patch.ParameterContractViolation: "patches/example.patch": node 7: parameter output_gain is 3, outside its contract's range [-24, 0]
 patchback: patch validate refused: patchback.patch.UnknownPort: "patches/example.patch": edge 6 out Audio 7 sidechain Audio: node 7 (Output) declares no input port sidechain
+patchback: patch validate refused: patchback.patch.FixedChainMismatch: "patches/example.patch": the patch is not the fixed chain of subtractive-mono/1: missing nodes Output; missing edges Vca out -> Output in
 ```
+
+A refusal of the whole patch, such as the fixed chain, names no line, node or edge.
 
 The path is quoted with control characters escaped, so a file name cannot split the line.
 

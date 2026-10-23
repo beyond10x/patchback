@@ -6,6 +6,7 @@
 use std::collections::BTreeSet;
 
 use patchback_core::parameter::{SUBTRACTIVE_MONO, Topology};
+use patchback_core::patch::validate::{FIXED_CHAIN_EDGES, FIXED_CHAIN_KINDS};
 use patchback_core::patch::{
     EdgeDecl, ExecutionPlan, FORMAT_VERSION, LoadPatchError, MAX_GRAPH_EDGES, MAX_GRAPH_NODES,
     MAX_VOICES, NodeDecl, NodeKind, ParameterValue, Patch, PlanInput, PlanOutput, PortDirection,
@@ -328,16 +329,40 @@ fn ties_are_broken_by_the_lowest_node_id() {
     );
 }
 
+/// A patch with unconnected ports is not the fixed chain (story:patch-review-fixes), so no plan
+/// has one: in the chain's plan every input reads one buffer and every buffer is read.
 #[test]
-fn unconnected_outputs_keep_their_buffers_and_unconnected_inputs_read_none() {
+fn unconnected_ports_are_refused_and_the_plan_of_the_chain_connects_every_port() {
     use NodeKind::*;
-    let plan = compile(&valid(&patch(
+    let unconnected = patch(
         vec![with_defaults(9, Vca), with_defaults(4, NoteInput)],
         vec![],
-    )));
-    assert_eq!(plan.order(), [4, 9]);
-    assert_eq!(plan.buffer_count(), 3);
-    assert!(plan.steps().iter().all(|s| s.inputs.is_empty()));
+    );
+    assert!(matches!(
+        refused(&unconnected),
+        ValidationError::FixedChainMismatch { .. }
+    ));
+    let plan = compile(&valid(&default_voice()));
+    let inputs: usize = plan
+        .steps()
+        .iter()
+        .map(|s| {
+            assert_eq!(
+                s.inputs.len(),
+                s.kind.input_ports().len(),
+                "node {}",
+                s.node
+            );
+            s.inputs.len()
+        })
+        .sum();
+    let read: BTreeSet<usize> = plan
+        .steps()
+        .iter()
+        .flat_map(|s| s.inputs.iter().map(|i| i.buffer))
+        .collect();
+    assert_eq!(inputs, FIXED_CHAIN_EDGES.len());
+    assert_eq!(read, (0..plan.buffer_count()).collect());
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -664,6 +689,294 @@ fn rates_refuses_an_end_that_states_another_rate_than_its_kind_declares() {
 }
 
 // ---------------------------------------------------------------------------------------------
+// The fixed chain (spec/scenarios/patch-graph-validation-fixed-chain.yaml; DESIGN.md § 5.2,
+// story:patch-review-fixes)
+
+const FIXED_CHAIN: &str = "patchback.patch.FixedChainMismatch";
+
+fn spec_error_of_patch(patch: &Patch) -> &'static str {
+    refused(patch).spec_error()
+}
+
+#[test]
+fn fixed_chain_refuses_a_patch_with_no_nodes() {
+    assert_eq!(spec_error_of_patch(&patch(vec![], vec![])), FIXED_CHAIN);
+}
+
+#[test]
+fn fixed_chain_refuses_the_voice_without_its_output() {
+    let mut voice = default_voice();
+    voice.nodes.retain(|n| n.kind != NodeKind::Output);
+    voice.edges.retain(|e| e.to_node != 7);
+    assert_eq!(spec_error_of_patch(&voice), FIXED_CHAIN);
+}
+
+#[test]
+fn fixed_chain_refuses_the_voice_without_any_one_of_its_nodes() {
+    for kind in NodeKind::MVP {
+        let mut voice = default_voice();
+        let id = voice
+            .nodes
+            .iter()
+            .find(|n| n.kind == kind)
+            .expect("the voice has every kind")
+            .id;
+        voice.nodes.retain(|n| n.id != id);
+        voice.edges.retain(|e| e.from_node != id && e.to_node != id);
+        assert_eq!(spec_error_of_patch(&voice), FIXED_CHAIN, "{kind:?}");
+    }
+}
+
+#[test]
+fn fixed_chain_refuses_the_voice_without_any_one_of_its_edges() {
+    for index in 0..default_voice().edges.len() {
+        let mut voice = default_voice();
+        let removed = voice.edges.remove(index);
+        assert_eq!(spec_error_of_patch(&voice), FIXED_CHAIN, "{removed:?}");
+    }
+}
+
+#[test]
+fn fixed_chain_refuses_a_second_node_of_any_kind_of_the_voice() {
+    for kind in NodeKind::MVP {
+        let mut voice = default_voice();
+        voice.nodes.push(with_defaults(20, kind));
+        assert_eq!(spec_error_of_patch(&voice), FIXED_CHAIN, "{kind:?}");
+    }
+}
+
+#[test]
+fn fixed_chain_the_refusal_names_what_is_missing_or_extra() {
+    use NodeKind::*;
+    // No nodes: every kind and every edge of the chain is missing.
+    assert_eq!(
+        refused(&patch(vec![], vec![])),
+        ValidationError::FixedChainMismatch {
+            missing_kinds: FIXED_CHAIN_KINDS.to_vec(),
+            extra_nodes: vec![],
+            missing_edges: FIXED_CHAIN_EDGES.to_vec(),
+        }
+    );
+    // The voice without its Output node and the edge into it.
+    let mut voice = default_voice();
+    voice.nodes.retain(|n| n.id != 7);
+    voice.edges.retain(|e| e.to_node != 7);
+    let error = refused(&voice);
+    assert_eq!(
+        error,
+        ValidationError::FixedChainMismatch {
+            missing_kinds: vec![Output],
+            extra_nodes: vec![],
+            missing_edges: vec![FIXED_CHAIN_EDGES[6]],
+        }
+    );
+    assert_eq!(
+        error.to_string(),
+        "the patch is not the fixed chain of subtractive-mono/1: missing nodes Output; \
+         missing edges Vca out -> Output in"
+    );
+    // A second node of a kind: the extra one is the node the chain edges do not use, whatever its
+    // identifier, and no chain edge the patch has is named missing.
+    let mut voice = default_voice();
+    voice.nodes.push(with_defaults(9, Drive));
+    voice.nodes.push(with_defaults(0, Vca));
+    let error = refused(&voice);
+    assert_eq!(
+        error,
+        ValidationError::FixedChainMismatch {
+            missing_kinds: vec![],
+            extra_nodes: vec![(0, Vca), (9, Drive)],
+            missing_edges: vec![],
+        }
+    );
+    assert_eq!(
+        error.to_string(),
+        "the patch is not the fixed chain of subtractive-mono/1: extra nodes 0 (Vca), 9 (Drive)"
+    );
+    // An edge of the chain wired to another port of the same nodes is missing.
+    let mut voice = default_voice();
+    voice.edges.retain(|e| e.to_port != "gate");
+    assert_eq!(
+        refused(&voice),
+        ValidationError::FixedChainMismatch {
+            missing_kinds: vec![],
+            extra_nodes: vec![],
+            missing_edges: vec![FIXED_CHAIN_EDGES[1]],
+        }
+    );
+}
+
+/// Of several nodes of one kind, the chain uses the one that carries the most chain edges, the
+/// lowest identifier among equals; the others are extra. A chain edge is missing only when no
+/// nodes of its two kinds carry it.
+#[test]
+fn fixed_chain_the_node_of_a_kind_is_the_one_the_chain_edges_use() {
+    use NodeKind::*;
+    use PortRate::*;
+    let audio = |from: u32, to: u32| edge((from, "out", Audio), (to, "in", Audio));
+    let chain_error = |extra_nodes: Vec<(u32, NodeKind)>, missing_edges: Vec<usize>| {
+        ValidationError::FixedChainMismatch {
+            missing_kinds: vec![],
+            extra_nodes,
+            missing_edges: missing_edges
+                .into_iter()
+                .map(|i| FIXED_CHAIN_EDGES[i])
+                .collect(),
+        }
+    };
+    // The chain's edges into the VCA split over two VCAs: node 0 takes the filter, node 6 the
+    // envelope and the output. Node 6 carries more, so node 0 is extra; no edge is missing.
+    let mut voice = default_voice();
+    voice.nodes.push(with_defaults(0, Vca));
+    voice.edges.retain(|e| (e.from_node, e.to_node) != (4, 6));
+    voice.edges.push(audio(4, 0));
+    assert_eq!(refused(&voice), chain_error(vec![(0, Vca)], vec![]));
+    // The same split the other way: node 0 takes the filter and the envelope.
+    let mut voice = default_voice();
+    voice.nodes.push(with_defaults(0, Vca));
+    voice.edges.retain(|e| e.to_node != 6);
+    voice.edges.push(audio(4, 0));
+    voice
+        .edges
+        .push(edge((5, "env", Control), (0, "gain", Control)));
+    assert_eq!(refused(&voice), chain_error(vec![(6, Vca)], vec![]));
+    // A tie: Drive 3 takes the oscillator, Drive 9 feeds the filter. The lower identifier is used.
+    let mut voice = default_voice();
+    voice.nodes.push(with_defaults(9, Drive));
+    voice.edges.retain(|e| e.from_node != 3);
+    voice.edges.push(audio(9, 4));
+    assert_eq!(refused(&voice), chain_error(vec![(9, Drive)], vec![]));
+    // A chain edge no node of its kinds carries is missing, beside the extra node.
+    let mut voice = default_voice();
+    voice.nodes.push(with_defaults(0, Vca));
+    voice.edges.retain(|e| e.to_node != 7);
+    assert_eq!(refused(&voice), chain_error(vec![(0, Vca)], vec![6]));
+    // An edge between a used node and an extra one carries its chain edge.
+    let mut voice = default_voice();
+    voice.nodes.push(with_defaults(8, Output));
+    voice.edges.retain(|e| e.to_node != 7);
+    voice.edges.push(audio(6, 8));
+    assert_eq!(refused(&voice), chain_error(vec![(7, Output)], vec![]));
+}
+
+#[test]
+fn fixed_chain_is_the_voice_of_design_section_5_2() {
+    use NodeKind::*;
+    assert_eq!(FIXED_CHAIN_KINDS, NodeKind::MVP);
+    let edges: Vec<(NodeKind, &str, NodeKind, &str)> = FIXED_CHAIN_EDGES
+        .iter()
+        .map(|e| (e.from_kind, e.from_port, e.to_kind, e.to_port))
+        .collect();
+    assert_eq!(
+        edges,
+        [
+            (NoteInput, "pitch", SawOscillator, "pitch"),
+            (NoteInput, "gate", AdsrEnvelope, "gate"),
+            (SawOscillator, "out", Drive, "in"),
+            (Drive, "out", LowpassFilter, "in"),
+            (LowpassFilter, "out", Vca, "in"),
+            (AdsrEnvelope, "env", Vca, "gain"),
+            (Vca, "out", Output, "in"),
+        ]
+    );
+    // Each end is a port its kind declares, the two ends at one rate, and the chain feeds every
+    // input port of its kinds exactly once.
+    let mut fed = Vec::new();
+    for chain in FIXED_CHAIN_EDGES {
+        let out = chain
+            .from_kind
+            .output_ports()
+            .iter()
+            .find(|p| p.name == chain.from_port)
+            .expect("an output port");
+        let input = chain
+            .to_kind
+            .input_ports()
+            .iter()
+            .find(|p| p.name == chain.to_port)
+            .expect("an input port");
+        assert_eq!(out.rate, input.rate, "{chain}");
+        fed.push((chain.to_kind, chain.to_port));
+    }
+    let mut inputs: Vec<(NodeKind, &str)> = FIXED_CHAIN_KINDS
+        .iter()
+        .flat_map(|&kind| kind.input_ports().iter().map(move |p| (kind, p.name)))
+        .collect();
+    fed.sort();
+    inputs.sort();
+    assert_eq!(fed, inputs);
+    // The default voice of these tests is that chain.
+    let voice = default_voice();
+    for chain in FIXED_CHAIN_EDGES {
+        let id = |kind| {
+            voice
+                .nodes
+                .iter()
+                .find(|n| n.kind == kind)
+                .expect("a node")
+                .id
+        };
+        assert!(
+            voice
+                .edges
+                .iter()
+                .any(|e| e.from_node == id(chain.from_kind)
+                    && e.from_port == chain.from_port
+                    && e.to_node == id(chain.to_kind)
+                    && e.to_port == chain.to_port)
+        );
+    }
+}
+
+#[test]
+fn fixed_chain_the_voice_is_accepted_whatever_its_node_ids() {
+    // The chain is a matter of kinds and ports, not of identifiers.
+    let mut voice = default_voice();
+    let renumber = |id: u32| 100 - id * 7;
+    for node in &mut voice.nodes {
+        node.id = renumber(node.id);
+    }
+    for edge in &mut voice.edges {
+        edge.from_node = renumber(edge.from_node);
+        edge.to_node = renumber(edge.to_node);
+    }
+    valid(&voice);
+}
+
+/// Every input port of the seven nodes is fed by the chain, so an edge beyond it, between any two
+/// ports the § 5.1 table declares at their rate, closes a cycle or feeds a taken input: the later
+/// checks answer it, and no patch other than the chain validates.
+#[test]
+fn fixed_chain_an_edge_beyond_the_chain_is_a_cycle_or_a_taken_input() {
+    let voice = default_voice();
+    let mut tried = 0;
+    for from in &voice.nodes {
+        for to in &voice.nodes {
+            for out in from.kind.output_ports() {
+                for input in to.kind.input_ports().iter().filter(|p| p.rate == out.rate) {
+                    let mut extended = default_voice();
+                    extended.edges.push(edge(
+                        (from.id, out.name, out.rate),
+                        (to.id, input.name, input.rate),
+                    ));
+                    tried += 1;
+                    let error = refused(&extended);
+                    assert!(
+                        matches!(
+                            error,
+                            ValidationError::ZeroDelayCycle { .. }
+                                | ValidationError::InputPortTaken { .. }
+                        ),
+                        "{from:?} {out:?} -> {to:?} {input:?}: {error}"
+                    );
+                }
+            }
+        }
+    }
+    assert!(tried > voice.edges.len(), "{tried}");
+}
+
+// ---------------------------------------------------------------------------------------------
 // Cycles (spec/scenarios/patch-graph-validation-cycle-and-caps.yaml; numeric obligation 2:
 // cycle detection refuses every cycle)
 
@@ -671,9 +984,13 @@ fn audio(from: u32, to: u32) -> EdgeDecl {
     edge((from, "out", PortRate::Audio), (to, "in", PortRate::Audio))
 }
 
+// A cycle needs an edge beyond the fixed chain, between nodes of the chain: a patch with a node
+// beyond the chain is refused by the chain check first (story:patch-review-fixes).
+
 #[test]
 fn cycle_refuses_a_self_loop() {
-    let looped = patch(vec![with_defaults(3, NodeKind::Drive)], vec![audio(3, 3)]);
+    let mut looped = default_voice();
+    looped.edges.push(audio(3, 3));
     assert_eq!(
         refused(&looped),
         ValidationError::ZeroDelayCycle { nodes: vec![3] }
@@ -682,42 +999,33 @@ fn cycle_refuses_a_self_loop() {
 
 #[test]
 fn cycle_refuses_a_two_node_cycle() {
-    use NodeKind::*;
-    let scenario = patch(
-        vec![with_defaults(3, Drive), with_defaults(4, LowpassFilter)],
-        vec![audio(3, 4), audio(4, 3)],
-    );
+    let mut scenario = default_voice();
+    scenario.edges.push(audio(4, 3));
     assert_eq!(
         refused(&scenario),
         ValidationError::ZeroDelayCycle { nodes: vec![3, 4] }
     );
 }
 
+/// The cycle is named from its lowest identifier, not from the node the voice reaches it by: the
+/// drive (70) is entered first from the oscillator, the filter (10) is the lowest on the cycle.
 #[test]
-fn cycle_refuses_a_cycle_not_reachable_from_the_note_input() {
-    use NodeKind::*;
-    use PortRate::*;
-    let island = patch(
-        vec![
-            with_defaults(1, NoteInput),
-            with_defaults(2, SawOscillator),
-            with_defaults(7, Output),
-            with_defaults(10, Vca),
-            with_defaults(11, Drive),
-            with_defaults(12, LowpassFilter),
-        ],
-        vec![
-            edge((1, "pitch", Control), (2, "pitch", Control)),
-            audio(2, 7),
-            audio(11, 12),
-            audio(12, 10),
-            audio(10, 11),
-        ],
-    );
+fn cycle_refuses_a_cycle_and_names_it_from_its_lowest_identifier() {
+    let mut voice = renumbered_voice(&[50, 20, 70, 10, 40, 30, 60]);
+    voice.edges.push(audio(10, 70));
     assert_eq!(
-        refused(&island),
+        refused(&voice),
         ValidationError::ZeroDelayCycle {
-            nodes: vec![10, 11, 12]
+            nodes: vec![10, 70]
+        }
+    );
+    // A longer cycle: drive -> filter -> VCA -> drive.
+    let mut voice = renumbered_voice(&[50, 20, 70, 10, 40, 30, 60]);
+    voice.edges.push(audio(30, 70));
+    assert_eq!(
+        refused(&voice),
+        ValidationError::ZeroDelayCycle {
+            nodes: vec![10, 30, 70]
         }
     );
 }
@@ -725,14 +1033,27 @@ fn cycle_refuses_a_cycle_not_reachable_from_the_note_input() {
 #[test]
 fn cycle_refuses_a_cycle_downstream_of_the_voice_and_names_only_the_cycle() {
     let mut voice = default_voice();
-    voice.nodes.push(with_defaults(8, NodeKind::Drive));
-    // 6 -> 7 is the voice; 6 -> 8 -> 6 through the VCA's audio input closes a loop.
-    voice.edges.push(audio(6, 8));
-    voice.edges.push(audio(8, 6));
+    // 4 -> 6 is the voice; 6 -> 4 through the filter's input closes a loop past 1, 2 and 3.
+    voice.edges.push(audio(6, 4));
     assert_eq!(
         refused(&voice),
-        ValidationError::ZeroDelayCycle { nodes: vec![6, 8] }
+        ValidationError::ZeroDelayCycle { nodes: vec![4, 6] }
     );
+}
+
+/// The default voice with the node of `FIXED_CHAIN_KINDS[i]` numbered `ids[i]`.
+fn renumbered_voice(ids: &[u32]) -> Patch {
+    let mut voice = default_voice();
+    let id = |old: u32| ids[(old - 1) as usize];
+    for node in &mut voice.nodes {
+        assert_eq!(FIXED_CHAIN_KINDS[(node.id - 1) as usize], node.kind);
+        node.id = id(node.id);
+    }
+    for edge in &mut voice.edges {
+        edge.from_node = id(edge.from_node);
+        edge.to_node = id(edge.to_node);
+    }
+    voice
 }
 
 /// Whether `edges` (pairs of indices into `n` nodes) have a cycle, by reachability.
@@ -785,30 +1106,49 @@ fn permutations(items: &mut Vec<usize>, k: usize, visit: &mut impl FnMut(&[usize
 
 #[test]
 fn cycle_detection_refuses_every_cycle_and_schedules_every_acyclic_graph_of_four_nodes() {
-    // Four Drive nodes, audio in to audio out: every subset of the 16 directed pairs (self-loops
-    // included) is a graph. Identifiers are not in index order, so the schedule's tie-break is
-    // tested against identifiers, not positions.
-    let ids = [30, 10, 40, 20];
-    let pairs: Vec<(usize, usize)> = (0..4).flat_map(|u| (0..4).map(move |v| (u, v))).collect();
+    // The fixed chain (story:patch-review-fixes) admits no node beyond its seven, so the graphs
+    // swept are the chain plus every subset of the 12 audio edges beyond it: from the oscillator,
+    // drive, filter or VCA output into the drive, filter, VCA or output input (16 pairs, self-loops
+    // included), less the chain's own four. Each feeds an input the chain already feeds, so an
+    // acyclic one is refused for that, after the cycle check, and only the chain itself is
+    // scheduled. Identifiers are not in index order, so cycles are named by identifier, not
+    // position. Every acyclic graph of the chain's numbering is scheduled by
+    // `the_chain_is_scheduled_lowest_identifier_first_under_every_numbering`.
+    let ids = [50, 20, 70, 10, 40, 30, 60];
+    let index = |kind: NodeKind| {
+        FIXED_CHAIN_KINDS
+            .iter()
+            .position(|&k| k == kind)
+            .expect("a chain kind")
+    };
+    let chain: Vec<(usize, usize)> = FIXED_CHAIN_EDGES
+        .iter()
+        .map(|e| (index(e.from_kind), index(e.to_kind)))
+        .collect();
+    let (sources, sinks) = ([1, 2, 3, 5], [2, 3, 5, 6]);
+    let pairs: Vec<(usize, usize)> = sources
+        .iter()
+        .flat_map(|&u| sinks.iter().map(move |&v| (u, v)))
+        .filter(|pair| !chain.contains(pair))
+        .collect();
+    assert_eq!(pairs.len(), 12);
     let mut cyclic = 0;
     let mut shared = 0;
     for mask in 0u32..(1 << pairs.len()) {
-        let edges: Vec<(usize, usize)> = pairs
+        let extra: Vec<(usize, usize)> = pairs
             .iter()
             .enumerate()
             .filter(|(bit, _)| mask & (1 << bit) != 0)
             .map(|(_, pair)| *pair)
             .collect();
-        let graph = patch(
-            ids.iter()
-                .map(|&id| with_defaults(id, NodeKind::Drive))
-                .collect(),
-            edges.iter().map(|&(u, v)| audio(ids[u], ids[v])).collect(),
-        );
+        let mut graph = renumbered_voice(&ids);
+        graph
+            .edges
+            .extend(extra.iter().map(|&(u, v)| audio(ids[u], ids[v])));
+        let edges: Vec<(usize, usize)> = chain.iter().chain(&extra).copied().collect();
         match validate(&graph) {
             Ok(validated) => {
-                assert!(!has_cycle(4, &edges), "mask {mask:#x} has a cycle");
-                assert!(!shares_an_input(&edges), "mask {mask:#x} shares an input");
+                assert_eq!(mask, 0, "mask {mask:#x} validated");
                 assert_eq!(
                     compile(&validated).order(),
                     lowest_order(&ids, &edges),
@@ -817,7 +1157,7 @@ fn cycle_detection_refuses_every_cycle_and_schedules_every_acyclic_graph_of_four
             }
             Err(ValidationError::ZeroDelayCycle { nodes }) => {
                 cyclic += 1;
-                assert!(has_cycle(4, &edges), "mask {mask:#x} is acyclic");
+                assert!(has_cycle(ids.len(), &edges), "mask {mask:#x} is acyclic");
                 // The nodes named form a cycle of the graph, from its lowest identifier.
                 let index = |id: u32| ids.iter().position(|&x| x == id).expect("a node");
                 assert_eq!(nodes.iter().min(), nodes.first(), "mask {mask:#x}");
@@ -833,13 +1173,17 @@ fn cycle_detection_refuses_every_cycle_and_schedules_every_acyclic_graph_of_four
                     );
                 }
             }
-            // Each Drive has one input port: an acyclic graph with two edges into one node is
-            // refused for that, after the cycle check.
+            // Every extra edge feeds an audio input the chain already feeds: an acyclic graph
+            // with one is refused for that, after the cycle check.
             Err(ValidationError::InputPortTaken { edge, earlier }) => {
                 shared += 1;
-                assert!(!has_cycle(4, &edges), "mask {mask:#x} has a cycle");
-                assert!(shares_an_input(&edges), "mask {mask:#x}");
-                assert_eq!(edge.to_node, earlier.to_node, "mask {mask:#x}");
+                assert!(!has_cycle(ids.len(), &edges), "mask {mask:#x} has a cycle");
+                assert!(!extra.is_empty(), "mask {mask:#x}");
+                assert_eq!(
+                    (edge.to_node, edge.to_port.as_str()),
+                    (earlier.to_node, earlier.to_port.as_str()),
+                    "mask {mask:#x}"
+                );
             }
             Err(other) => panic!("mask {mask:#x}: {other}"),
         }
@@ -848,10 +1192,49 @@ fn cycle_detection_refuses_every_cycle_and_schedules_every_acyclic_graph_of_four
     assert!(shared > 0);
 }
 
-/// Whether two of `edges` end at one node (each node of the sweep has one input port).
-fn shares_an_input(edges: &[(usize, usize)]) -> bool {
-    let ends: BTreeSet<usize> = edges.iter().map(|e| e.1).collect();
-    ends.len() < edges.len()
+/// The schedule's tie-break, under every numbering of the chain's seven nodes (7! of them): the
+/// plan's order is the lexicographically lowest topological order of identifiers, found by brute
+/// force over the orders of the seven kinds the chain's edges allow.
+#[test]
+fn the_chain_is_scheduled_lowest_identifier_first_under_every_numbering() {
+    let index = |kind: NodeKind| {
+        FIXED_CHAIN_KINDS
+            .iter()
+            .position(|&k| k == kind)
+            .expect("a chain kind")
+    };
+    let chain: Vec<(usize, usize)> = FIXED_CHAIN_EDGES
+        .iter()
+        .map(|e| (index(e.from_kind), index(e.to_kind)))
+        .collect();
+    let mut extensions: Vec<Vec<usize>> = Vec::new();
+    let mut kinds: Vec<usize> = (0..FIXED_CHAIN_KINDS.len()).collect();
+    permutations(&mut kinds, 0, &mut |order| {
+        let position = |i: usize| order.iter().position(|&x| x == i).expect("in order");
+        if chain.iter().all(|&(u, v)| position(u) < position(v)) {
+            extensions.push(order.to_vec());
+        }
+    });
+    // The note input first, the envelope anywhere among oscillator, drive and filter, then the
+    // VCA and the output.
+    assert_eq!(extensions.len(), 4);
+    let mut numberings = 0;
+    let mut assignment: Vec<usize> = (0..FIXED_CHAIN_KINDS.len()).collect();
+    permutations(&mut assignment, 0, &mut |assignment| {
+        let ids: Vec<u32> = assignment.iter().map(|&i| i as u32 + 1).collect();
+        let expected = extensions
+            .iter()
+            .map(|order| order.iter().map(|&i| ids[i]).collect::<Vec<u32>>())
+            .min()
+            .expect("an order");
+        assert_eq!(
+            compile(&valid(&renumbered_voice(&ids))).order(),
+            expected,
+            "{ids:?}"
+        );
+        numberings += 1;
+    });
+    assert_eq!(numberings, 5040);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -866,35 +1249,48 @@ fn vca_bank(count: usize) -> Patch {
     )
 }
 
+/// The fixed chain has seven nodes, so a graph past the node cap is refused by the chain check,
+/// which `spec/domains/patch.yaml` declares first; the node cap is not reached while every known
+/// topology is a fixed chain (story:patch-review-fixes).
 #[test]
-fn caps_a_graph_of_the_node_cap_is_accepted_and_one_more_node_is_refused() {
+fn caps_a_graph_past_the_node_cap_is_answered_by_the_fixed_chain_first() {
     assert_eq!(MAX_GRAPH_NODES, 256);
-    valid(&vca_bank(MAX_GRAPH_NODES));
-    assert_eq!(
-        refused(&vca_bank(MAX_GRAPH_NODES + 1)),
-        ValidationError::ResourceCapExceeded {
-            cap: ResourceCap::Nodes,
-            limit: MAX_GRAPH_NODES,
-            found: MAX_GRAPH_NODES + 1
-        }
-    );
-}
-
-fn fan_out(edges: usize) -> Patch {
-    let mut graph = vca_bank(9);
+    let mut graph = default_voice();
     graph
         .nodes
-        .push(with_defaults(100, NodeKind::SawOscillator));
-    graph.edges = (0..edges).map(|i| audio(100, (i % 9) as u32)).collect();
+        .extend(vca_bank(MAX_GRAPH_NODES).nodes.into_iter().map(|mut n| {
+            n.id += 100;
+            n
+        }));
+    assert_eq!(graph.nodes.len(), MAX_GRAPH_NODES + 7);
+    match refused(&graph) {
+        ValidationError::FixedChainMismatch {
+            missing_kinds,
+            extra_nodes,
+            missing_edges,
+        } => {
+            assert!(missing_kinds.is_empty() && missing_edges.is_empty());
+            assert_eq!(extra_nodes.len(), MAX_GRAPH_NODES);
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+/// The chain with its VCA-to-output edge repeated until the patch has `edges` edges.
+fn fan_out(edges: usize) -> Patch {
+    let mut graph = default_voice();
+    let repeats = edges - graph.edges.len();
+    graph
+        .edges
+        .extend(std::iter::repeat_n(audio(6, 7), repeats));
     graph
 }
 
 #[test]
 fn caps_a_graph_of_the_edge_cap_passes_the_cap_and_one_more_edge_is_refused() {
     assert_eq!(MAX_GRAPH_EDGES, 1024);
-    // An input port takes one edge, so no valid graph of at most `MAX_GRAPH_NODES` nodes (two
-    // input ports each at most) reaches the edge cap: at the cap, the graph passes the cap and is
-    // refused for its shared inputs, the check after it.
+    // An input port takes one edge, so no valid graph reaches the edge cap: at the cap, the graph
+    // passes the cap and is refused for its shared inputs, the check after it.
     let at_cap = refused(&fan_out(MAX_GRAPH_EDGES));
     assert!(
         matches!(at_cap, ValidationError::InputPortTaken { .. }),
@@ -910,31 +1306,22 @@ fn caps_a_graph_of_the_edge_cap_passes_the_cap_and_one_more_edge_is_refused() {
     );
 }
 
+/// One voice is the chain's one `NoteInput`; a second is a node beyond the chain, refused by the
+/// chain check before the voice cap (story:patch-review-fixes).
 #[test]
-fn caps_one_voice_is_accepted_and_a_second_note_input_is_refused() {
+fn caps_one_voice_is_accepted_and_a_second_note_input_is_answered_by_the_fixed_chain_first() {
     use NodeKind::*;
-    use PortRate::*;
     assert_eq!(MAX_VOICES, 1);
-    let one = patch(
-        vec![
-            with_defaults(1, NoteInput),
-            with_defaults(3, SawOscillator),
-            with_defaults(7, Output),
-        ],
-        vec![
-            edge((1, "pitch", Control), (3, "pitch", Control)),
-            audio(3, 7),
-        ],
-    );
+    let one = default_voice();
     valid(&one);
     let mut two = one;
-    two.nodes.push(with_defaults(2, NoteInput));
+    two.nodes.push(with_defaults(8, NoteInput));
     assert_eq!(
         refused(&two),
-        ValidationError::ResourceCapExceeded {
-            cap: ResourceCap::Voices,
-            limit: MAX_VOICES,
-            found: 2
+        ValidationError::FixedChainMismatch {
+            missing_kinds: vec![],
+            extra_nodes: vec![(8, NoteInput)],
+            missing_edges: vec![],
         }
     );
     for cap in ResourceCap::ALL {
@@ -950,24 +1337,24 @@ fn compile_unvalidated_the_only_path_to_a_plan_goes_through_validation() {
     // `compile` takes a `ValidatedPatch`; a loaded `Patch` does not type-check there, and a
     // `ValidatedPatch` has no public constructor (the `compile_fail` examples of
     // `patchback_core::patch::compile`). So a refused patch has no plan:
-    let cycle = patch(
-        vec![
-            with_defaults(3, NodeKind::Drive),
-            with_defaults(4, NodeKind::LowpassFilter),
-        ],
-        vec![audio(3, 4), audio(4, 3)],
-    );
+    let mut cycle = default_voice();
+    cycle.edges.push(audio(4, 3));
     let plan: Option<ExecutionPlan> = validate(&cycle).ok().map(|v| compile(&v));
     assert_eq!(plan, None);
-    // and the scenario's loaded patch reaches a plan only once validated.
+    // The scenario's loaded patch (an oscillator into the output) is not the fixed chain
+    // (story:patch-review-fixes), so it has no plan either,
     let loaded = parse_patch(
         "patchback-patch 1\nsample_rate_hz 48000\ntopology_id subtractive-mono/1\n\
          node 2 SawOscillator\nnode 7 Output\nparam 7 output_gain -6\n\
          edge 2 out Audio 7 in Audio\n",
     )
     .expect("loads");
+    let plan: Option<ExecutionPlan> = validate(&loaded).ok().map(|v| compile(&v));
+    assert_eq!(plan, None);
+    // and the loaded voice reaches a plan only once validated.
+    let loaded = parse_patch(&voice_text()).expect("loads");
     let plan = compile(&valid(&loaded));
-    assert_eq!(plan.order(), [2, 7]);
+    assert_eq!(plan.order(), [1, 2, 3, 4, 5, 6, 7]);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1007,19 +1394,18 @@ fn a_second_source_into_one_input_is_refused_naming_both_edges() {
 }
 
 #[test]
-fn an_output_port_feeds_any_number_of_edges() {
+fn a_second_edge_out_of_an_output_port_is_refused_for_the_taken_input_it_feeds() {
+    // In the fixed chain (story:patch-review-fixes) every input is fed, so a second edge out of an
+    // output port feeds a taken input; the refusal names that input, not the output it shares.
     let mut voice = default_voice();
-    for id in 10..14 {
-        voice.nodes.push(with_defaults(id, NodeKind::Drive));
-        voice.edges.push(audio(4, id));
-    }
-    let plan = compile(&valid(&voice));
-    let readers = plan
-        .steps()
-        .iter()
-        .filter(|s| s.inputs.iter().any(|i| i.from_node == 4))
-        .count();
-    assert_eq!(readers, 5);
+    voice.edges.push(audio(4, 7));
+    assert_eq!(
+        refused(&voice),
+        ValidationError::InputPortTaken {
+            edge: audio(6, 7),
+            earlier: Box::new(audio(4, 7))
+        }
+    );
 }
 
 #[test]
@@ -1227,14 +1613,15 @@ fn inject(rank: usize, voice: &mut Patch) {
             .edges
             .push(edge((2, "out", Audio), (7, "sidechain", Audio))),
         10 => voice.edges.push(edge((2, "out", Event), (6, "in", Event))),
-        11 => {
-            voice.nodes.push(with_defaults(400, Drive));
-            voice.nodes.push(with_defaults(401, LowpassFilter));
-            voice.edges.push(audio(400, 401));
-            voice.edges.push(audio(401, 400));
-        }
-        12 => voice.nodes.push(with_defaults(500, NoteInput)),
-        13 => voice.edges.push(audio(6, 7)),
+        // The chain without its gate edge.
+        11 => voice.edges.retain(|e| e.to_port != "gate"),
+        // The filter feeds the drive: 3 -> 4 -> 3. No node is added, so the chain still holds.
+        12 => voice.edges.push(audio(4, 3)),
+        // The only cap a patch of the fixed chain can exceed: the edges, by repeating one.
+        13 => voice
+            .edges
+            .extend(std::iter::repeat_n(audio(6, 7), MAX_GRAPH_EDGES - 6)),
+        14 => voice.edges.push(audio(6, 7)),
         _ => unreachable!(),
     }
 }
@@ -1346,13 +1733,14 @@ fn ordinal(error: &ValidationError) -> usize {
         ValidationError::UnknownPort { .. } => 10,
         ValidationError::PortRateMismatch { .. } => 11,
         ValidationError::IncompatiblePortRates { .. } => 12,
-        ValidationError::ZeroDelayCycle { .. } => 13,
-        ValidationError::ResourceCapExceeded { .. } => 14,
-        ValidationError::InputPortTaken { .. } => 15,
+        ValidationError::FixedChainMismatch { .. } => 13,
+        ValidationError::ZeroDelayCycle { .. } => 14,
+        ValidationError::ResourceCapExceeded { .. } => 15,
+        ValidationError::InputPortTaken { .. } => 16,
     }
 }
 
-const REFUSALS: usize = 16;
+const REFUSALS: usize = 17;
 
 #[test]
 fn every_refusal_names_an_error_of_the_spec_domain_and_where_it_is() {
@@ -1398,6 +1786,7 @@ fn every_refusal_names_an_error_of_the_spec_domain_and_where_it_is() {
             ValidationError::UnknownFormatVersion { .. }
             | ValidationError::UnsupportedSampleRate { .. }
             | ValidationError::UnknownTopology { .. }
+            | ValidationError::FixedChainMismatch { .. }
             | ValidationError::ResourceCapExceeded { .. } => true,
             ValidationError::UnknownNode { .. }
             | ValidationError::UnknownPort { .. }

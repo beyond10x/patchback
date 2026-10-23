@@ -90,6 +90,7 @@ scenarios:
   - scenarios/patch-graph-validation-accepted.yaml
   - scenarios/patch-graph-validation-compile-unvalidated.yaml
   - scenarios/patch-graph-validation-cycle-and-caps.yaml
+  - scenarios/patch-graph-validation-fixed-chain.yaml
   - scenarios/patch-graph-validation-identifiers.yaml
   - scenarios/patch-graph-validation-rates.yaml
   - scenarios/phrase-fit-confidence-missing.yaml

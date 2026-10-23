@@ -30,13 +30,24 @@
 //! let validated = ValidatedPatch { patch, topology: Topology::subtractive_mono() };
 //! ```
 //!
-//! The one path to a plan goes through validation:
+//! The one path to a plan goes through validation, which refuses a patch that is not the fixed
+//! § 5.2 chain, such as one with no nodes:
 //!
 //! ```
 //! use patchback_core::patch::{compile, parse_patch, validate};
-//! let patch = parse_patch("patchback-patch 1\nsample_rate_hz 48000\ntopology_id subtractive-mono/1\n").unwrap();
-//! let plan = compile(&validate(&patch).unwrap());
-//! assert!(plan.steps().is_empty());
+//! let header = "patchback-patch 1\nsample_rate_hz 48000\ntopology_id subtractive-mono/1\n";
+//! assert!(validate(&parse_patch(header).unwrap()).is_err());
+//! let voice = format!(
+//!     "{header}node 1 NoteInput\nnode 2 SawOscillator\nnode 3 Drive\nparam 3 drive 6\n\
+//!      node 4 LowpassFilter\nparam 4 filter_cutoff 1200\nparam 4 resonance_q 0.7\n\
+//!      node 5 AdsrEnvelope\nparam 5 attack 0.01\nparam 5 decay 0.2\nparam 5 sustain 0.6\n\
+//!      param 5 release 0.3\nnode 6 Vca\nnode 7 Output\nparam 7 output_gain -6\n\
+//!      edge 1 pitch Control 2 pitch Control\nedge 1 gate Event 5 gate Event\n\
+//!      edge 2 out Audio 3 in Audio\nedge 3 out Audio 4 in Audio\nedge 4 out Audio 6 in Audio\n\
+//!      edge 5 env Control 6 gain Control\nedge 6 out Audio 7 in Audio\n"
+//! );
+//! let plan = compile(&validate(&parse_patch(&voice).unwrap()).unwrap());
+//! assert_eq!(plan.order(), [1, 2, 3, 4, 5, 6, 7]);
 //! ```
 
 use std::collections::{BTreeMap, BTreeSet};

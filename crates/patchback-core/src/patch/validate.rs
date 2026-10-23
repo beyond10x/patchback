@@ -20,16 +20,22 @@
 //! 5. **Ports**: each edge's from end names an output port and its to end an input port its node
 //!    kind declares (the § 5.1 table, [`NodeKind::output_ports`], [`NodeKind::input_ports`]);
 //!    then each end states the rate its kind declares for that port.
-//! 6. **Cycles**: any cycle is refused as a zero-delay cycle. The `Delay` exception of § 5.4 is
+//! 6. **The fixed chain** (§ 5.2): the patch is its topology's chain ([`FIXED_CHAIN_KINDS`],
+//!    [`FIXED_CHAIN_EDGES`]): one node of each kind and every edge of the chain. An edge beyond the
+//!    chain is left to the checks below, which refuse every one (see [`FIXED_CHAIN_EDGES`]).
+//! 7. **Cycles**: any cycle is refused as a zero-delay cycle. The `Delay` exception of § 5.4 is
 //!    story:delayed-feedback, not this check: no topology admits `Delay` yet.
-//! 7. **Resource caps**: [`MAX_GRAPH_NODES`], [`MAX_GRAPH_EDGES`], [`MAX_VOICES`].
-//! 8. **One edge per input port** (§ 5.1): a duplicated edge, or a second source into an input
+//! 8. **Resource caps**: [`MAX_GRAPH_NODES`], [`MAX_GRAPH_EDGES`], [`MAX_VOICES`]. A patch that
+//!    passed the fixed chain has seven nodes and one `NoteInput`, so of the three only the edge cap
+//!    can be exceeded (by repeated edges) while every known topology is a fixed chain, and only by
+//!    a [`Patch`] built in code: a file holds at most [`MAX_EDGES`], which is the edge cap.
+//! 9. **One edge per input port** (§ 5.1): a duplicated edge, or a second source into an input
 //!    that already takes one, is refused. An output port feeds any number of edges.
 //!
 //! § 5.1 lists parameters before ports and rates. The stated-rate check comes first because the
 //! domain states it as a predicate on the edge alone, and ESS answers every predicate outcome
-//! before any outcome it leaves to the implementation (parameters, ports, cycles, caps, shared
-//! inputs).
+//! before any outcome it leaves to the implementation (parameters, ports, the fixed chain, cycles,
+//! caps, shared inputs).
 //!
 //! # Topology
 //!
@@ -46,6 +52,7 @@
 //! `ValidatePatch`'s. Among faults of one error, the first in canonical order: the lowest node
 //! identifier, the first edge in canonical order, a node's parameters by name.
 
+use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt;
 
@@ -69,7 +76,7 @@ pub const MAX_VOICES: usize = 1;
 /// The errors a [`ValidationError`] names, in the order `spec/domains/patch.yaml` declares their
 /// outcomes: `LoadPatch`'s first, then `ValidatePatch`'s. The precedence of refusals (module
 /// documentation).
-pub const VALIDATE_PATCH_PRECEDENCE: [&str; 14] = [
+pub const VALIDATE_PATCH_PRECEDENCE: [&str; 15] = [
     "patchback.patch.UnknownFormatVersion",
     "patchback.patch.UnsupportedSampleRate",
     "patchback.patch.DuplicateNodeId",
@@ -81,6 +88,7 @@ pub const VALIDATE_PATCH_PRECEDENCE: [&str; 14] = [
     "patchback.patch.ParameterContractViolation",
     "patchback.patch.UnknownPort",
     "patchback.patch.PortRateMismatch",
+    "patchback.patch.FixedChainMismatch",
     "patchback.patch.ZeroDelayCycle",
     "patchback.patch.ResourceCapExceeded",
     "patchback.patch.InputPortTaken",
@@ -176,6 +184,70 @@ pub(super) fn admits(_topology: &Topology, kind: NodeKind) -> bool {
     NodeKind::MVP.contains(&kind)
 }
 
+/// One edge of a fixed chain, by node kind and port (`spec/domains/patch.yaml` `ChainEdge`). The
+/// rate of each end is the one its kind declares for the port ([`NodeKind::ports`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ChainEdge {
+    pub from_kind: NodeKind,
+    pub from_port: &'static str,
+    pub to_kind: NodeKind,
+    pub to_port: &'static str,
+}
+
+impl fmt::Display for ChainEdge {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} {} -> {} {}",
+            self.from_kind.name(),
+            self.from_port,
+            self.to_kind.name(),
+            self.to_port
+        )
+    }
+}
+
+const fn chain_edge(
+    from_kind: NodeKind,
+    from_port: &'static str,
+    to_kind: NodeKind,
+    to_port: &'static str,
+) -> ChainEdge {
+    ChainEdge {
+        from_kind,
+        from_port,
+        to_kind,
+        to_port,
+    }
+}
+
+/// The node kinds of the fixed chain of `subtractive-mono/1` (DESIGN.md § 5.2), one node each:
+/// one voice, one Saw oscillator, one drive stage, one lowpass filter, one ADSR, one VCA and one
+/// output stage. One node per kind is also what the topology's parameter vector addresses: one
+/// contract per path, so one node carries each path.
+pub const FIXED_CHAIN_KINDS: [NodeKind; 7] = NodeKind::MVP;
+
+/// The edges of the fixed chain of `subtractive-mono/1`: the § 5.2 diagram over the § 5.1 port
+/// table. A patch is that chain when it has exactly one node of each of [`FIXED_CHAIN_KINDS`] and
+/// each of these edges between those nodes.
+///
+/// These edges feed every input port of the seven nodes, so any further edge between declared
+/// ports either closes a cycle or feeds an input another edge already feeds; the cycle and
+/// input-port checks refuse it. So the patches that validate are exactly the chain, with any node
+/// identifiers and parameter values.
+pub const FIXED_CHAIN_EDGES: [ChainEdge; 7] = {
+    use NodeKind::*;
+    [
+        chain_edge(NoteInput, "pitch", SawOscillator, "pitch"),
+        chain_edge(NoteInput, "gate", AdsrEnvelope, "gate"),
+        chain_edge(SawOscillator, "out", Drive, "in"),
+        chain_edge(Drive, "out", LowpassFilter, "in"),
+        chain_edge(LowpassFilter, "out", Vca, "in"),
+        chain_edge(AdsrEnvelope, "env", Vca, "gain"),
+        chain_edge(Vca, "out", Output, "in"),
+    ]
+};
+
 /// A resource a cap bounds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ResourceCap {
@@ -263,6 +335,17 @@ pub enum ValidationError {
     },
     /// An edge joins ports of two rates.
     IncompatiblePortRates { edge: EdgeDecl },
+    /// The patch is not the fixed chain of its topology ([`FIXED_CHAIN_KINDS`],
+    /// [`FIXED_CHAIN_EDGES`]): the kinds with no node, in chain order; the nodes the chain does
+    /// not use, by identifier (of several nodes of one kind it uses the one carrying the most chain
+    /// edges, the lowest identifier among equals); and the chain edges no edge of the patch
+    /// carries between nodes of their kinds, in chain order (an edge with an end of a missing kind
+    /// included). At least one list is not empty.
+    FixedChainMismatch {
+        missing_kinds: Vec<NodeKind>,
+        extra_nodes: Vec<(u32, NodeKind)>,
+        missing_edges: Vec<ChainEdge>,
+    },
     /// A cycle: its nodes in edge direction, from the lowest identifier on it.
     ZeroDelayCycle { nodes: Vec<u32> },
     /// The graph exceeds a resource cap.
@@ -296,6 +379,7 @@ impl ValidationError {
             Self::UnknownPort { .. } => "patchback.patch.UnknownPort",
             Self::IncompatiblePortRates { .. } => "patchback.patch.IncompatiblePortRates",
             Self::PortRateMismatch { .. } => "patchback.patch.PortRateMismatch",
+            Self::FixedChainMismatch { .. } => "patchback.patch.FixedChainMismatch",
             Self::ZeroDelayCycle { .. } => "patchback.patch.ZeroDelayCycle",
             Self::ResourceCapExceeded { .. } => "patchback.patch.ResourceCapExceeded",
             Self::InputPortTaken { .. } => "patchback.patch.InputPortTaken",
@@ -410,6 +494,34 @@ impl fmt::Display for ValidationError {
                 edge.from_rate.name(),
                 edge.to_rate.name()
             ),
+            Self::FixedChainMismatch {
+                missing_kinds,
+                extra_nodes,
+                missing_edges,
+            } => {
+                let list = |items: Vec<String>| items.join(", ");
+                let mut parts = Vec::new();
+                if !missing_kinds.is_empty() {
+                    let kinds = missing_kinds.iter().map(|k| k.name().to_owned()).collect();
+                    parts.push(format!("missing nodes {}", list(kinds)));
+                }
+                if !extra_nodes.is_empty() {
+                    let nodes = extra_nodes
+                        .iter()
+                        .map(|(id, kind)| format!("{id} ({})", kind.name()))
+                        .collect();
+                    parts.push(format!("extra nodes {}", list(nodes)));
+                }
+                if !missing_edges.is_empty() {
+                    let edges = missing_edges.iter().map(ChainEdge::to_string).collect();
+                    parts.push(format!("missing edges {}", list(edges)));
+                }
+                write!(
+                    f,
+                    "the patch is not the fixed chain of {SUBTRACTIVE_MONO}: {}",
+                    parts.join("; ")
+                )
+            }
             Self::ZeroDelayCycle { nodes } => {
                 let path: Vec<String> = nodes
                     .iter()
@@ -468,6 +580,7 @@ pub fn validate(patch: &Patch) -> Result<ValidatedPatch, ValidationError> {
     }
     check_parameters(&patch, &topology)?;
     check_ports(&patch, &kinds)?;
+    check_chain(&patch)?;
     check_cycles(&patch)?;
     check_caps(&patch)?;
     check_inputs(&patch)?;
@@ -628,6 +741,83 @@ fn check_ports(patch: &Patch, kinds: &BTreeMap<u32, NodeKind>) -> Result<(), Val
         }
     }
     Ok(())
+}
+
+/// The patch is the fixed chain ([`FIXED_CHAIN_KINDS`], [`FIXED_CHAIN_EDGES`]). Every known
+/// topology is `subtractive-mono/1`, whose chain this is.
+///
+/// An edge of the patch carries a chain edge when its ends are nodes of the chain edge's kinds at
+/// its ports. Of several nodes of one kind, the chain uses the one that carries the most chain
+/// edges, the lowest identifier among equals; the others are extra, by identifier (the patch is
+/// in canonical order). A chain edge is missing when no edge of the patch carries it.
+fn check_chain(patch: &Patch) -> Result<(), ValidationError> {
+    let kinds: BTreeMap<u32, NodeKind> = patch.nodes.iter().map(|n| (n.id, n.kind)).collect();
+    let mut carried = [false; FIXED_CHAIN_EDGES.len()];
+    let mut uses: BTreeMap<u32, usize> = BTreeMap::new();
+    for edge in &patch.edges {
+        let ends = (kinds.get(&edge.from_node), kinds.get(&edge.to_node));
+        let (Some(&from_kind), Some(&to_kind)) = ends else {
+            continue;
+        };
+        let shape = (
+            from_kind,
+            edge.from_port.as_str(),
+            to_kind,
+            edge.to_port.as_str(),
+        );
+        for (index, chain) in FIXED_CHAIN_EDGES.iter().enumerate() {
+            if (
+                chain.from_kind,
+                chain.from_port,
+                chain.to_kind,
+                chain.to_port,
+            ) == shape
+            {
+                carried[index] = true;
+                *uses.entry(edge.from_node).or_default() += 1;
+                *uses.entry(edge.to_node).or_default() += 1;
+            }
+        }
+    }
+    let used = |id: u32| uses.get(&id).copied().unwrap_or(0);
+    let mut chosen: BTreeMap<NodeKind, u32> = BTreeMap::new();
+    for node in &patch.nodes {
+        match chosen.entry(node.kind) {
+            Entry::Vacant(slot) => {
+                slot.insert(node.id);
+            }
+            // Identifiers ascend, so an equal count keeps the lower one.
+            Entry::Occupied(mut slot) => {
+                if used(node.id) > used(*slot.get()) {
+                    slot.insert(node.id);
+                }
+            }
+        }
+    }
+    let extra_nodes: Vec<(u32, NodeKind)> = patch
+        .nodes
+        .iter()
+        .filter(|n| chosen.get(&n.kind) != Some(&n.id))
+        .map(|n| (n.id, n.kind))
+        .collect();
+    let missing_kinds: Vec<NodeKind> = FIXED_CHAIN_KINDS
+        .into_iter()
+        .filter(|kind| !chosen.contains_key(kind))
+        .collect();
+    let missing_edges: Vec<ChainEdge> = FIXED_CHAIN_EDGES
+        .into_iter()
+        .zip(carried)
+        .filter(|(_, carried)| !carried)
+        .map(|(chain, _)| chain)
+        .collect();
+    if missing_kinds.is_empty() && extra_nodes.is_empty() && missing_edges.is_empty() {
+        return Ok(());
+    }
+    Err(ValidationError::FixedChainMismatch {
+        missing_kinds,
+        extra_nodes,
+        missing_edges,
+    })
 }
 
 /// Refuses any cycle. Kahn's algorithm removes every node no cycle reaches back to; from what

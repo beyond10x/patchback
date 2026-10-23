@@ -1,7 +1,7 @@
 # Patchback — Technical Design
 
 **Status:** Proposed architecture / implementation-ready MVP scope  
-**Revision:** 0.6  
+**Revision:** 0.7  
 **Date:** 2026-10-23  
 **Primary stack:** Rust + [Beyond10x ModelSpec](https://github.com/beyond10x/modelspec)  
 **Dependency policy:** No third-party ML, DSP, mathematics, serialization, or application frameworks. External audio I/O and CLI parsing (`clap` with `derive`, the one reviewed command-line crate) are the **only** permitted application dependency categories.
@@ -188,7 +188,7 @@ An input port takes at most one edge, so a duplicated edge or a second source in
 
 Ports of the § 5.4 families (Square/Sine, highpass/bandpass, LFO, delay, noise) are listed when each family is added.
 
-Graph compilation performs: identifier checks (with the agreement of the two rates an edge states, which needs no catalogue) → parameter validation → port checks against the kind's port table → cycle checks → resource caps → one edge per input port → scheduling → buffer assignment → a DSP execution plan. Where a patch has several faults, the refusal is the one this order reaches first (`VALIDATE_PATCH_PRECEDENCE`), as `spec/domains/patch.yaml` declares it. The runtime never follows arbitrary graph references in the hot audio loop.
+Graph compilation performs: identifier checks (with the agreement of the two rates an edge states, which needs no catalogue) → parameter validation → port checks against the kind's port table → the fixed § 5.2 chain (one node of each kind and every chain edge; `FixedChainMismatch`) → cycle checks → resource caps → one edge per input port → scheduling → buffer assignment → a DSP execution plan. Where a patch has several faults, the refusal is the one this order reaches first (`VALIDATE_PATCH_PRECEDENCE`), as `spec/domains/patch.yaml` declares it. The runtime never follows arbitrary graph references in the hot audio loop.
 
 ### 5.2 MVP: fixed subtractive voice
 
@@ -592,6 +592,7 @@ What this document does not settle. Each item is an `UNMAPPED:` marker in `spec/
 
 ## Changelog
 
+- **0.7 (2026-10-23):** § 5.1's validation order checks the fixed § 5.2 chain after the port checks and before cycles: a `subtractive-mono/1` patch has exactly one node of each of the seven kinds and every chain edge, and anything else is refused as `FixedChainMismatch`. An edge beyond the chain is still refused by the later checks, as a cycle or a taken input. Of the resource caps, only the edge cap stays reachable, and only for a patch built in code.
 - **0.6 (2026-10-23):** § 5.1 states the validation order the specification declares: an edge's two stated rates are compared with the identifier checks, before parameters, because ESS orders predicate outcomes before external ones (ESS-COMMAND-004); port-table checks follow parameters, and resource caps follow cycles. An input port takes at most one edge: a duplicated edge or a second source into one input is refused, after the resource caps.
 - **0.5 (2026-10-23):** § 3 settles OQ-22: the `Cargo.lock` gate judges each package inside the closure of the entry crate that brings it in, an audio backend is admitted only through a planning-store approval record naming the crate, its version and closure, and only while optional; no ModelSpec crate is admitted, since § 8.2 runs ModelSpec as a subprocess.
 - **0.4 (2026-10-23):** § 3 and the dependency policy admit CLI parsing as a second permitted category: `clap` with `derive`, required by the workspace rule, is the one reviewed command-line crate, and the `Cargo.lock` gate admits exactly its reviewed closure; § 12.2's dependency gate names it.

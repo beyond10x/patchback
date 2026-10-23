@@ -60,8 +60,11 @@
 //!   stopped after `MAX_FILE_BYTES + 1` bytes, so the rest of the file is unseen and the faults
 //!   it holds cannot be ranked. Answering a truncated last line instead would rank a fault the
 //!   file does not have.
-//! - A fault on line 1 is answered alone: the header names the grammar of every later line, so
-//!   without a version-1 header no later line has a meaning to be faulty in.
+//! - A fault on line 1 is answered alone unless the header reads as version 1: the header names
+//!   the grammar of every later line, so without a version-1 header no later line has a meaning
+//!   to be faulty in. A header that reads as version 1 with a field too many
+//!   (`patchback-patch 1 extra`) is a malformed record on line 1, ranked with the faults of the
+//!   later lines like any other.
 //!
 //! A fault is not counted twice: a line that cannot be read (past the line bound or not UTF-8)
 //! may have declared a key or a node, so after one no key is reported missing and no parameter
@@ -445,7 +448,7 @@ fn parse_bytes(bytes: &[u8]) -> Result<Patch, PatchFileError> {
                 line: Some(line),
                 reason,
             };
-            if line == 1 {
+            if line == 1 && parser.format_version.is_none() {
                 return Err(error);
             }
             faults.note(error);
@@ -584,17 +587,23 @@ impl Parser {
         }
     }
 
+    /// The header line. Its faults are ranked like any line's, so a header with an extra field
+    /// and an unknown version is answered with the version (`unknown-version` is declared first).
     fn header(&mut self, fields: &[&str]) -> Result<(), PatchFileReason> {
         if fields.first() != Some(&HEADER) || fields.len() < 2 {
             return Err(PatchFileReason::MissingFormatVersion);
         }
-        expect_fields(fields, 2)?;
-        let format_version = parse_u32(fields[1])?;
-        if format_version != FORMAT_VERSION {
-            return Err(PatchFileReason::UnknownFormatVersion { format_version });
+        let mut faults = Vec::new();
+        keep(&mut faults, expect_fields(fields, 2));
+        match parse_u32(fields[1]) {
+            Ok(format_version) if format_version != FORMAT_VERSION => {
+                faults.push(PatchFileReason::UnknownFormatVersion { format_version });
+            }
+            // Version 1, whatever else is wrong on the line: later lines have their grammar.
+            Ok(format_version) => self.format_version = Some(format_version),
+            Err(reason) => faults.push(reason),
         }
-        self.format_version = Some(format_version);
-        Ok(())
+        first_declared(faults)
     }
 
     fn sample_rate(&mut self, fields: &[&str]) -> Result<(), PatchFileReason> {

@@ -200,12 +200,12 @@ fn a_graph_validation_refuses_names_its_error_and_edge_and_exits_1() {
 #[test]
 fn a_cycle_is_refused_naming_its_nodes_and_exits_1() {
     let dir = scratch("cycle");
+    // The voice and an edge back from the filter to the drive: a patch of only the two cycling
+    // nodes is not the fixed chain and is refused for that first (story:patch-review-fixes).
     let path = write(
         &dir,
         "cycle.patch",
-        "patchback-patch 1\nsample_rate_hz 48000\ntopology_id subtractive-mono/1\n\
-         node 3 Drive\nparam 3 drive 6\nnode 4 LowpassFilter\nparam 4 filter_cutoff 1200\n\
-         param 4 resonance_q 0.7\nedge 3 out Audio 4 in Audio\nedge 4 out Audio 3 in Audio\n",
+        &format!("{VOICE}edge 4 out Audio 3 in Audio\n"),
     );
     let line = refusal(&path);
     assert!(
@@ -235,18 +235,50 @@ fn a_refusal_of_the_whole_patch_names_its_error_and_exits_1() {
         )),
         "{line}"
     );
+    // A second voice is a node beyond the fixed chain, refused for that before the voice cap
+    // (story:patch-review-fixes); the chain's refusal also names no node line of the file.
     let path = write(
         &dir,
         "voices.patch",
         &voice_with("node 1 NoteInput\n", "node 1 NoteInput\nnode 8 NoteInput\n"),
     );
     let line = refusal(&path);
-    assert!(
-        line.starts_with(&format!(
-            "{REFUSED}patchback.patch.ResourceCapExceeded: {path:?}: 2 voices"
-        )),
-        "{line}"
+    assert_eq!(
+        line,
+        format!(
+            "{REFUSED}patchback.patch.FixedChainMismatch: {path:?}: the patch is not the fixed \
+             chain of subtractive-mono/1: extra nodes 8 (NoteInput)"
+        )
     );
+}
+
+/// story:patch-review-fixes: a `subtractive-mono/1` patch that is not its fixed § 5.2 chain is
+/// refused, one line, status 1: the empty patch and the voice without its `Output` node.
+#[test]
+fn a_patch_that_is_not_the_fixed_chain_is_refused_and_exits_1() {
+    let dir = scratch("chain");
+    let empty = write(
+        &dir,
+        "empty.patch",
+        "patchback-patch 1\nsample_rate_hz 48000\ntopology_id subtractive-mono/1\n",
+    );
+    let no_output = write(
+        &dir,
+        "no-output.patch",
+        &voice_with("node 7 Output\n", "")
+            .replacen("param 7 output_gain -6\n", "", 1)
+            .replacen("edge 6 out Audio 7 in Audio\n", "", 1),
+    );
+    for path in [empty, no_output] {
+        let line = refusal(&path);
+        assert!(
+            line.starts_with(&format!(
+                "{REFUSED}patchback.patch.FixedChainMismatch: {path:?}: "
+            )),
+            "{line}"
+        );
+        assert!(line.contains("Output"), "{line}");
+    }
 }
 
 #[test]

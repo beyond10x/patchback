@@ -95,7 +95,12 @@ line it is on:
 8. malformed number
 9. a bound exceeded
 
-A file past the byte bound, or with a fault on its first line, is refused for that fault alone.
+A file past the byte bound, or with a fault on a first line that does not read as version 1, is
+refused for that fault alone. The first line's own faults rank in the same order, so
+`patchback-patch 2 extra` is refused as an unknown format version, not as a malformed record. A
+first line that reads as version 1 with a field too many, `patchback-patch 1 extra`, is a
+malformed record ranked with the faults of the later lines: with `sample_rate_hz 44100` on line
+2, the file is refused for the sample rate.
 
 A file can be well formed and still be a graph that does not run.
 [`patchback patch validate`](./cli.md#patchback-patch-validate) also checks the graph, and
@@ -106,10 +111,29 @@ refuses with the first failing check, in this order:
 3. both ends of every edge state one rate
 4. every node carries exactly its kind's parameters, each inside its contract's range
 5. every edge names ports its node kinds declare, at the rates they declare
-6. the graph has no cycle
-7. at most `MAX_GRAPH_NODES` (256) nodes, `MAX_GRAPH_EDGES` (1024) edges and `MAX_VOICES` (1)
-   `NoteInput` nodes; all three caps are provisional
-8. every input port takes at most one edge
+6. the patch is the fixed chain of its topology: one node of each of the seven kinds below and
+   every edge of the chain (`FixedChainMismatch`, naming the missing kinds, the extra nodes and
+   the missing edges)
+7. the graph has no cycle
+8. at most `MAX_GRAPH_NODES` (256) nodes, `MAX_GRAPH_EDGES` (1024) edges and `MAX_VOICES` (1)
+   `NoteInput` nodes; all three caps are provisional. After check 6 a file can exceed none of
+   them: the chain has seven nodes and one `NoteInput`, and a file holds at most 1024 edges
+9. every input port takes at most one edge
+
+The fixed chain of `subtractive-mono/1`:
+
+```text
+NoteInput pitch -> SawOscillator pitch
+NoteInput gate  -> AdsrEnvelope gate
+SawOscillator out -> Drive in
+Drive out         -> LowpassFilter in
+LowpassFilter out -> Vca in
+AdsrEnvelope env  -> Vca gain
+Vca out           -> Output in
+```
+
+The chain feeds every input port, so an edge beyond it closes a cycle or feeds a taken input,
+and checks 7 and 9 refuse it.
 
 Only a validated patch is compiled into an execution plan.
 
