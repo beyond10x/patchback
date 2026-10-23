@@ -6,21 +6,33 @@
 //!    CI also reads to download and verify the binary.
 //! 2. [`locate`] finds a binary: an explicit path, else the `MODELSPEC` variable, else a
 //!    `modelspec` executable on `PATH`. A path that is named but missing is
-//!    [`ModelSpecError::NotFound`]; the search does not fall through to the next source.
+//!    [`ModelSpecError::NotFound`]; the search does not fall through to the next source. A
+//!    slash-free relative path (`MODELSPEC=modelspec`, or an empty `PATH` entry) is run as
+//!    `./<name>`, so the file located is the file spawned.
 //! 3. [`ModelSpec::open`] runs `<binary> --version` and refuses a binary that does not report
-//!    `modelspec <pinned version>` ([`ModelSpecError::VersionMismatch`]), so no other release runs.
+//!    `modelspec <version of the given pin>` ([`ModelSpecError::VersionMismatch`]).
 //! 4. [`ModelSource::check`] runs `<binary> check <source>` and records the source `Checked` on
-//!    exit status 0 and `Rejected`, with the binary's diagnostic, otherwise (domain
-//!    `patchback.model`, command `CheckModelSource`). A source is checked once.
+//!    exit status 0 and `Rejected`, with the binary's diagnostic, on exit status 1 (domain
+//!    `patchback.model`, command `CheckModelSource`). A source is checked once. Everything that
+//!    is not the binary's verdict on the model (a source it cannot read, a binary of another pin,
+//!    another exit status, a signal, a run past the timeout) is an error and leaves the source
+//!    `Unchecked`.
 //! 5. [`ModelSource::trainable`] is the guard a training run takes: only a `Checked` source yields
 //!    a [`CheckedModel`], which nothing else can construct.
+//!
+//! Every run of the binary is bounded by a timeout ([`DEFAULT_TIMEOUT`] unless the caller gives
+//! one to [`ModelSpec::open_with_timeout`]); past it the process is killed and waited for.
 
 use std::ffi::OsStr;
 use std::fmt;
-use std::io;
+use std::fs::File;
+use std::io::{self, Read};
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::path::{Component, Path, PathBuf};
+use std::process::{Command, ExitStatus, Stdio};
+use std::sync::mpsc;
+use std::thread;
+use std::time::{Duration, Instant};
 
 /// The pin file, relative to the repository root.
 pub const PIN_FILE: &str = "models/modelspec.pin";
@@ -33,6 +45,14 @@ pub const MODELSPEC_VARIABLE: &str = "MODELSPEC";
 
 /// The executable name searched for on `PATH`.
 pub const EXECUTABLE: &str = "modelspec";
+
+/// How long one run of the binary (`--version` or `check`) may take unless the caller sets
+/// another bound with [`ModelSpec::open_with_timeout`]. The pinned 0.5.0 binary checks the § 8.1
+/// model in well under a second; a minute leaves room for a loaded CI runner.
+pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// The exit status with which `modelspec check` refuses a model.
+const REJECTED: i32 = 1;
 
 const REPOSITORY_PIN: &str = include_str!("../../../models/modelspec.pin");
 
@@ -170,6 +190,21 @@ pub enum ModelSpecError {
         pinned: String,
         reported: String,
     },
+    /// The source cannot be opened as a regular file; nothing was spawned.
+    SourceUnreadable { source: PathBuf, error: io::Error },
+    /// A signal ended the run, so the binary gave no verdict.
+    Signalled { binary: PathBuf },
+    /// `check` exited with a status that is neither 0 (accepted) nor 1 (refused), such as a usage
+    /// error (2).
+    CheckFailed {
+        binary: PathBuf,
+        code: i32,
+        diagnostic: String,
+    },
+    /// The run outlasted the timeout and was killed.
+    TimedOut { binary: PathBuf, timeout: Duration },
+    /// Waiting for the process or reading its output failed.
+    Io { binary: PathBuf, error: io::Error },
 }
 
 impl fmt::Display for ModelSpecError {
@@ -204,6 +239,33 @@ impl fmt::Display for ModelSpecError {
                 "{} reports {reported:?}; the pin is modelspec {pinned}",
                 binary.display()
             ),
+            ModelSpecError::SourceUnreadable { source, error } => {
+                write!(
+                    f,
+                    "cannot read the model source {}: {error}",
+                    source.display()
+                )
+            }
+            ModelSpecError::Signalled { binary } => {
+                write!(f, "{} was ended by a signal", binary.display())
+            }
+            ModelSpecError::CheckFailed {
+                binary,
+                code,
+                diagnostic,
+            } => write!(
+                f,
+                "{} check exited {code}, which is not a verdict: {diagnostic}",
+                binary.display()
+            ),
+            ModelSpecError::TimedOut { binary, timeout } => write!(
+                f,
+                "{} ran longer than {timeout:?} and was killed",
+                binary.display()
+            ),
+            ModelSpecError::Io { binary, error } => {
+                write!(f, "running {}: {error}", binary.display())
+            }
         }
     }
 }
@@ -224,7 +286,9 @@ pub fn locate(explicit: Option<&Path>) -> Result<PathBuf, ModelSpecError> {
 
 /// Find the ModelSpec binary: `explicit` if given, else `modelspec_variable` (the value of
 /// `MODELSPEC`) if set and not empty, else the first executable `modelspec` in `path_variable`
-/// (the value of `PATH`). A named path is used as named, or refused when nothing is there.
+/// (the value of `PATH`). A named path is used as named, or refused when nothing is there. A
+/// returned path without a slash is relative to the working directory; [`ModelSpec::open`] runs it
+/// as `./<name>`, never through a `PATH` lookup.
 pub fn locate_with(
     explicit: Option<&Path>,
     modelspec_variable: Option<&OsStr>,
@@ -258,26 +322,108 @@ pub fn locate_with(
     Err(ModelSpecError::NotFound { searched })
 }
 
-fn run(binary: &Path, arguments: &[&OsStr]) -> Result<Output, ModelSpecError> {
-    Command::new(binary)
+/// The path to hand to `Command::new`: a single relative component (`modelspec`) gets `./`, since
+/// `Command::new` would otherwise look it up on `PATH` and spawn a file other than the one located.
+fn program(binary: &Path) -> PathBuf {
+    let mut components = binary.components();
+    match (components.next(), components.next()) {
+        (Some(Component::Normal(_)), None) => Path::new(".").join(binary),
+        _ => binary.to_path_buf(),
+    }
+}
+
+/// What a finished run produced.
+struct Run {
+    status: ExitStatus,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+/// Read a pipe to its end on its own thread and send the bytes, so neither stream can fill and
+/// stall the child while the other is read.
+fn drain(pipe: Option<impl Read + Send + 'static>) -> mpsc::Receiver<io::Result<Vec<u8>>> {
+    let (sender, receiver) = mpsc::channel();
+    thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let result = match pipe {
+            Some(mut pipe) => pipe.read_to_end(&mut bytes).map(|_| bytes),
+            None => Ok(bytes),
+        };
+        let _ = sender.send(result);
+    });
+    receiver
+}
+
+const POLL: Duration = Duration::from_millis(10);
+
+/// Run `binary` with `arguments` and wait at most `timeout` for it to exit and close its output.
+/// Past the deadline the child is killed and waited for.
+fn run(binary: &Path, arguments: &[&OsStr], timeout: Duration) -> Result<Run, ModelSpecError> {
+    let failed = |error| ModelSpecError::Io {
+        binary: binary.to_path_buf(),
+        error,
+    };
+    let timed_out = || ModelSpecError::TimedOut {
+        binary: binary.to_path_buf(),
+        timeout,
+    };
+    let deadline = Instant::now() + timeout;
+    let mut child = Command::new(program(binary))
         .args(arguments)
         .stdin(Stdio::null())
-        .output()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|error| ModelSpecError::Spawn {
             binary: binary.to_path_buf(),
             error,
-        })
+        })?;
+    let stdout = drain(child.stdout.take());
+    let stderr = drain(child.stderr.take());
+    let status = loop {
+        let polled = child.try_wait();
+        let now = Instant::now();
+        match polled {
+            Ok(Some(status)) => break status,
+            Ok(None) if now < deadline => thread::sleep(POLL.min(deadline - now)),
+            outcome => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(match outcome {
+                    Err(error) => failed(error),
+                    _ => timed_out(),
+                });
+            }
+        }
+    };
+    // A process the child left behind can hold the pipes open after the child exits; the
+    // deadline bounds that wait too.
+    let collect = |receiver: mpsc::Receiver<io::Result<Vec<u8>>>| {
+        let left = deadline.saturating_duration_since(Instant::now());
+        match receiver.recv_timeout(left) {
+            Ok(result) => result.map_err(failed),
+            Err(_) => Err(timed_out()),
+        }
+    };
+    let stdout = collect(stdout)?;
+    let stderr = collect(stderr)?;
+    Ok(Run {
+        status,
+        stdout,
+        stderr,
+    })
 }
 
 fn text(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).trim().to_owned()
 }
 
-/// A ModelSpec binary that reported the pinned version.
+/// A ModelSpec binary that reported the version of the pin it was opened with.
 #[derive(Clone, Debug)]
 pub struct ModelSpec {
     binary: PathBuf,
-    version: String,
+    pin: ModelSpecPin,
+    timeout: Duration,
 }
 
 /// What `modelspec check` decided.
@@ -285,18 +431,28 @@ pub struct ModelSpec {
 pub enum CheckOutcome {
     /// Exit status 0.
     Checked,
-    /// Any other exit; `code` is `None` when a signal ended the process. `diagnostic` is the
-    /// binary's stderr, or its stdout when stderr is empty, trimmed.
-    Rejected {
-        code: Option<i32>,
-        diagnostic: String,
-    },
+    /// Exit status 1, the binary's refusal; `code` is that status. `diagnostic` is the binary's
+    /// stderr, or its stdout when stderr is empty, trimmed.
+    Rejected { code: i32, diagnostic: String },
 }
 
 impl ModelSpec {
-    /// Run `binary --version` and accept the binary only if it reports `modelspec <pinned>`.
+    /// [`ModelSpec::open_with_timeout`] with [`DEFAULT_TIMEOUT`].
     pub fn open(binary: &Path, pin: &ModelSpecPin) -> Result<ModelSpec, ModelSpecError> {
-        let output = run(binary, &[OsStr::new("--version")])?;
+        ModelSpec::open_with_timeout(binary, pin, DEFAULT_TIMEOUT)
+    }
+
+    /// Run `binary --version` and accept the binary only if it reports `modelspec <version>` for
+    /// the `pin` given here. That is whichever pin the caller passes:
+    /// [`ModelSpecPin::repository`] is the repository's pin, and refusing a source checked under
+    /// another pin when it is trained belongs to the training run (domain error `PinMismatch`).
+    /// `timeout` bounds this run and every later [`ModelSpec::check`].
+    pub fn open_with_timeout(
+        binary: &Path,
+        pin: &ModelSpecPin,
+        timeout: Duration,
+    ) -> Result<ModelSpec, ModelSpecError> {
+        let output = run(binary, &[OsStr::new("--version")], timeout)?;
         if !output.status.success() {
             return Err(ModelSpecError::VersionQueryFailed {
                 binary: binary.to_path_buf(),
@@ -314,7 +470,8 @@ impl ModelSpec {
         }
         Ok(ModelSpec {
             binary: binary.to_path_buf(),
-            version: pin.version().to_owned(),
+            pin: pin.clone(),
+            timeout,
         })
     }
 
@@ -322,27 +479,69 @@ impl ModelSpec {
         &self.binary
     }
 
-    /// The pinned version the binary reported.
-    pub fn version(&self) -> &str {
-        &self.version
+    /// The pin whose version the binary reported.
+    pub fn pin(&self) -> &ModelSpecPin {
+        &self.pin
     }
 
-    /// Run `modelspec check <source>`.
+    /// The version the binary reported.
+    pub fn version(&self) -> &str {
+        self.pin.version()
+    }
+
+    /// The bound on each run of the binary.
+    pub fn timeout(&self) -> Duration {
+        self.timeout
+    }
+
+    /// Run `modelspec check <source>` and report the binary's verdict as it gave it: exit 0 is
+    /// [`CheckOutcome::Checked`], exit 1 [`CheckOutcome::Rejected`], and any other exit, a signal
+    /// or a run past the timeout is an error. This does not look at the source first; the binary
+    /// also exits 1 for a path it cannot read, which is why [`ModelSource::check`] refuses such a
+    /// source before it gets here.
     pub fn check(&self, source: &Path) -> Result<CheckOutcome, ModelSpecError> {
-        let output = run(&self.binary, &[OsStr::new("check"), source.as_os_str()])?;
-        if output.status.success() {
-            return Ok(CheckOutcome::Checked);
-        }
+        let output = run(
+            &self.binary,
+            &[OsStr::new("check"), source.as_os_str()],
+            self.timeout,
+        )?;
         let stderr = text(&output.stderr);
         let diagnostic = if stderr.is_empty() {
             text(&output.stdout)
         } else {
             stderr
         };
-        Ok(CheckOutcome::Rejected {
-            code: output.status.code(),
-            diagnostic,
-        })
+        match output.status.code() {
+            Some(0) => Ok(CheckOutcome::Checked),
+            Some(REJECTED) => Ok(CheckOutcome::Rejected {
+                code: REJECTED,
+                diagnostic,
+            }),
+            Some(code) => Err(ModelSpecError::CheckFailed {
+                binary: self.binary.clone(),
+                code,
+                diagnostic,
+            }),
+            None => Err(ModelSpecError::Signalled {
+                binary: self.binary.clone(),
+            }),
+        }
+    }
+}
+
+/// Open `source` as a regular file, so a path the binary could not read is refused before it runs.
+fn readable(source: &Path) -> Result<(), ModelSpecError> {
+    let refused = |error| ModelSpecError::SourceUnreadable {
+        source: source.to_path_buf(),
+        error,
+    };
+    let metadata = File::open(source)
+        .and_then(|file| file.metadata())
+        .map_err(refused)?;
+    if metadata.is_file() {
+        Ok(())
+    } else {
+        Err(refused(io::Error::other("not a regular file")))
     }
 }
 
@@ -361,17 +560,20 @@ pub struct ModelSource {
     path: PathBuf,
     model_name: String,
     batch_size: usize,
+    model_spec_pin: ModelSpecPin,
     state: ModelSourceState,
-    model_spec_version: Option<String>,
     diagnostic: Option<String>,
 }
 
-/// Why [`ModelSource::check`] recorded nothing.
+/// Why [`ModelSource::check`] recorded nothing. The source stays as it was.
 #[derive(Debug)]
 pub enum CheckError {
     /// The source already carries a check result (domain error `ModelSourceAlreadyChecked`).
     ModelSourceAlreadyChecked { state: ModelSourceState },
-    /// The binary could not be run; the source stays `Unchecked`.
+    /// The binary was opened under another pin than the one the source was registered with;
+    /// the two versions. Nothing was spawned.
+    OtherPin { registered: String, binary: String },
+    /// The source could not be read, or the binary gave no verdict on it.
     ModelSpec(ModelSpecError),
 }
 
@@ -381,6 +583,10 @@ impl fmt::Display for CheckError {
             CheckError::ModelSourceAlreadyChecked { state } => {
                 write!(f, "the model source is already {state:?}")
             }
+            CheckError::OtherPin { registered, binary } => write!(
+                f,
+                "the model source is registered under modelspec {registered}; the binary is modelspec {binary}"
+            ),
             CheckError::ModelSpec(error) => error.fmt(f),
         }
     }
@@ -412,7 +618,6 @@ impl std::error::Error for ModelNotChecked {}
 #[derive(Clone, Copy, Debug)]
 pub struct CheckedModel<'a> {
     source: &'a ModelSource,
-    model_spec_version: &'a str,
 }
 
 impl CheckedModel<'_> {
@@ -428,23 +633,39 @@ impl CheckedModel<'_> {
         self.source.batch_size
     }
 
-    /// The pinned ModelSpec version whose binary checked the source.
+    /// The pin whose binary checked the source.
+    pub fn model_spec_pin(&self) -> &ModelSpecPin {
+        &self.source.model_spec_pin
+    }
+
+    /// The version of that pin.
     pub fn model_spec_version(&self) -> &str {
-        self.model_spec_version
+        self.source.model_spec_pin.version()
     }
 }
 
 impl ModelSource {
-    /// Register a source, `Unchecked` (domain command `RegisterModelSource`).
-    pub fn register(path: impl Into<PathBuf>, model_name: &str, batch_size: usize) -> ModelSource {
+    /// Register a source, `Unchecked`, under the pin whose binary will check it (domain command
+    /// `RegisterModelSource`, field `model_spec_pin_id`).
+    pub fn register(
+        path: impl Into<PathBuf>,
+        model_name: &str,
+        batch_size: usize,
+        model_spec_pin: &ModelSpecPin,
+    ) -> ModelSource {
         ModelSource {
             path: path.into(),
             model_name: model_name.to_owned(),
             batch_size,
+            model_spec_pin: model_spec_pin.clone(),
             state: ModelSourceState::Unchecked,
-            model_spec_version: None,
             diagnostic: None,
         }
+    }
+
+    /// The pin the source was registered under.
+    pub fn model_spec_pin(&self) -> &ModelSpecPin {
+        &self.model_spec_pin
     }
 
     pub fn path(&self) -> &Path {
@@ -460,12 +681,21 @@ impl ModelSource {
         self.diagnostic.as_deref()
     }
 
-    /// Check the source with the pinned binary and record the result once (domain command
-    /// `CheckModelSource`).
+    /// Check the source with the binary of its pin and record the verdict once (domain command
+    /// `CheckModelSource`). Before anything is spawned, a binary of another pin and a source that
+    /// cannot be opened as a regular file are refused; those, and every run that ends without a
+    /// verdict ([`ModelSpec::check`]), leave the source `Unchecked`.
     pub fn check(&mut self, modelspec: &ModelSpec) -> Result<ModelSourceState, CheckError> {
         if self.state != ModelSourceState::Unchecked {
             return Err(CheckError::ModelSourceAlreadyChecked { state: self.state });
         }
+        if modelspec.pin() != &self.model_spec_pin {
+            return Err(CheckError::OtherPin {
+                registered: self.model_spec_pin.version().to_owned(),
+                binary: modelspec.version().to_owned(),
+            });
+        }
+        readable(&self.path).map_err(CheckError::ModelSpec)?;
         match modelspec.check(&self.path).map_err(CheckError::ModelSpec)? {
             CheckOutcome::Checked => self.state = ModelSourceState::Checked,
             CheckOutcome::Rejected { diagnostic, .. } => {
@@ -473,18 +703,14 @@ impl ModelSource {
                 self.diagnostic = Some(diagnostic);
             }
         }
-        self.model_spec_version = Some(modelspec.version().to_owned());
         Ok(self.state)
     }
 
     /// The guard a training run passes: the source as a [`CheckedModel`], or [`ModelNotChecked`].
     pub fn trainable(&self) -> Result<CheckedModel<'_>, ModelNotChecked> {
-        match (self.state, self.model_spec_version.as_deref()) {
-            (ModelSourceState::Checked, Some(model_spec_version)) => Ok(CheckedModel {
-                source: self,
-                model_spec_version,
-            }),
-            (state, _) => Err(ModelNotChecked { state }),
+        match self.state {
+            ModelSourceState::Checked => Ok(CheckedModel { source: self }),
+            state => Err(ModelNotChecked { state }),
         }
     }
 }

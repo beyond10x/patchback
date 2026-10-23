@@ -7,10 +7,11 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 
 use patchback_model::{
-    CheckError, CheckOutcome, ModelNotChecked, ModelSource, ModelSourceState, ModelSpec,
-    ModelSpecError, ModelSpecPin, PinError, locate_with,
+    CheckError, CheckOutcome, DEFAULT_TIMEOUT, ModelNotChecked, ModelSource, ModelSourceState,
+    ModelSpec, ModelSpecError, ModelSpecPin, PinError, locate_with,
 };
 
 const SOURCE: &str = "models/patch_regressor.mspec";
@@ -62,6 +63,33 @@ fn standins() -> &'static Path {
                 "bin/modelspec",
                 format!("case \"$1\" in --version) echo \"modelspec {version}\";; *) exit 0;; esac"),
             ),
+            (
+                "records",
+                format!(
+                    "case \"$1\" in --version) echo \"modelspec {version}\";; check) touch {};; *) exit 64;; esac",
+                    dir.join("records-was-asked-to-check").display()
+                ),
+            ),
+            (
+                "killed",
+                format!("case \"$1\" in --version) echo \"modelspec {version}\";; *) kill -9 $$;; esac"),
+            ),
+            (
+                "usage-error",
+                format!(
+                    "case \"$1\" in --version) echo \"modelspec {version}\";; *) echo \"error: unexpected argument\" >&2; exit 2;; esac"
+                ),
+            ),
+            (
+                "sleeps",
+                format!("case \"$1\" in --version) echo \"modelspec {version}\";; *) exec sleep 30;; esac"),
+            ),
+            (
+                "loud",
+                format!(
+                    "case \"$1\" in --version) echo \"modelspec {version}\";; *) head -c 1000000 /dev/zero | tr '\\0' o; head -c 1000000 /dev/zero | tr '\\0' e >&2; exit 1;; esac"
+                ),
+            ),
         ];
         for (name, body) in scripts {
             let path = dir.join(name);
@@ -71,6 +99,10 @@ fn standins() -> &'static Path {
         let plain = dir.join("not-executable");
         fs::write(&plain, "#!/bin/sh\nexit 0\n").unwrap();
         fs::set_permissions(&plain, fs::Permissions::from_mode(0o644)).unwrap();
+        let unreadable = dir.join("unreadable.mspec");
+        fs::write(&unreadable, "model X {}\n").unwrap();
+        fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o000)).unwrap();
+        fs::create_dir_all(dir.join("a-directory.mspec")).unwrap();
         dir
     })
 }
@@ -83,8 +115,16 @@ fn open(name: &str) -> ModelSpec {
     ModelSpec::open(&standin(name), &pin()).expect("the stand-in reports the pinned version")
 }
 
+/// The repository root: `cargo test` runs in the crate directory, and `check` now refuses a
+/// source it cannot read before spawning.
+fn repository_file(path: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join(path)
+}
+
 fn source() -> ModelSource {
-    ModelSource::register(SOURCE, "PatchRegressor", 16)
+    ModelSource::register(repository_file(SOURCE), "PatchRegressor", 16, &pin())
 }
 
 #[test]
@@ -229,10 +269,11 @@ fn an_accepted_source_is_recorded_checked_and_may_be_trained() {
     assert_eq!(source.state(), ModelSourceState::Unchecked);
     assert_eq!(source.check(&modelspec).unwrap(), ModelSourceState::Checked);
     let checked = source.trainable().expect("a checked source is trainable");
-    assert_eq!(checked.path(), Path::new(SOURCE));
+    assert_eq!(checked.path(), repository_file(SOURCE));
     assert_eq!(checked.model_name(), "PatchRegressor");
     assert_eq!(checked.batch_size(), 16);
     assert_eq!(checked.model_spec_version(), "0.5.0");
+    assert_eq!(checked.model_spec_pin(), &pin());
 }
 
 #[test]
@@ -270,7 +311,7 @@ fn a_refused_source_is_recorded_rejected_with_the_diagnostic() {
     assert_eq!(
         open("rejects").check(Path::new(SOURCE)).unwrap(),
         CheckOutcome::Rejected {
-            code: Some(1),
+            code: 1,
             diagnostic: diagnostic.to_owned()
         }
     );
@@ -307,6 +348,143 @@ fn a_check_that_cannot_spawn_leaves_the_source_unchecked() {
     match source.check(&modelspec) {
         Err(CheckError::ModelSpec(ModelSpecError::Spawn { .. })) => {}
         other => panic!("expected a spawn error, got {other:?}"),
+    }
+    assert_eq!(source.state(), ModelSourceState::Unchecked);
+}
+
+/// Fix 1: a source that is missing, a directory or unreadable is refused before any spawn, and the
+/// source stays `Unchecked`; the binary's exit 1 for an unreadable path is not its verdict.
+#[test]
+fn an_unreadable_source_is_refused_before_any_spawn_and_stays_unchecked() {
+    let marker = standins().join("records-was-asked-to-check");
+    let modelspec = open("records");
+    for path in [
+        standins().join("no-such-dir/patch_regressor.mspec"),
+        standins().join("a-directory.mspec"),
+        standins().join("unreadable.mspec"),
+    ] {
+        let mut source = ModelSource::register(&path, "PatchRegressor", 16, &pin());
+        match source.check(&modelspec) {
+            Err(CheckError::ModelSpec(ModelSpecError::SourceUnreadable {
+                source: named, ..
+            })) => {
+                assert_eq!(named, path)
+            }
+            other => panic!(
+                "expected SourceUnreadable for {}, got {other:?}",
+                path.display()
+            ),
+        }
+        assert_eq!(source.state(), ModelSourceState::Unchecked);
+        assert_eq!(source.diagnostic(), None);
+    }
+    assert!(
+        !marker.exists(),
+        "the binary was spawned for an unreadable source"
+    );
+}
+
+/// Fix 2: a check ended by a signal gave no verdict.
+#[test]
+fn a_check_ended_by_a_signal_is_an_error_and_leaves_the_source_unchecked() {
+    let modelspec = open("killed");
+    assert!(matches!(
+        modelspec.check(&repository_file(SOURCE)),
+        Err(ModelSpecError::Signalled { .. })
+    ));
+    let mut source = source();
+    match source.check(&modelspec) {
+        Err(CheckError::ModelSpec(ModelSpecError::Signalled { binary })) => {
+            assert_eq!(binary, standin("killed"))
+        }
+        other => panic!("expected Signalled, got {other:?}"),
+    }
+    assert_eq!(source.state(), ModelSourceState::Unchecked);
+}
+
+/// The class of fixes 1 and 2: only exit 0 (accepted) and exit 1 (refused) are the binary's
+/// verdict. Any other exit status, such as clap's usage error 2, leaves the source `Unchecked`.
+#[test]
+fn an_exit_status_that_is_not_a_verdict_leaves_the_source_unchecked() {
+    let mut source = source();
+    match source.check(&open("usage-error")) {
+        Err(CheckError::ModelSpec(ModelSpecError::CheckFailed {
+            code, diagnostic, ..
+        })) => {
+            assert_eq!(code, 2);
+            assert_eq!(diagnostic, "error: unexpected argument");
+        }
+        other => panic!("expected CheckFailed, got {other:?}"),
+    }
+    assert_eq!(source.state(), ModelSourceState::Unchecked);
+}
+
+/// Fix 4: `open` takes the documented default bound.
+#[test]
+fn the_default_timeout_bounds_every_run() {
+    assert_eq!(DEFAULT_TIMEOUT, Duration::from_secs(60));
+    assert_eq!(open("checks").timeout(), DEFAULT_TIMEOUT);
+}
+
+/// Fix 4: a check that outlasts the caller's bound is killed and waited for, and the source stays
+/// `Unchecked`.
+#[test]
+fn a_check_that_outlasts_the_timeout_is_killed_and_leaves_the_source_unchecked() {
+    let bound = Duration::from_millis(300);
+    let modelspec = ModelSpec::open_with_timeout(&standin("sleeps"), &pin(), bound).unwrap();
+    assert_eq!(modelspec.timeout(), bound);
+    let mut source = source();
+    let started = Instant::now();
+    match source.check(&modelspec) {
+        Err(CheckError::ModelSpec(ModelSpecError::TimedOut { timeout, .. })) => {
+            assert_eq!(timeout, bound)
+        }
+        other => panic!("expected TimedOut, got {other:?}"),
+    }
+    let elapsed = started.elapsed();
+    assert!(elapsed < Duration::from_secs(10), "waited {elapsed:?}");
+    assert_eq!(source.state(), ModelSourceState::Unchecked);
+}
+
+/// Fix 4: stdout and stderr are drained while the child runs, so output larger than a pipe buffer
+/// (64 KiB on Linux) on both streams cannot stall the check.
+#[test]
+fn a_check_with_more_output_than_a_pipe_holds_completes() {
+    let modelspec =
+        ModelSpec::open_with_timeout(&standin("loud"), &pin(), Duration::from_secs(20)).unwrap();
+    match modelspec.check(&repository_file(SOURCE)).unwrap() {
+        CheckOutcome::Rejected { code, diagnostic } => {
+            assert_eq!(code, 1);
+            assert_eq!(diagnostic.len(), 1_000_000);
+            assert!(diagnostic.bytes().all(|b| b == b'e'));
+        }
+        other => panic!("expected Rejected, got {other:?}"),
+    }
+}
+
+/// Fix 6: the source carries the pin it was registered with, and the checked model records it.
+#[test]
+fn a_checked_model_records_the_pin_it_was_registered_with() {
+    let mut source = source();
+    assert_eq!(source.model_spec_pin(), &pin());
+    source.check(&open("checks")).unwrap();
+    assert_eq!(source.trainable().unwrap().model_spec_pin(), &pin());
+}
+
+/// Fix 6: a binary opened under another pin does not check a source registered under this one.
+#[test]
+fn a_source_is_not_checked_by_a_binary_of_another_pin() {
+    let other = ModelSpecPin::parse(
+        "version 0.4.0\ncommit 7c45c1adaf6e0cc0ba05f18878b31bfdc57cc529\nsha256-x86_64-unknown-linux-gnu 171d2880ddd197ef91db8f36da2e6268676aa5aa5adc28d28ea8bc39cae24229\n",
+    )
+    .unwrap();
+    let mut source = ModelSource::register(repository_file(SOURCE), "PatchRegressor", 16, &other);
+    match source.check(&open("checks")) {
+        Err(CheckError::OtherPin { registered, binary }) => {
+            assert_eq!(registered, "0.4.0");
+            assert_eq!(binary, "0.5.0");
+        }
+        other => panic!("expected OtherPin, got {other:?}"),
     }
     assert_eq!(source.state(), ModelSourceState::Unchecked);
 }

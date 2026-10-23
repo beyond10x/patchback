@@ -35,7 +35,7 @@ fn the_pinned_modelspec_checks_the_design_model() {
     };
     let modelspec = ModelSpec::open(&binary, &pin).unwrap_or_else(|e| panic!("{e}"));
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../models/patch_regressor.mspec");
-    let mut source = ModelSource::register(&path, "PatchRegressor", 16);
+    let mut source = ModelSource::register(&path, "PatchRegressor", 16, &pin);
     let state = source.check(&modelspec).unwrap();
     assert_eq!(
         state,
