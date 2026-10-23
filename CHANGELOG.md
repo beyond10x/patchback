@@ -29,6 +29,10 @@ All notable changes to Patchback are recorded here. The format follows
 - `task check`: validates the specification, runs its conformance suite against the interpreted
   reference target, validates the planning store, checks that every story names existing
   acceptance scenarios, and checks the generated documentation pages.
+- ModelSpec 0.5.0 is pinned in `models/modelspec.pin`, and `models/patch_regressor.mspec` holds the
+  DESIGN.md § 8.1 model; `patchback-model` runs the pinned binary's `modelspec check` on it,
+  refuses a binary that reports another version, and keeps a rejected model from training. CI
+  installs the pinned binary by checksum and runs that check.
 
 ### Changed
 
