@@ -2,17 +2,21 @@
 format: aep.planning-md/3
 id: story:audio-comparison
 kind: story
-status: draft
+status: active
 title: Audio comparison loss
 relations:
 - decomposes: epic:sound-engine
 - informed_by: executable-system-specification:patchback-contracts
 - depends_on: story:analysis-core
 - depends_on: story:workspace-scaffold
+- serves: vision:patchback
 scope:
 - confidence: inferred
   path: crates/patchback-fit
-revision: 3
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-23T18:30:09Z", actor: "human:timo", revision: 4}
+- {from: "proposed", to: "active", at: "2026-10-23T18:30:09Z", actor: "human:timo", revision: 5}
 ---
 # Audio comparison loss
 
