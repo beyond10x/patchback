@@ -274,6 +274,15 @@ errors:
       - name: patch_id
         type: patchback.patch.PatchId
 
+  - name: patchback.patch.MalformedRecord
+    summary: >-
+      A line is not a record of the .patch grammar (section 11): no header line, an unknown record,
+      a blank line, a wrong field count, a missing patch key, a parameter for an undeclared node, a
+      malformed name, an unknown node kind or port rate token, or text that is not UTF-8.
+    fields:
+      - name: patch_id
+        type: patchback.patch.PatchId
+
   - name: patchback.patch.UnsupportedSampleRate
     summary: The sample rate is not the supported 48000 Hz; nothing is converted (sections 5.3, 11).
     fields:
@@ -621,7 +630,14 @@ commands:
             kind_family: Noise
       # UNMAPPED: section 11 names malformed numbers and unbounded lengths without the grammar or
       # the bounds (maximum line length, node count, file size). Both are the parser's, outside
-      # the model.
+      # the model. patchback-core (src/patch/file.rs) states a grammar and four provisional bounds
+      # until DESIGN.md section 17 OQ-6 sets them.
+      - name: malformed-record
+        external: a line is not a record of the .patch grammar
+        error: patchback.patch.MalformedRecord
+        payload:
+          patchback.patch.MalformedRecord:
+            patch_id: input.patch_id
       - name: malformed-number
         external: a numeric token does not parse as a finite decimal number
         error: patchback.patch.MalformedNumber
