@@ -1,5 +1,15 @@
 [workspace]
-members = ["crates/patchback-docs"]
+members = [
+    "crates/patchback-core",
+    "crates/patchback-dsp",
+    "crates/patchback-audio",
+    "crates/patchback-analysis",
+    "crates/patchback-dataset",
+    "crates/patchback-model",
+    "crates/patchback-fit",
+    "crates/patchback-cli",
+    "crates/patchback-docs",
+]
 resolver = "3"
 
 [workspace.package]

@@ -1,5 +1,5 @@
 {
-  "asOf": "2026-10-22",
+  "asOf": "2026-10-23",
   "format": "b10x-status/1",
   "items": [
     {
@@ -14,6 +14,27 @@
       "detail": "Identifiers, parameter domains, port rates and cycles are checked, then the graph is compiled into an execution plan. patchback patch validate runs the checks alone. Milestone A.",
       "href": "/docs/concepts/patch",
       "label": "A typed patch graph, validated before it runs",
+      "status": "planned"
+    },
+    {
+      "area": "Patch",
+      "detail": "A versioned, human-readable patch file in physical units, read by every command that takes a patch and written in canonical form. Unknown versions, duplicate keys or IDs, malformed numbers, unsupported rates and unbounded lengths are refused. Milestone A.",
+      "href": "/docs/reference/files#patch-patch",
+      "label": "The line-oriented .patch file",
+      "status": "planned"
+    },
+    {
+      "area": "Patch",
+      "detail": "Eight parameters, each with an index, a stable path, a normalized-to-physical mapping, a physical range and a default. An out-of-range normalized value is clamped and the clamp recorded; a non-finite value is refused. Milestone A.",
+      "href": "/docs/reference/parameters",
+      "label": "Parameter contracts for the subtractive voice",
+      "status": "planned"
+    },
+    {
+      "area": "Score",
+      "detail": "A versioned list of sample-timestamped note events at the patch sample rate. Notes that end before they start, overlap in a monophonic sequence or fall outside the MIDI or velocity range are refused. Milestone A.",
+      "href": "/docs/reference/files#events-events",
+      "label": "Note events and the .events file",
       "status": "planned"
     },
     {
@@ -56,6 +77,34 @@
       "detail": "patch.patch, notes.events, reconstructed.wav, report.txt and run.meta in the output directory. Milestone A.",
       "href": "/docs/reference/files#a-fit-run",
       "label": "The fit run's five files",
+      "status": "planned"
+    },
+    {
+      "area": "Fit",
+      "detail": "Over a seeded holdout of clips synthesized by Patchback, the fit's median normalized audio loss is compared with the default patch's, with wall-clock time, render evaluations and listening examples recorded. Milestone A.",
+      "href": "/docs/concepts/closed-loop#the-starting-point",
+      "label": "A baseline against the default patch",
+      "status": "planned"
+    },
+    {
+      "area": "Audio",
+      "detail": "An external recording is imported only with its licence and provenance recorded beside it; a clip synthesized by Patchback carries its origin. Milestone A.",
+      "href": "/docs/concepts/guarantees#fixtures",
+      "label": "Provenance for every fixture",
+      "status": "planned"
+    },
+    {
+      "area": "Dependencies",
+      "detail": "An audit passes a workspace with no third-party application crate, refuses a forbidden or unreviewed crate, and admits at most one approved optional audio I/O backend. Milestone A.",
+      "href": "/docs/concepts/guarantees#dependencies",
+      "label": "A dependency gate",
+      "status": "planned"
+    },
+    {
+      "area": "Model",
+      "detail": "One pinned ModelSpec release runs modelspec check on models/patch_regressor.mspec; a model the pinned binary rejects is recorded as rejected and cannot be trained. Milestone A.",
+      "href": "/docs/guides/train-the-regressor#check-and-train",
+      "label": "A pinned ModelSpec that checks the model",
       "status": "planned"
     },
     {

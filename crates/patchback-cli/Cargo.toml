@@ -1,0 +1,11 @@
+[package]
+name = "patchback-cli"
+description = "The patchback command line: the application entry point."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "patchback"
+path = "src/main.rs"
