@@ -8,7 +8,7 @@ relations:
 - decomposes: epic:module-choice
 - informed_by: executable-system-specification:patchback-contracts
 - depends_on: story:topology-families
-revision: 1
+revision: 2
 ---
 # Explicit delayed feedback
 
@@ -36,3 +36,4 @@ fails closed. Any other cycle is refused.
 ## Open questions
 
 - The feedback gain limit and which parameter carries it.
+- Since wave a4, validation refuses a `subtractive-mono/1` patch that is not the fixed § 5.2 chain (`FixedChainMismatch`). The chain feeds every input port, so `delayed-feedback-accepted.yaml` and patch 143 of `delayed-feedback-refused.yaml` cannot hold until this story extends the chain definition for a Delay feedback path, or names a topology that admits one (review-result:patch-review-fixes-adversary-1).

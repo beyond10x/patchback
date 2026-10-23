@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-23T21:47:29Z",
+  "actor": "human:timo",
+  "artifact": "story:note-events",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "baseline main 4fdd6f2: no notes.events reader or writer; treatment a399fa0: parse_events/write_events round-trip bit-exact and refusals ranked by LoadNoteSequence (note_events.rs, note_events_adversary.rs)",
+    "reference": "a399fa03b096b7ac59554182992ea77130a975a2"
+  }
+}

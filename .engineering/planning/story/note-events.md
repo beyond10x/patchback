@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:note-events
 kind: story
-status: active
+status: implemented
 title: Note events and the .events file
 relations:
 - decomposes: epic:sound-engine
@@ -13,10 +13,11 @@ relations:
 scope:
 - confidence: inferred
   path: crates/patchback-core
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-23T18:30:09Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-10-23T18:30:09Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-10-23T21:47:30Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1,"review_outcome":1,"verification":1}}}
 ---
 # Note events and the .events file
 

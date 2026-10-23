@@ -6,7 +6,7 @@ at [README.md](README.md); the design is [DESIGN.md](DESIGN.md).
 
 ## State
 
-Milestone A in progress (DESIGN.md revision 0.6): the workspace crates, the clap-derived `patchback` CLI (`patch validate` and `analyze` implemented; `render`, `compare` and `fit` not yet), the dependency gate, the ModelSpec pin and check, the parameter contracts, WAV import and export, the `.patch` file format, patch graph validation and compilation, and the analysis core exist; `studio/` holds the patch studio prototype on fixture data. `spec/` holds the ESS domains and
+Milestone A in progress (DESIGN.md revision 0.7): the workspace crates, the clap-derived `patchback` CLI (`patch validate`, `analyze` and `compare` implemented; `render` and `fit` not yet), the dependency gate, the ModelSpec pin and check, the parameter contracts, WAV import and export, the `.patch` file format, patch graph validation (including the fixed § 5.2 chain) and compilation, the analysis core, the `notes.events` file and the audio comparison loss exist; `studio/` holds the patch studio prototype on fixture data. `spec/` holds the ESS domains and
 the authored conformance scenarios; `.engineering/` holds the AEP planning store with one epic per
 DESIGN.md § 13 milestone and draft stories whose acceptance is a list of named scenarios. The first
 implementation slice is DESIGN.md § 15 (Milestone A, no ML).

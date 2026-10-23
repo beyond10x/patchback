@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-23T21:47:29Z",
+  "actor": "human:timo",
+  "artifact": "story:patch-review-fixes",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:patch-review-fixes-adversary-1",
+    "reference": "a399fa03b096b7ac59554182992ea77130a975a2",
+    "review": "review-result:patch-review-fixes-adversary-1",
+    "outcome": "fixed"
+  }
+}

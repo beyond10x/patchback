@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:patch-review-fixes
 kind: story
-status: active
+status: implemented
 title: 'Patch review fixes: header refusal order and the fixed chain'
 relations:
 - decomposes: epic:sound-engine
@@ -15,10 +15,11 @@ scope:
   path: crates/patchback-core/src/patch/validate.rs
 - confidence: cited
   path: spec/domains/patch.yaml
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-23T18:30:09Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-10-23T18:30:09Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-10-23T21:47:30Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1,"review_outcome":1,"verification":1}}}
 ---
 # Patch review fixes: header refusal order and the fixed chain
 

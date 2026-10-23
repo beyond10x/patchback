@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-23T21:47:29Z",
+  "actor": "human:timo",
+  "artifact": "story:patch-review-fixes",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check, cargo build/clippy -D warnings/fmt --check on wave/a4 a399fa0: all exit 0; spec-conform 397 passed, 0 failed; cargo test 597 passed, 0 failed",
+    "reference": "a399fa03b096b7ac59554182992ea77130a975a2"
+  }
+}
