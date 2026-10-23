@@ -30,6 +30,7 @@ Entry points are the `Taskfile.yml` tasks (go-task):
 - `task docs-check`: `generate --check` plus `cargo test -p patchback-docs`.
 - `task rust-test`: `cargo test --locked --workspace`; holds the dependency gate
   (`crates/patchback-cli/tests/dependencies.rs`) and the CLI dispatch tests.
+- `task dependency-audit`: runs the dependency gate alone.
 - `task check`: all of the above; the gate. CI (`check.yml`) runs it.
 - Site build: `npm --prefix website ci --allow-git=root` (npm 12 refuses Git dependencies without
   the flag; CI's Node 22 needs none), then `npm --prefix website run build`. `pages.yml`
@@ -60,7 +61,11 @@ Entry points are the `Taskfile.yml` tasks (go-task):
   contract (§ 5–8, § 11) or an ADR (§ 14) edits DESIGN.md in the same change and bumps its
   revision line.
 - Running code is Rust. No Python, PyTorch, or ML, DSP, maths or serialization crates (DESIGN.md
-  § 3); at most one optional audio I/O crate, behind a feature, once live audio is approved.
+  § 3); at most one optional audio I/O crate, behind a feature, once live audio is approved. A
+  backend is admitted only through an `AUDIO_BACKENDS` entry in
+  `crates/patchback-cli/tests/dependencies.rs` with its exact version and reviewed closure, naming
+  an AEP approval record (not rejected, superseded or archived) whose body has the line
+  ``Approves: `<crate>` <version>``. No ModelSpec crate is admitted (DESIGN.md § 3, § 8.2).
 - ModelSpec is pinned to a tested release; never assume a ModelSpec capability its documentation
   does not list as shipped (DESIGN.md § 1.1).
 - Fixtures are synthesized by Patchback or carry a recorded licence and provenance.

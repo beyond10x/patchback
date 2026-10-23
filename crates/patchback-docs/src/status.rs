@@ -190,7 +190,7 @@ pub const CAPABILITIES: &[Capability] = &[
         A,
         "Dependencies",
         "A dependency gate",
-        "An audit passes a workspace with no third-party application crate but clap, the one reviewed CLI parser, and its reviewed closure; it refuses a forbidden or unreviewed crate, and admits at most one approved optional audio I/O backend.",
+        "An audit of the resolved Cargo.lock passes a workspace with no third-party application crate but clap, the one reviewed CLI parser, and its reviewed closure; it refuses a forbidden or unreviewed crate and any ModelSpec crate, and admits at most one approved audio I/O backend with its reviewed closure, only behind an optional feature.",
         "/docs/concepts/guarantees#dependencies",
     ),
     Capability {

@@ -13,6 +13,16 @@
 //! Every directory under `crates/` is either an application crate or `patchback-docs`, so a
 //! new crate cannot be left out of the walk. Read with `std` only.
 //!
+//! The same walk holds the rest of DESIGN.md § 3 and § 12.2. It judges the full resolved
+//! closure of the application crates, so a transitive build requirement is reviewed by name and
+//! version like any other. At most one approved audio I/O backend (`AUDIO_BACKENDS`, empty
+//! today; ADR-007) is admitted, with its own exact reviewed closure, and only when every
+//! workspace manifest that takes it declares it `optional = true` and no default or
+//! always-requested feature turns it on; those manifest facts come from `cargo metadata
+//! --no-deps`. No `modelspec*` package is admitted: ModelSpec runs as a subprocess (§ 8.2).
+//! `task dependency-audit` runs this file alone, and each refusal is one line naming the
+//! package and its reason.
+//!
 //! The manifest cases below run through cargo itself: each manifest is resolved offline in a
 //! scratch workspace whose crates.io is replaced by a local directory of empty fixture crates,
 //! and the resulting `Cargo.lock` goes through the same walk.
@@ -74,6 +84,53 @@ const CLAP_CLOSURE: &[(&str, &str)] = &[
     ("windows-link", "0.2.1"),
     ("windows-sys", "0.61.2"),
 ];
+
+/// A reviewed audio I/O backend (DESIGN.md § 3, ADR-007): the crate at the exact version the
+/// review saw, the approval record that admits it, and its resolved closure, judged like
+/// `CLAP_CLOSURE`.
+struct AudioBackend {
+    name: &'static str,
+    version: &'static str,
+    /// The AEP approval record that names the crate, as `approval-record:<slug>`.
+    approval: &'static str,
+    /// Every crates.io package the backend brings in, as the exact `(name, version)` reviewed.
+    closure: &'static [(&'static str, &'static str)],
+}
+
+/// The approved audio I/O backends: at most one (DESIGN.md § 3), and none is approved today.
+/// An entry needs an approval record in the AEP store; its id goes in `approval`
+/// (`every_approved_audio_backend_names_its_approval_record` holds that). The record approves
+/// the crate only when its front-matter `status` is not rejected, superseded or archived and a
+/// line of its body, trimmed, is exactly ``Approves: `<crate>` <version>`` with the crate's name
+/// and the exact version below, for example ``Approves: `cpal` 0.15.3``. Any other mention of
+/// the crate approves nothing. The
+/// backend's exact resolved closure goes in `closure`
+/// (`every_approved_audio_backend_closure_is_exactly_its_resolved_closure`). A listed backend is
+/// admitted only when every workspace manifest that takes it declares it `optional = true` and
+/// no default or unconditionally requested feature turns it on.
+const AUDIO_BACKENDS: &[AudioBackend] = &[];
+
+/// Audio I/O crates known by name, so that an unapproved one is refused as what it is.
+const AUDIO_IO_CRATES: &[&str] = &[
+    "alsa",
+    "asio-sys",
+    "coreaudio-rs",
+    "coreaudio-sys",
+    "cpal",
+    "jack",
+    "kira",
+    "libpulse-binding",
+    "oboe",
+    "portaudio",
+    "portaudio-rs",
+    "rodio",
+    "sdl2",
+    "wasapi",
+];
+
+/// ModelSpec runs as a subprocess (DESIGN.md § 8.2), so no package whose name starts with this,
+/// in any letter case, is admitted, from any source and at any depth.
+const MODELSPEC_PREFIX: &str = "modelspec";
 
 fn repository_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -155,68 +212,301 @@ fn entries(array: &str) -> Vec<String> {
         .collect()
 }
 
-/// Whether `package` is a reviewed member of `clap`'s closure, from crates.io, at the exact
-/// version the review saw.
-fn reviewed(package: &Package) -> bool {
-    package.source.as_deref() == Some(REGISTRY)
-        && CLAP_CLOSURE
-            .iter()
-            .any(|&(name, version)| package.name == name && package.version == version)
+/// The gate with the approved backends of this repository and no manifest facts.
+fn lock_violations(lock: &str, roots: &[&str]) -> Vec<String> {
+    audit(lock, &Manifests::new(), roots, AUDIO_BACKENDS)
 }
 
-/// Why the registry package `package`, which is not `reviewed`, is refused.
-fn refusal(package: &Package, source: &str) -> String {
-    let label = format!("{} {}", package.name, package.version);
-    let versions: Vec<&str> = CLAP_CLOSURE
-        .iter()
-        .filter(|&&(name, _)| name == package.name)
-        .map(|&(_, version)| version)
-        .collect();
-    if source == REGISTRY && !versions.is_empty() {
-        format!(
-            "{label}: version not in {CLI_PARSER}'s reviewed closure (reviewed: {} {})",
-            package.name,
-            versions.join(", ")
-        )
-    } else {
+/// Whose reviewed closure a package is judged against.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Owner {
+    /// A workspace path crate.
+    Workspace,
+    /// Inside `clap`'s closure (`CLAP_CLOSURE`).
+    Clap,
+    /// Inside the closure of the approved backend at this index.
+    Backend(usize),
+    /// Reached only through a package no review admits.
+    Unreviewed,
+}
+
+/// The reviewed closures: `clap`'s and those of the approved audio backends.
+struct Review<'a> {
+    backends: &'a [AudioBackend],
+}
+
+impl Review<'_> {
+    /// The owners that hold a reviewed closure.
+    fn owners(&self) -> Vec<Owner> {
+        std::iter::once(Owner::Clap)
+            .chain((0..self.backends.len()).map(Owner::Backend))
+            .collect()
+    }
+
+    /// The `(name, version)` pairs `owner` reviewed, its entry crate included.
+    fn pairs(&self, owner: Owner) -> Vec<(&str, &str)> {
+        match owner {
+            Owner::Clap => CLAP_CLOSURE.to_vec(),
+            Owner::Backend(i) => {
+                let backend = &self.backends[i];
+                std::iter::once((backend.name, backend.version))
+                    .chain(backend.closure.iter().copied())
+                    .collect()
+            }
+            Owner::Workspace | Owner::Unreviewed => Vec::new(),
+        }
+    }
+
+    fn name(&self, owner: Owner) -> &str {
+        match owner {
+            Owner::Backend(i) => self.backends[i].name,
+            _ => CLI_PARSER,
+        }
+    }
+
+    /// Whether `owner` reviewed `package`, from crates.io, at its exact version.
+    fn admits(&self, owner: Owner, package: &Package) -> bool {
+        package.source.as_deref() == Some(REGISTRY)
+            && self
+                .pairs(owner)
+                .iter()
+                .any(|&(name, version)| package.name == name && package.version == version)
+    }
+
+    /// The owner a workspace crate may take `package` from directly: `clap`, or an approved
+    /// backend at its approved version.
+    fn entry(&self, package: &Package) -> Option<Owner> {
+        if package.name == CLI_PARSER && self.admits(Owner::Clap, package) {
+            return Some(Owner::Clap);
+        }
+        (0..self.backends.len())
+            .map(Owner::Backend)
+            .find(|&owner| package.name == self.name(owner) && self.admits(owner, package))
+    }
+
+    /// The first reviewed closure that holds `package`.
+    fn containing(&self, package: &Package) -> Option<Owner> {
+        self.owners()
+            .into_iter()
+            .find(|&owner| self.admits(owner, package))
+    }
+
+    /// Why the registry or git package `package`, judged as part of `owner`, is refused.
+    fn refusal(&self, package: &Package, source: &str, owner: Owner) -> String {
+        let label = format!("{} {}", package.name, package.version);
+        let owned = matches!(owner, Owner::Clap | Owner::Backend(_));
+        if source == REGISTRY {
+            let approved: Vec<String> = self
+                .backends
+                .iter()
+                .filter(|b| b.name == package.name)
+                .map(|b| format!("{} {}", b.name, b.version))
+                .collect();
+            if !owned && !approved.is_empty() {
+                return format!(
+                    "{label}: version not the approved audio I/O backend (approved: {})",
+                    approved.join(", ")
+                );
+            }
+            let candidates = if owned { vec![owner] } else { self.owners() };
+            for candidate in candidates {
+                let versions: Vec<&str> = self
+                    .pairs(candidate)
+                    .iter()
+                    .filter(|&&(name, _)| name == package.name)
+                    .map(|&(_, version)| version)
+                    .collect();
+                if !versions.is_empty() {
+                    return format!(
+                        "{label}: version not in {}'s reviewed closure (reviewed: {} {})",
+                        self.name(candidate),
+                        package.name,
+                        versions.join(", ")
+                    );
+                }
+            }
+        }
+        if owned {
+            return format!(
+                "{label}: entered {}'s closure unreviewed (comes from {source})",
+                self.name(owner)
+            );
+        }
+        if AUDIO_IO_CRATES.contains(&package.name.as_str()) {
+            let approved: Vec<&str> = self.backends.iter().map(|b| b.name).collect();
+            return format!(
+                "{label}: an audio I/O crate that is not an approved backend (approved: {}; \
+                 an entry needs an approval record naming the crate)",
+                if approved.is_empty() {
+                    "none".to_owned()
+                } else {
+                    approved.join(", ")
+                }
+            );
+        }
         format!("{label}: comes from {source}")
     }
 }
 
-/// Everything the walk from `roots` through `lock` reaches that is neither a workspace-local
-/// `patchback-*` crate nor a reviewed member of `clap`'s closure, every workspace crate that
-/// takes a closure member other than `clap` directly, and every root or entry the lock file
-/// does not resolve.
-fn lock_violations(lock: &str, roots: &[&str]) -> Vec<String> {
+/// The local names of the optional dependencies that each workspace member turns on whenever
+/// it is built: through its default features, the features a dependent always asks of it, and
+/// the features those turn on in turn. A dev-dependency's requests count too: `cargo test`
+/// unifies them into the build of the crate it names.
+fn always_enabled(manifests: &Manifests) -> BTreeMap<String, BTreeSet<String>> {
+    let mut items: BTreeMap<String, BTreeSet<String>> = manifests
+        .keys()
+        .map(|name| (name.clone(), BTreeSet::from(["default".to_owned()])))
+        .collect();
+    let mut enabled: BTreeMap<String, BTreeSet<String>> = manifests
+        .keys()
+        .map(|name| (name.clone(), BTreeSet::new()))
+        .collect();
+    loop {
+        let mut changed = false;
+        // `dep/feature` requests a member makes of its dependencies
+        let mut requests: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
+        for (name, member) in manifests {
+            let mut stack: Vec<String> = items[name].iter().cloned().collect();
+            let mut visited = BTreeSet::new();
+            while let Some(item) = stack.pop() {
+                if !visited.insert(item.clone()) {
+                    continue;
+                }
+                if let Some(dependency) = item.strip_prefix("dep:") {
+                    changed |= enabled
+                        .get_mut(name)
+                        .is_some_and(|e| e.insert(dependency.to_owned()));
+                } else if let Some((dependency, feature)) = item.split_once('/') {
+                    let (dependency, weak) = match dependency.strip_suffix('?') {
+                        Some(d) => (d, true),
+                        None => (dependency, false),
+                    };
+                    if !weak {
+                        changed |= enabled
+                            .get_mut(name)
+                            .is_some_and(|e| e.insert(dependency.to_owned()));
+                    }
+                    requests
+                        .entry(name.clone())
+                        .or_default()
+                        .push((dependency.to_owned(), feature.to_owned()));
+                } else if let Some(entries) = member.features.get(&item) {
+                    stack.extend(entries.iter().cloned());
+                } else if member
+                    .declarations
+                    .iter()
+                    .any(|d| d.optional && d.local == item)
+                {
+                    // the implicit feature of an optional dependency
+                    changed |= enabled
+                        .get_mut(name)
+                        .is_some_and(|e| e.insert(item.clone()));
+                }
+                changed |= items.get_mut(name).is_some_and(|i| i.insert(item));
+            }
+        }
+        for (name, member) in manifests {
+            for declaration in &member.declarations {
+                if !manifests.contains_key(&declaration.package) {
+                    continue;
+                }
+                if declaration.optional && !enabled[name].contains(&declaration.local) {
+                    continue;
+                }
+                let mut asked: Vec<String> = declaration.features.clone();
+                if declaration.default_features {
+                    asked.push("default".to_owned());
+                }
+                for (dependency, feature) in requests.get(name).into_iter().flatten() {
+                    if *dependency == declaration.local {
+                        asked.push(feature.clone());
+                    }
+                }
+                let target = items
+                    .get_mut(&declaration.package)
+                    .expect("a workspace member");
+                for feature in asked {
+                    changed |= target.insert(feature);
+                }
+            }
+        }
+        if !changed {
+            return enabled;
+        }
+    }
+}
+
+/// The dependency gate: everything the walk from `roots` through `lock` reaches that is not
+/// admitted, with its reason, one finding per refused package or crate.
+///
+/// A workspace path crate must be `patchback-*` and not the docs crate. A workspace crate may
+/// take from crates.io only `clap` and an approved audio backend at its approved version; every
+/// package reached through one of them must be in that one's reviewed closure at its exact
+/// version, and a workspace crate that takes a closure member directly is refused. A
+/// `modelspec*` package is refused from any source at any depth (ModelSpec runs as a
+/// subprocess, DESIGN.md § 8.2). At most one approved backend may be reached, and every workspace
+/// crate that takes it must declare it `optional = true` in every manifest table (`manifests`,
+/// from `cargo metadata`) with no default or always-requested feature turning it on.
+fn audit(
+    lock: &str,
+    manifests: &Manifests,
+    roots: &[&str],
+    backends: &[AudioBackend],
+) -> Vec<String> {
     let packages = packages(lock);
-    let mut found = Vec::new();
-    let mut queue: Vec<(usize, bool)> = Vec::new();
+    let review = Review { backends };
+    let mut found: Vec<String> = Vec::new();
+    let push = |found: &mut Vec<String>, finding: String| {
+        if !found.contains(&finding) {
+            found.push(finding);
+        }
+    };
+    let mut queue: Vec<(usize, Owner)> = Vec::new();
+    let mut root_indices = BTreeSet::new();
     for root in roots {
         let matching: Vec<usize> = (0..packages.len())
             .filter(|&i| packages[i].name == *root && packages[i].source.is_none())
             .collect();
         match matching.as_slice() {
-            [i] => queue.push((*i, true)),
-            _ => found.push(format!(
-                "{root}: not exactly one workspace package of that name in Cargo.lock"
-            )),
+            [i] => {
+                root_indices.insert(*i);
+                queue.push((*i, Owner::Workspace));
+            }
+            _ => push(
+                &mut found,
+                format!("{root}: not exactly one workspace package of that name in Cargo.lock"),
+            ),
         }
     }
     let mut seen = BTreeSet::new();
-    while let Some((index, is_root)) = queue.pop() {
-        if !seen.insert(index) {
+    // (workspace crate, backend) for every approved backend a workspace crate takes
+    let mut entered: BTreeSet<(usize, usize)> = BTreeSet::new();
+    while let Some((index, owner)) = queue.pop() {
+        if !seen.insert((index, owner)) {
             continue;
         }
         let package = &packages[index];
         let label = format!("{} {}", package.name, package.version);
-        if let Some(source) = &package.source {
-            if !reviewed(package) {
-                found.push(refusal(package, source));
+        if package
+            .name
+            .to_ascii_lowercase()
+            .starts_with(MODELSPEC_PREFIX)
+        {
+            push(
+                &mut found,
+                format!(
+                    "{label}: ModelSpec runs as a subprocess (DESIGN.md § 8.2); no ModelSpec \
+                     crate is admitted"
+                ),
+            );
+        } else if let Some(source) = &package.source {
+            if !review.admits(owner, package) {
+                push(&mut found, review.refusal(package, source, owner));
             }
-        } else if !is_root && !package.name.starts_with("patchback-") {
-            found.push(format!("{label}: not a patchback-* crate"));
+        } else if !root_indices.contains(&index) && !package.name.starts_with("patchback-") {
+            push(&mut found, format!("{label}: not a patchback-* crate"));
         } else if package.name == DOCS_CRATE {
-            found.push(format!("{label}: documentation tooling"));
+            push(&mut found, format!("{label}: documentation tooling"));
         }
         for entry in &package.dependencies {
             let mut words = entry.split_whitespace();
@@ -227,21 +517,107 @@ fn lock_violations(lock: &str, roots: &[&str]) -> Vec<String> {
                     packages[i].name == name && version.is_none_or(|v| packages[i].version == v)
                 })
                 .collect();
-            match target.as_slice() {
-                [i] => {
-                    let dependency = &packages[*i];
-                    if package.source.is_none()
-                        && reviewed(dependency)
-                        && dependency.name != CLI_PARSER
-                    {
-                        found.push(format!(
-                            "{label}: takes {} {} directly; it is reviewed only inside {CLI_PARSER}'s closure",
-                            dependency.name, dependency.version
-                        ));
+            let [i] = target.as_slice() else {
+                push(
+                    &mut found,
+                    format!("{label}: unresolved dependency entry '{entry}'"),
+                );
+                continue;
+            };
+            let dependency = &packages[*i];
+            let next = if dependency.source.is_none() {
+                Owner::Workspace
+            } else if package.source.is_none() {
+                if let Some(entry_owner) = review.entry(dependency) {
+                    if let Owner::Backend(b) = entry_owner {
+                        entered.insert((index, b));
                     }
-                    queue.push((*i, false));
+                    entry_owner
+                } else if let Some(closure) = review.containing(dependency) {
+                    push(
+                        &mut found,
+                        format!(
+                            "{label}: takes {} {} directly; it is reviewed only inside {}'s closure",
+                            dependency.name,
+                            dependency.version,
+                            review.name(closure)
+                        ),
+                    );
+                    closure
+                } else {
+                    Owner::Unreviewed
                 }
-                _ => found.push(format!("{label}: unresolved dependency entry '{entry}'")),
+            } else if matches!(owner, Owner::Clap | Owner::Backend(_)) {
+                owner
+            } else {
+                review.containing(dependency).unwrap_or(Owner::Unreviewed)
+            };
+            queue.push((*i, next));
+        }
+    }
+
+    let reached: BTreeSet<usize> = entered.iter().map(|&(_, b)| b).collect();
+    let mut reached = reached.into_iter().map(|b| &backends[b]);
+    if let Some(first) = reached.next() {
+        for other in reached {
+            push(
+                &mut found,
+                format!(
+                    "{} {}: a second audio I/O backend beside {} {}; DESIGN.md § 3 admits at most one",
+                    other.name, other.version, first.name, first.version
+                ),
+            );
+        }
+    }
+
+    let enabled = always_enabled(manifests);
+    for (crate_index, b) in entered {
+        let workspace_crate = &packages[crate_index];
+        let label = format!("{} {}", workspace_crate.name, workspace_crate.version);
+        let backend = &backends[b];
+        let what = format!("audio backend {} {}", backend.name, backend.version);
+        let declarations: Vec<&Declaration> = manifests
+            .get(&workspace_crate.name)
+            .map(|member| {
+                member
+                    .declarations
+                    .iter()
+                    .filter(|d| d.package == backend.name)
+                    .collect()
+            })
+            .unwrap_or_default();
+        if declarations.is_empty() {
+            push(
+                &mut found,
+                format!(
+                    "{label}: takes {what}, and no manifest of it was read, so it cannot be shown \
+                     optional (DESIGN.md § 3)"
+                ),
+            );
+            continue;
+        }
+        for declaration in declarations {
+            if !declaration.optional {
+                push(
+                    &mut found,
+                    format!(
+                        "{label}: takes {what} as a {} dependency without optional = true \
+                         (DESIGN.md § 3: behind an optional feature)",
+                        declaration.kind
+                    ),
+                );
+            } else if enabled
+                .get(&workspace_crate.name)
+                .is_some_and(|e| e.contains(&declaration.local))
+            {
+                push(
+                    &mut found,
+                    format!(
+                        "{label}: its default features or a dependent's required features turn \
+                         on {what}, so it is not optional (DESIGN.md § 3: behind an optional \
+                         feature)"
+                    ),
+                );
             }
         }
     }
@@ -261,10 +637,24 @@ fn repository_lock() -> String {
     fs::read_to_string(repository_root().join("Cargo.lock")).expect("root Cargo.lock")
 }
 
+/// The findings, one refused package (or crate) and its reason per line.
+fn report(found: &[String]) -> String {
+    found.join("\n")
+}
+
 #[test]
 fn the_application_crates_take_no_third_party_crate_but_clap_and_its_closure() {
-    let found = lock_violations(&repository_lock(), APPLICATION_CRATES);
-    assert!(found.is_empty(), "third-party or missing: {found:#?}");
+    let found = audit(
+        &repository_lock(),
+        &repository_manifests(),
+        APPLICATION_CRATES,
+        AUDIO_BACKENDS,
+    );
+    assert!(
+        found.is_empty(),
+        "the dependency gate refuses:\n{}",
+        report(&found)
+    );
 }
 
 #[test]
@@ -876,6 +1266,1141 @@ fn the_check_refuses_every_form_of_a_third_party_crate() {
     for manifest in admitted {
         assert!(violations(manifest, &workspace).is_empty(), "{manifest}");
     }
+}
+
+// Manifest facts. Whether a dependency is optional and which features turn it on is not in
+// `Cargo.lock`; it is read from `cargo metadata --no-deps`, which resolves every manifest form
+// (inline table, dotted key, `[dependencies.<name>]`, `[target.<cfg>]`, `workspace = true`,
+// `package =` renames) the way cargo builds it.
+
+/// One dependency declaration of a workspace member.
+#[derive(Debug, Clone)]
+struct Declaration {
+    /// The package the declaration takes.
+    package: String,
+    /// The name the member's features use for it: the rename, or the package name.
+    local: String,
+    /// `normal`, `dev` or `build`.
+    kind: String,
+    optional: bool,
+    default_features: bool,
+    features: Vec<String>,
+}
+
+/// One workspace member: its dependency declarations and its `[features]` table.
+#[derive(Debug, Clone, Default)]
+struct Member {
+    declarations: Vec<Declaration>,
+    features: BTreeMap<String, Vec<String>>,
+}
+
+/// The workspace members by package name.
+type Manifests = BTreeMap<String, Member>;
+
+/// A JSON value, as much of it as `cargo metadata` needs.
+#[derive(Debug)]
+enum Json {
+    Null,
+    Bool(bool),
+    Number,
+    Text(String),
+    Array(Vec<Json>),
+    Object(Vec<(String, Json)>),
+}
+
+impl Json {
+    fn get(&self, key: &str) -> Option<&Json> {
+        match self {
+            Json::Object(fields) => fields.iter().find(|(k, _)| k == key).map(|(_, v)| v),
+            _ => None,
+        }
+    }
+
+    fn text(&self) -> Option<&str> {
+        match self {
+            Json::Text(text) => Some(text),
+            _ => None,
+        }
+    }
+
+    fn items(&self) -> &[Json] {
+        match self {
+            Json::Array(items) => items,
+            _ => &[],
+        }
+    }
+
+    fn truth(&self) -> bool {
+        matches!(self, Json::Bool(true))
+    }
+}
+
+struct JsonReader<'a> {
+    bytes: &'a [u8],
+    at: usize,
+}
+
+impl JsonReader<'_> {
+    fn space(&mut self) {
+        while self.bytes.get(self.at).is_some_and(u8::is_ascii_whitespace) {
+            self.at += 1;
+        }
+    }
+
+    fn expect(&mut self, byte: u8) -> Result<(), String> {
+        self.space();
+        if self.bytes.get(self.at) == Some(&byte) {
+            self.at += 1;
+            Ok(())
+        } else {
+            Err(format!("expected '{}' at byte {}", byte as char, self.at))
+        }
+    }
+
+    fn word(&mut self, word: &str, value: Json) -> Result<Json, String> {
+        if self.bytes[self.at..].starts_with(word.as_bytes()) {
+            self.at += word.len();
+            Ok(value)
+        } else {
+            Err(format!("unexpected input at byte {}", self.at))
+        }
+    }
+
+    fn hex(&mut self) -> Result<u32, String> {
+        let digits = self
+            .bytes
+            .get(self.at..self.at + 4)
+            .and_then(|d| std::str::from_utf8(d).ok())
+            .ok_or("a truncated \\u escape")?;
+        self.at += 4;
+        u32::from_str_radix(digits, 16).map_err(|e| e.to_string())
+    }
+
+    fn string(&mut self) -> Result<String, String> {
+        self.expect(b'"')?;
+        let mut out: Vec<u8> = Vec::new();
+        loop {
+            let byte = *self.bytes.get(self.at).ok_or("an unterminated string")?;
+            self.at += 1;
+            match byte {
+                b'"' => break,
+                b'\\' => {
+                    let escape = *self.bytes.get(self.at).ok_or("a truncated escape")?;
+                    self.at += 1;
+                    let decoded = match escape {
+                        b'"' => '"',
+                        b'\\' => '\\',
+                        b'/' => '/',
+                        b'b' => '\u{8}',
+                        b'f' => '\u{c}',
+                        b'n' => '\n',
+                        b'r' => '\r',
+                        b't' => '\t',
+                        b'u' => {
+                            let at = self.at - 2;
+                            let mut code = self.hex()?;
+                            if (0xD800..0xDC00).contains(&code) {
+                                let low = if self.bytes[self.at..].starts_with(b"\\u") {
+                                    self.at += 2;
+                                    self.hex()?
+                                } else {
+                                    0
+                                };
+                                if !(0xDC00..0xE000).contains(&low) {
+                                    return Err(format!(
+                                        "a high surrogate without its low surrogate at byte {at}"
+                                    ));
+                                }
+                                code = 0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00);
+                            } else if (0xDC00..0xE000).contains(&code) {
+                                return Err(format!("a lone low surrogate at byte {at}"));
+                            }
+                            char::from_u32(code)
+                                .ok_or(format!("an invalid \\u escape at byte {at}"))?
+                        }
+                        other => return Err(format!("an unknown escape '{}'", other as char)),
+                    };
+                    let mut buffer = [0; 4];
+                    out.extend_from_slice(decoded.encode_utf8(&mut buffer).as_bytes());
+                }
+                other => out.push(other),
+            }
+        }
+        String::from_utf8(out).map_err(|e| e.to_string())
+    }
+
+    fn value(&mut self) -> Result<Json, String> {
+        self.space();
+        match self.bytes.get(self.at) {
+            Some(b'{') => {
+                self.at += 1;
+                let mut fields = Vec::new();
+                self.space();
+                if self.bytes.get(self.at) == Some(&b'}') {
+                    self.at += 1;
+                    return Ok(Json::Object(fields));
+                }
+                loop {
+                    let key = self.string()?;
+                    self.expect(b':')?;
+                    fields.push((key, self.value()?));
+                    self.space();
+                    match self.bytes.get(self.at) {
+                        Some(b',') => self.at += 1,
+                        Some(b'}') => {
+                            self.at += 1;
+                            return Ok(Json::Object(fields));
+                        }
+                        _ => return Err(format!("expected ',' or '}}' at byte {}", self.at)),
+                    }
+                }
+            }
+            Some(b'[') => {
+                self.at += 1;
+                let mut items = Vec::new();
+                self.space();
+                if self.bytes.get(self.at) == Some(&b']') {
+                    self.at += 1;
+                    return Ok(Json::Array(items));
+                }
+                loop {
+                    items.push(self.value()?);
+                    self.space();
+                    match self.bytes.get(self.at) {
+                        Some(b',') => self.at += 1,
+                        Some(b']') => {
+                            self.at += 1;
+                            return Ok(Json::Array(items));
+                        }
+                        _ => return Err(format!("expected ',' or ']' at byte {}", self.at)),
+                    }
+                }
+            }
+            Some(b'"') => self.string().map(Json::Text),
+            Some(b't') => self.word("true", Json::Bool(true)),
+            Some(b'f') => self.word("false", Json::Bool(false)),
+            Some(b'n') => self.word("null", Json::Null),
+            Some(_) => {
+                let start = self.at;
+                while self
+                    .bytes
+                    .get(self.at)
+                    .is_some_and(|b| b"+-.0123456789eE".contains(b))
+                {
+                    self.at += 1;
+                }
+                if self.at == start {
+                    Err(format!("unexpected input at byte {start}"))
+                } else {
+                    Ok(Json::Number)
+                }
+            }
+            None => Err("unexpected end of input".to_owned()),
+        }
+    }
+}
+
+fn parse_json(text: &str) -> Result<Json, String> {
+    let mut reader = JsonReader {
+        bytes: text.as_bytes(),
+        at: 0,
+    };
+    let value = reader.value()?;
+    reader.space();
+    if reader.at == text.len() {
+        Ok(value)
+    } else {
+        Err(format!("trailing input at byte {}", reader.at))
+    }
+}
+
+/// The members of a `cargo metadata --no-deps --format-version 1` document.
+fn manifests_from_metadata(metadata: &str) -> Manifests {
+    let document = parse_json(metadata).expect("cargo metadata is JSON");
+    let mut manifests = Manifests::new();
+    let packages = document.get("packages").expect("a packages list").items();
+    for package in packages {
+        let name = package.get("name").and_then(Json::text).expect("a name");
+        let mut member = Member::default();
+        for dependency in package.get("dependencies").map_or(&[][..], Json::items) {
+            let field = |key: &str| dependency.get(key).and_then(Json::text);
+            let package_name = field("name").expect("a dependency name").to_owned();
+            member.declarations.push(Declaration {
+                local: field("rename").unwrap_or(&package_name).to_owned(),
+                kind: field("kind").unwrap_or("normal").to_owned(),
+                optional: dependency.get("optional").is_some_and(Json::truth),
+                default_features: dependency
+                    .get("uses_default_features")
+                    .is_none_or(Json::truth),
+                features: dependency
+                    .get("features")
+                    .map_or(&[][..], Json::items)
+                    .iter()
+                    .filter_map(Json::text)
+                    .map(str::to_owned)
+                    .collect(),
+                package: package_name,
+            });
+        }
+        if let Some(Json::Object(features)) = package.get("features") {
+            for (feature, enables) in features {
+                member.features.insert(
+                    feature.clone(),
+                    enables
+                        .items()
+                        .iter()
+                        .filter_map(Json::text)
+                        .map(str::to_owned)
+                        .collect(),
+                );
+            }
+        }
+        manifests.insert(name.to_owned(), member);
+    }
+    manifests
+}
+
+/// `cargo metadata --no-deps` of the workspace at `dir`.
+fn metadata(dir: &Path) -> Result<String, String> {
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_owned());
+    let out = Command::new(cargo)
+        .args([
+            "metadata",
+            "--format-version",
+            "1",
+            "--no-deps",
+            "--offline",
+        ])
+        .current_dir(dir)
+        .env_remove("CARGO_TARGET_DIR")
+        .output()
+        .expect("cargo runs");
+    if out.status.success() {
+        String::from_utf8(out.stdout).map_err(|e| e.to_string())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).into_owned())
+    }
+}
+
+fn repository_manifests() -> Manifests {
+    manifests_from_metadata(&metadata(&repository_root()).expect("cargo metadata of the workspace"))
+}
+
+/// The record statuses that approve nothing.
+const VOID_STATUSES: &[&str] = &["rejected", "superseded", "archived"];
+
+/// Why `record`, the text of an approval record, does not approve `backend`: it has no front
+/// matter or no `status` in it, its status is rejected, superseded or archived, or no line of its
+/// body is exactly ``Approves: `<name>` <version>``.
+fn record_problem(record: &str, backend: &AudioBackend) -> Option<String> {
+    let mut lines = record.lines();
+    if lines.next().map(str::trim_end) != Some("---") {
+        return Some("has no front matter".to_owned());
+    }
+    let mut status = None;
+    let mut closed = false;
+    for line in lines.by_ref() {
+        if line.trim_end() == "---" {
+            closed = true;
+            break;
+        }
+        if let Some(value) = line.strip_prefix("status:") {
+            status = Some(value.trim().trim_matches(['"', '\'']).to_owned());
+        }
+    }
+    if !closed {
+        return Some("has no closed front matter".to_owned());
+    }
+    let Some(status) = status.filter(|s| !s.is_empty()) else {
+        return Some("states no status".to_owned());
+    };
+    if VOID_STATUSES.contains(&status.as_str()) {
+        return Some(format!("is {status}, so it approves nothing"));
+    }
+    let form = format!("Approves: `{}` {}", backend.name, backend.version);
+    if !lines.any(|line| line.trim() == form) {
+        return Some(format!("has no line '{form}'"));
+    }
+    None
+}
+
+/// Why the approval of each backend in `backends` does not hold in the store at `root`: its id
+/// is not `approval-record:<slug>`, the record does not exist, or `record_problem` refuses it.
+fn approval_problems(root: &Path, backends: &[AudioBackend]) -> Vec<String> {
+    let mut found = Vec::new();
+    for backend in backends {
+        let label = format!("{} {}", backend.name, backend.version);
+        let Some(slug) = backend
+            .approval
+            .strip_prefix("approval-record:")
+            .filter(|s| !s.is_empty() && !s.contains(['/', '.']))
+        else {
+            found.push(format!(
+                "{label}: approval '{}' is not approval-record:<slug>",
+                backend.approval
+            ));
+            continue;
+        };
+        let path = root.join(format!(".engineering/planning/approval-record/{slug}.md"));
+        match fs::read_to_string(&path) {
+            Ok(text) => {
+                if let Some(problem) = record_problem(&text, backend) {
+                    found.push(format!("{label}: {} {problem}", backend.approval));
+                }
+            }
+            Err(e) => found.push(format!("{label}: {}: {e}", backend.approval)),
+        }
+    }
+    found
+}
+
+/// How the resolved closure of `backend` in `lock` differs from its reviewed one, if it does.
+fn closure_drift(lock: &str, backend: &AudioBackend) -> Option<String> {
+    let resolved = registry_closure(lock, backend.name);
+    let reviewed: BTreeSet<(String, String)> = backend
+        .closure
+        .iter()
+        .chain(&[(backend.name, backend.version)])
+        .map(|&(name, version)| (name.to_owned(), version.to_owned()))
+        .collect();
+    (resolved != reviewed).then(|| {
+        format!(
+            "{}: resolved {:?}, reviewed {:?}",
+            backend.name,
+            resolved.difference(&reviewed).collect::<Vec<_>>(),
+            reviewed.difference(&resolved).collect::<Vec<_>>()
+        )
+    })
+}
+
+// The audio I/O backend rule (DESIGN.md § 3, § 12.2, ADR-007) and ModelSpec (§ 8.2), wave a2,
+// story:dependency-gate.
+
+/// Approved backends the fixture cases judge against; not this repository's list.
+const CPAL: AudioBackend = AudioBackend {
+    name: "cpal",
+    version: "0.15.0",
+    approval: "approval-record:fixture-cpal",
+    closure: &[("alsa", "0.9.0"), ("libc", "0.2.0")],
+};
+const PORTAUDIO: AudioBackend = AudioBackend {
+    name: "portaudio",
+    version: "0.7.0",
+    approval: "approval-record:fixture-portaudio",
+    closure: &[],
+};
+/// `cpal` reviewed without `libc`, which its resolved closure holds.
+const CPAL_NARROW: AudioBackend = AudioBackend {
+    name: "cpal",
+    version: "0.15.0",
+    approval: "approval-record:fixture-cpal",
+    closure: &[("alsa", "0.9.0")],
+};
+
+/// The registry the audio cases resolve against, as `(name, version, [dependencies])`.
+const AUDIO_REGISTRY: &[(&str, &str, &str)] = &[
+    ("cpal", "0.15.0", "alsa = \"0.9\"\n\n[features]\nx = []\n"),
+    ("alsa", "0.9.0", "libc = \"0.2\"\n"),
+    ("libc", "0.2.0", ""),
+    ("portaudio", "0.7.0", ""),
+    ("rodio", "0.17.0", "cpal = \"0.15\"\n"),
+    ("modelspec", "0.1.0", ""),
+    ("clap", "4.6.7", ""),
+];
+
+/// Resolves a scratch workspace whose members are `members` (`crates/<name>`, each a package of
+/// that name with `body` after its `[package]` table) against `AUDIO_REGISTRY`, offline, and
+/// returns its `Cargo.lock` and manifest facts, or cargo's error.
+fn resolve_members(members: &[(&str, &str)]) -> Result<(String, Manifests), String> {
+    static CASE: AtomicUsize = AtomicUsize::new(0);
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!(
+        "audio-case-{}-{}",
+        std::process::id(),
+        CASE.fetch_add(1, Ordering::Relaxed)
+    ));
+    let list: Vec<String> = members
+        .iter()
+        .map(|(name, _)| format!("\"crates/{name}\""))
+        .collect();
+    write(
+        &dir.join("Cargo.toml"),
+        &format!(
+            "[workspace]\nmembers = [{}]\nresolver = \"3\"\n",
+            list.join(", ")
+        ),
+    );
+    for (name, body) in members {
+        let crate_dir = dir.join("crates").join(name);
+        write(
+            &crate_dir.join("Cargo.toml"),
+            &format!(
+                "[package]\nname = \"{name}\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n{body}"
+            ),
+        );
+        write(&crate_dir.join("src/lib.rs"), "");
+    }
+    for (name, version, dependencies) in AUDIO_REGISTRY {
+        let crate_dir = dir.join("registry").join(format!("{name}-{version}"));
+        write(
+            &crate_dir.join("Cargo.toml"),
+            &format!(
+                "[package]\nname = \"{name}\"\nversion = \"{version}\"\nedition = \"2021\"\n\n\
+                 [dependencies]\n{dependencies}"
+            ),
+        );
+        write(&crate_dir.join("src/lib.rs"), "");
+        write(
+            &crate_dir.join(".cargo-checksum.json"),
+            "{\"files\":{},\"package\":null}",
+        );
+    }
+    write(
+        &dir.join(".cargo/config.toml"),
+        "[source.crates-io]\nreplace-with = \"fixture\"\n\n\
+         [source.fixture]\ndirectory = \"registry\"\n",
+    );
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_owned());
+    let out = Command::new(cargo)
+        .args(["generate-lockfile", "--offline"])
+        .current_dir(&dir)
+        .env_remove("CARGO_TARGET_DIR")
+        .output()
+        .expect("cargo runs");
+    let result = if out.status.success() {
+        metadata(&dir).map(|metadata| {
+            (
+                fs::read_to_string(dir.join("Cargo.lock")).expect("cargo wrote Cargo.lock"),
+                manifests_from_metadata(&metadata),
+            )
+        })
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).into_owned())
+    };
+    fs::remove_dir_all(&dir).expect("remove the scratch workspace");
+    result
+}
+
+/// What the gate refuses in the workspace of `members`, from every member, with `backends`
+/// approved. Panics when cargo cannot resolve it, so an unresolvable case never reads as refused.
+fn member_violations(members: &[(&str, &str)], backends: &[AudioBackend]) -> Vec<String> {
+    match resolve_members(members) {
+        Ok((lock, manifests)) => {
+            let roots: Vec<&str> = members.iter().map(|(name, _)| *name).collect();
+            audit(&lock, &manifests, &roots, backends)
+        }
+        Err(e) => panic!("cargo could not resolve {members:?}\n{e}"),
+    }
+}
+
+const AUDIO_PATH: &str = "patchback-audio = { path = \"../patchback-audio\"";
+
+#[test]
+fn a_workspace_with_no_audio_backend_passes() {
+    for backends in [&[][..], &[CPAL][..], &[CPAL, PORTAUDIO][..]] {
+        let found = member_violations(
+            &[
+                (
+                    "patchback-cli",
+                    &format!("[dependencies]\nclap = \"4\"\n{AUDIO_PATH} }}\n"),
+                ),
+                ("patchback-audio", ""),
+            ],
+            backends,
+        );
+        assert_eq!(found, Vec::<String>::new());
+    }
+}
+
+#[test]
+fn one_optional_approved_backend_with_its_reviewed_closure_passes() {
+    let audio_forms = [
+        "[dependencies]\ncpal = { version = \"0.15\", optional = true }\n\n\
+         [features]\nlive = [\"dep:cpal\"]\n",
+        "[dependencies]\ncpal = { version = \"0.15\", optional = true }\n",
+        "[dependencies.cpal]\nversion = \"0.15\"\noptional = true\n",
+        "[target.'cfg(unix)'.dependencies]\ncpal = { version = \"0.15\", optional = true }\n",
+        "[dependencies]\nsound = { package = \"cpal\", version = \"0.15\", optional = true }\n\n\
+         [features]\nlive = [\"dep:sound\"]\n",
+    ];
+    for audio in audio_forms {
+        let found = member_violations(
+            &[
+                (
+                    "patchback-cli",
+                    &format!("[dependencies]\n{AUDIO_PATH} }}\n"),
+                ),
+                ("patchback-audio", audio),
+            ],
+            &[CPAL],
+        );
+        assert_eq!(found, Vec::<String>::new(), "{audio}");
+    }
+    // The CLI reaches the backend only through features of its own.
+    let audio = "[dependencies]\ncpal = { version = \"0.15\", optional = true }\n\n\
+                 [features]\nlive = [\"dep:cpal\"]\n";
+    let cli_forms = [
+        format!(
+            "[dependencies]\n{AUDIO_PATH} }}\n\n[features]\nlive = [\"patchback-audio/live\"]\n"
+        ),
+        format!(
+            "[dependencies]\n{AUDIO_PATH}, optional = true, features = [\"live\"] }}\n\n\
+             [features]\nlive = [\"dep:patchback-audio\"]\n"
+        ),
+    ];
+    for cli in &cli_forms {
+        let found = member_violations(
+            &[("patchback-cli", cli), ("patchback-audio", audio)],
+            &[CPAL],
+        );
+        assert_eq!(found, Vec::<String>::new(), "{cli}");
+    }
+}
+
+#[test]
+fn an_audio_backend_that_is_not_optional_is_refused() {
+    let optional = "[dependencies]\ncpal = { version = \"0.15\", optional = true }\n";
+    let cases: Vec<(String, String)> = vec![
+        (
+            String::new(),
+            "[dependencies]\ncpal = \"0.15\"\n".to_owned(),
+        ),
+        (
+            String::new(),
+            "[target.'cfg(unix)'.dependencies]\ncpal = \"0.15\"\n".to_owned(),
+        ),
+        (
+            String::new(),
+            format!("{optional}\n[dev-dependencies]\ncpal = \"0.15\"\n"),
+        ),
+        (
+            String::new(),
+            "[build-dependencies]\ncpal = \"0.15\"\n".to_owned(),
+        ),
+        (
+            String::new(),
+            format!("{optional}\n[features]\ndefault = [\"live\"]\nlive = [\"dep:cpal\"]\n"),
+        ),
+        (
+            String::new(),
+            format!("{optional}\n[features]\ndefault = [\"cpal\"]\n"),
+        ),
+        (
+            String::new(),
+            format!("{optional}\n[features]\ndefault = [\"cpal/x\"]\n"),
+        ),
+        // turned on by a dependent that always asks for the feature
+        (
+            format!("[dependencies]\n{AUDIO_PATH}, features = [\"live\"] }}\n"),
+            format!("{optional}\n[features]\nlive = [\"dep:cpal\"]\n"),
+        ),
+        // turned on by a dependent's default features
+        (
+            format!(
+                "[dependencies]\n{AUDIO_PATH} }}\n\n[features]\ndefault = [\"patchback-audio/live\"]\n"
+            ),
+            format!("{optional}\n[features]\nlive = [\"dep:cpal\"]\n"),
+        ),
+    ];
+    for (cli, audio) in &cases {
+        let cli = if cli.is_empty() {
+            format!("[dependencies]\n{AUDIO_PATH} }}\n")
+        } else {
+            cli.clone()
+        };
+        let found = member_violations(
+            &[("patchback-cli", &cli), ("patchback-audio", audio)],
+            &[CPAL],
+        );
+        assert!(
+            found.iter().any(|f| f.starts_with("patchback-")
+                && f.contains("audio backend cpal")
+                && f.contains("optional")),
+            "{cli}\n{audio}\n{found:#?}"
+        );
+    }
+}
+
+#[test]
+fn at_most_one_audio_backend_is_admitted() {
+    // two backends in one crate, and one in each of two crates
+    let cases: [&[(&str, &str)]; 2] = [
+        &[(
+            "patchback-audio",
+            "[dependencies]\ncpal = { version = \"0.15\", optional = true }\n\
+             portaudio = { version = \"0.7\", optional = true }\n",
+        )],
+        &[
+            (
+                "patchback-audio",
+                "[dependencies]\ncpal = { version = \"0.15\", optional = true }\n",
+            ),
+            (
+                "patchback-dsp",
+                "[dependencies]\nportaudio = { version = \"0.7\", optional = true }\n",
+            ),
+        ],
+    ];
+    for members in cases {
+        let found = member_violations(members, &[CPAL, PORTAUDIO]);
+        assert_eq!(found.len(), 1, "{found:#?}");
+        assert!(found[0].contains("second audio I/O backend"), "{found:#?}");
+    }
+}
+
+#[test]
+fn an_unapproved_audio_crate_is_refused() {
+    // rodio, which no approval lists, beside an approved cpal
+    let found = member_violations(
+        &[(
+            "patchback-audio",
+            "[dependencies]\nrodio = { version = \"0.17\", optional = true }\n",
+        )],
+        &[CPAL],
+    );
+    assert!(
+        found
+            .iter()
+            .any(|f| f.starts_with("rodio 0.17.0: an audio I/O crate that is not an approved")),
+        "{found:#?}"
+    );
+    // cpal itself, against this repository's list, which approves none
+    let found = member_violations(
+        &[(
+            "patchback-audio",
+            "[dependencies]\ncpal = { version = \"0.15\", optional = true }\n",
+        )],
+        AUDIO_BACKENDS,
+    );
+    assert!(
+        found
+            .iter()
+            .any(|f| f.starts_with("cpal 0.15.0: an audio I/O crate that is not an approved")),
+        "{found:#?}"
+    );
+    // an approved name at a version the review did not see
+    let lock = lock_of(&[
+        ("patchback-audio", "0.0.0", None, &["cpal"]),
+        ("cpal", "0.16.0", Some(REGISTRY), &[]),
+    ]);
+    let found = audit(&lock, &Manifests::new(), &["patchback-audio"], &[CPAL]);
+    assert_eq!(found.len(), 1, "{found:#?}");
+    assert!(
+        found[0].starts_with("cpal 0.16.0: version not the approved audio I/O backend"),
+        "{found:#?}"
+    );
+}
+
+#[test]
+fn an_approved_backend_with_an_unreviewed_closure_package_is_refused() {
+    let found = member_violations(
+        &[(
+            "patchback-audio",
+            "[dependencies]\ncpal = { version = \"0.15\", optional = true }\n",
+        )],
+        &[CPAL_NARROW],
+    );
+    assert_eq!(found.len(), 1, "{found:#?}");
+    assert!(
+        found[0].starts_with("libc 0.2.0: entered cpal's closure unreviewed"),
+        "{found:#?}"
+    );
+    // a reviewed closure package at another version
+    let lock = lock_of(&[
+        ("patchback-audio", "0.0.0", None, &["cpal"]),
+        ("cpal", "0.15.0", Some(REGISTRY), &["alsa"]),
+        ("alsa", "0.9.1", Some(REGISTRY), &[]),
+    ]);
+    let found = audit(
+        &lock,
+        &Manifests::new(),
+        &["patchback-audio"],
+        &[CPAL_NARROW],
+    );
+    assert!(
+        found
+            .iter()
+            .any(|f| f.starts_with("alsa 0.9.1: version not in cpal's reviewed closure")),
+        "{found:#?}"
+    );
+    // a backend closure package a workspace crate takes directly
+    let lock = lock_of(&[
+        ("patchback-audio", "0.0.0", None, &["alsa"]),
+        ("alsa", "0.9.0", Some(REGISTRY), &[]),
+    ]);
+    let found = audit(
+        &lock,
+        &Manifests::new(),
+        &["patchback-audio"],
+        &[CPAL_NARROW],
+    );
+    assert_eq!(found.len(), 1, "{found:#?}");
+    assert!(found[0].contains("takes alsa 0.9.0 directly"), "{found:#?}");
+}
+
+#[test]
+fn a_backend_whose_manifest_was_not_read_is_refused() {
+    let lock = lock_of(&[
+        ("patchback-audio", "0.0.0", None, &["cpal"]),
+        ("cpal", "0.15.0", Some(REGISTRY), &["alsa"]),
+        ("alsa", "0.9.0", Some(REGISTRY), &["libc"]),
+        ("libc", "0.2.0", Some(REGISTRY), &[]),
+    ]);
+    let found = audit(&lock, &Manifests::new(), &["patchback-audio"], &[CPAL]);
+    assert_eq!(found.len(), 1, "{found:#?}");
+    assert!(found[0].contains("cannot be shown optional"), "{found:#?}");
+}
+
+#[test]
+fn no_modelspec_crate_is_admitted() {
+    let reason = "ModelSpec runs as a subprocess";
+    let locks = [
+        // from crates.io
+        lock_of(&[
+            ("patchback-model", "0.0.0", None, &["modelspec"]),
+            ("modelspec", "0.1.0", Some(REGISTRY), &[]),
+        ]),
+        // a path crate
+        lock_of(&[
+            ("patchback-model", "0.0.0", None, &["modelspec-bridge"]),
+            ("modelspec-bridge", "0.0.0", None, &[]),
+        ]),
+        // under a patchback name is still a path crate; a git ModelSpec
+        lock_of(&[
+            ("patchback-model", "0.0.0", None, &["modelspec-core"]),
+            (
+                "modelspec-core",
+                "0.2.0",
+                Some("git+https://example.invalid/modelspec#0"),
+                &[],
+            ),
+        ]),
+        // inside clap's closure
+        lock_of(&[
+            ("patchback-model", "0.0.0", None, &["clap"]),
+            ("clap", "4.6.7", Some(REGISTRY), &["modelspec-types"]),
+            ("modelspec-types", "0.1.0", Some(REGISTRY), &[]),
+        ]),
+        // inside an approved backend's closure
+        lock_of(&[
+            ("patchback-model", "0.0.0", None, &["cpal"]),
+            ("cpal", "0.15.0", Some(REGISTRY), &["modelspec"]),
+            ("modelspec", "0.1.0", Some(REGISTRY), &[]),
+        ]),
+    ];
+    for lock in &locks {
+        let found = audit(lock, &Manifests::new(), &["patchback-model"], &[CPAL]);
+        assert!(
+            found
+                .iter()
+                .any(|f| f.starts_with("modelspec") && f.contains(reason)),
+            "{lock}\n{found:#?}"
+        );
+    }
+    let found = member_violations(
+        &[(
+            "patchback-model",
+            "[dependencies]\nmodelspec = { version = \"0.1\", optional = true }\n",
+        )],
+        &[],
+    );
+    assert_eq!(found.len(), 1, "{found:#?}");
+    assert!(
+        found[0].starts_with("modelspec 0.1.0:") && found[0].contains(reason),
+        "{found:#?}"
+    );
+}
+
+#[test]
+fn the_audio_backend_allow_list_holds_at_most_one_backend() {
+    assert!(AUDIO_BACKENDS.len() <= 1, "DESIGN.md § 3: at most one");
+}
+
+#[test]
+fn every_approved_audio_backend_names_its_approval_record() {
+    let root = repository_root();
+    assert_eq!(
+        approval_problems(&root, AUDIO_BACKENDS),
+        Vec::<String>::new()
+    );
+    // against a store whose fixture-cpal record approves cpal: an id that is missing from the
+    // store or is not an approval record
+    let root = approval_store("ids", "draft", "Approves: `cpal` 0.15.0\n");
+    assert_eq!(approval_problems(&root, &[CPAL]), Vec::<String>::new());
+    for approval in [
+        "approval-record:no-such-record",
+        "approval-record:../story/dependency-gate",
+        "story:dependency-gate",
+        "",
+    ] {
+        let backend = AudioBackend {
+            name: "cpal",
+            version: "0.15.0",
+            approval,
+            closure: &[],
+        };
+        assert_eq!(approval_problems(&root, &[backend]).len(), 1, "{approval}");
+    }
+    fs::remove_dir_all(&root).expect("remove the fixture store");
+}
+
+/// A planning store under the test's scratch directory holding `approval-record:fixture-cpal`
+/// with front-matter `status` and `body`.
+fn approval_store(tag: &str, status: &str, body: &str) -> PathBuf {
+    let root = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("approval-{tag}-{}-{status}", std::process::id()));
+    write(
+        &root.join(".engineering/planning/approval-record/fixture-cpal.md"),
+        &format!(
+            "---\nformat: aep.planning-md/3\nid: approval-record:fixture-cpal\n\
+             kind: approval-record\nstatus: {status}\ntitle: Live audio backend\nrevision: 1\n\
+             ---\n# Live audio backend\n\n{body}"
+        ),
+    );
+    root
+}
+
+fn approval_problems_in(tag: &str, status: &str, body: &str) -> Vec<String> {
+    let root = approval_store(tag, status, body);
+    let problems = approval_problems(&root, &[CPAL]);
+    fs::remove_dir_all(&root).expect("remove the fixture store");
+    problems
+}
+
+#[test]
+fn an_approval_counts_only_from_its_fixed_approves_line() {
+    for body in [
+        "Approves: `cpal` 0.15.0\n",
+        "The review is below.\n\n  Approves: `cpal` 0.15.0  \n\nNothing else.\n",
+        "Approves: `rodio` 0.17.0\nApproves: `cpal` 0.15.0\n",
+    ] {
+        assert_eq!(
+            approval_problems_in("fixed", "draft", body),
+            Vec::<String>::new(),
+            "{body}"
+        );
+    }
+    for body in [
+        // prose that names the crate, to decline it or to approve it
+        "`cpal` was proposed as the live audio backend and is not approved.\n",
+        "Approve `cpal` 0.15.0 as the live audio backend.\n",
+        // the fixed form at another version, for another crate, or not alone on its line
+        "Approves: `cpal` 0.15.3\n",
+        "Approves: `cpal`\n",
+        "Approves: `cpal-extra` 0.15.0\n",
+        "Approves: cpal 0.15.0\n",
+        "Nobody Approves: `cpal` 0.15.0\n",
+        "Approves: `cpal` 0.15.0 later\n",
+        "",
+    ] {
+        assert_eq!(
+            approval_problems_in("prose", "draft", body).len(),
+            1,
+            "{body:?}"
+        );
+    }
+    // the line in the front matter does not count
+    let root = approval_store("front", "draft", "");
+    let path = root.join(".engineering/planning/approval-record/fixture-cpal.md");
+    let text = fs::read_to_string(&path).expect("the fixture record");
+    fs::write(
+        &path,
+        text.replacen("revision: 1\n", "revision: 1\nApproves: `cpal` 0.15.0\n", 1),
+    )
+    .expect("rewrite the fixture record");
+    assert_eq!(approval_problems(&root, &[CPAL]).len(), 1);
+    fs::remove_dir_all(&root).expect("remove the fixture store");
+}
+
+#[test]
+fn a_rejected_superseded_or_archived_record_approves_nothing() {
+    let body = "Approves: `cpal` 0.15.0\n";
+    for status in ["draft", "active", "accepted", "implemented"] {
+        assert_eq!(
+            approval_problems_in("status", status, body),
+            Vec::<String>::new(),
+            "{status}"
+        );
+    }
+    for status in ["rejected", "superseded", "archived"] {
+        let problems = approval_problems_in("status", status, body);
+        assert_eq!(problems.len(), 1, "{status}");
+        assert!(problems[0].contains(status), "{problems:?}");
+    }
+    // a record with no front matter, or no status in it
+    let root = approval_store("nostatus", "draft", body);
+    let path = root.join(".engineering/planning/approval-record/fixture-cpal.md");
+    for text in [
+        "# Live audio backend\n\nApproves: `cpal` 0.15.0\n".to_owned(),
+        "---\nid: approval-record:fixture-cpal\n---\nApproves: `cpal` 0.15.0\n".to_owned(),
+    ] {
+        fs::write(&path, &text).expect("rewrite the fixture record");
+        assert_eq!(approval_problems(&root, &[CPAL]).len(), 1, "{text}");
+    }
+    fs::remove_dir_all(&root).expect("remove the fixture store");
+}
+
+#[test]
+fn a_dev_dependency_feature_request_counts_as_always_requested() {
+    // `cargo test` unifies dev-dependency features, so the backend is built in every test run.
+    let audio = "[dependencies]\ncpal = { version = \"0.15\", optional = true }\n\n\
+                 [features]\nlive = [\"dep:cpal\"]\n";
+    for cli in [
+        format!(
+            "[dependencies]\n{AUDIO_PATH} }}\n\n[dev-dependencies]\n{AUDIO_PATH}, features = [\"live\"] }}\n"
+        ),
+        format!("[dev-dependencies]\n{AUDIO_PATH}, features = [\"live\"] }}\n"),
+    ] {
+        let found = member_violations(
+            &[("patchback-cli", &cli), ("patchback-audio", audio)],
+            &[CPAL],
+        );
+        assert!(
+            found
+                .iter()
+                .any(|f| f.contains("audio backend cpal") && f.contains("not optional")),
+            "{cli}\n{found:#?}"
+        );
+    }
+    // a dev-dependency that asks for no backend feature changes nothing
+    let found = member_violations(
+        &[
+            (
+                "patchback-cli",
+                &format!("[dev-dependencies]\n{AUDIO_PATH} }}\n"),
+            ),
+            ("patchback-audio", audio),
+        ],
+        &[CPAL],
+    );
+    assert_eq!(found, Vec::<String>::new());
+}
+
+#[test]
+fn a_modelspec_crate_is_refused_in_any_letter_case() {
+    for name in ["ModelSpec", "MODELSPEC-core", "Modelspec_types"] {
+        let lock = lock_of(&[
+            ("patchback-model", "0.0.0", None, &[name]),
+            (name, "0.1.0", Some(REGISTRY), &[]),
+        ]);
+        let found = audit(&lock, &Manifests::new(), &["patchback-model"], &[]);
+        assert_eq!(found.len(), 1, "{found:#?}");
+        assert!(
+            found[0].starts_with(&format!("{name} 0.1.0:"))
+                && found[0].contains("ModelSpec runs as a subprocess"),
+            "{found:#?}"
+        );
+    }
+}
+
+#[test]
+fn a_lone_or_mismatched_surrogate_is_a_parse_error() {
+    let backslash = char::from(92).to_string();
+    for text in [
+        // a high surrogate followed by a non-surrogate escape, by nothing, by text, by another
+        // high surrogate; a lone low surrogate
+        r#""%ud800%u0041""#,
+        r#""%ud800""#,
+        r#""%ud800x""#,
+        r#""%ud800%ud800""#,
+        r#""%udc00""#,
+        r#""%ud800%u""#,
+    ] {
+        let text = text.replace('%', &backslash);
+        let outcome = std::panic::catch_unwind(|| parse_json(&text));
+        assert!(matches!(outcome, Ok(Err(_))), "{text}: {outcome:?}");
+    }
+    let pair = r#""%ud83c%udfb5""#.replace('%', &backslash);
+    assert_eq!(
+        parse_json(&pair)
+            .ok()
+            .and_then(|j| j.text().map(str::to_owned)),
+        Some("\u{1f3b5}".to_owned())
+    );
+}
+
+#[test]
+fn every_approved_audio_backend_closure_is_exactly_its_resolved_closure() {
+    let lock = repository_lock();
+    for backend in AUDIO_BACKENDS {
+        assert_eq!(closure_drift(&lock, backend), None);
+    }
+    let (lock, _) = resolve_members(&[(
+        "patchback-audio",
+        "[dependencies]\ncpal = { version = \"0.15\", optional = true }\n",
+    )])
+    .expect("the fixture resolves");
+    assert_eq!(closure_drift(&lock, &CPAL), None);
+    assert!(closure_drift(&lock, &CPAL_NARROW).is_some());
+}
+
+#[test]
+fn task_dependency_audit_runs_only_the_gate_and_check_calls_it() {
+    let taskfile =
+        fs::read_to_string(repository_root().join("Taskfile.yml")).expect("Taskfile.yml");
+    let block = |name: &str| -> Vec<String> {
+        taskfile
+            .lines()
+            .skip_while(|line| line.trim_end() != format!("  {name}:"))
+            .skip(1)
+            .take_while(|line| line.is_empty() || line.starts_with("    "))
+            .map(|line| line.trim().to_owned())
+            .filter(|line| !line.is_empty())
+            .collect()
+    };
+    assert_eq!(
+        block("dependency-audit"),
+        [
+            "cmds:",
+            "- cargo test --locked -p patchback-cli --test dependencies"
+        ]
+    );
+    assert!(
+        block("check").contains(&"- task: dependency-audit".to_owned()),
+        "{:?}",
+        block("check")
+    );
+}
+
+#[test]
+fn each_refusal_is_one_line_naming_its_package() {
+    let lock = lock_of(&[
+        (
+            "patchback-cli",
+            "0.0.0",
+            None,
+            &["rand", "syn", "modelspec", "cpal"],
+        ),
+        ("rand", "0.8.5", Some(REGISTRY), &[]),
+        ("syn", "3.0.9", Some(REGISTRY), &[]),
+        ("modelspec", "0.1.0", Some(REGISTRY), &[]),
+        ("cpal", "0.15.0", Some(REGISTRY), &[]),
+    ]);
+    let found = audit(
+        &lock,
+        &Manifests::new(),
+        &["patchback-cli", "patchback-fit"],
+        &[],
+    );
+    let text = report(&found);
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines.len(), 5, "{text}");
+    for package in [
+        "patchback-fit: ",
+        "rand 0.8.5: ",
+        "modelspec 0.1.0: ",
+        "cpal 0.15.0: ",
+    ] {
+        assert!(
+            lines.iter().any(|line| line.starts_with(package)),
+            "{package} in\n{text}"
+        );
+    }
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.starts_with("patchback-cli 0.0.0: takes syn 3.0.9 directly")),
+        "{text}"
+    );
 }
 
 // Adversary cases (wave a1). Each manifest below is one `cargo metadata --no-deps` reads as a
