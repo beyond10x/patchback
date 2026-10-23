@@ -152,13 +152,17 @@ pub const CAPABILITIES: &[Capability] = &[
         "patchback render plays a patch with a score into a WAV. Fixed seed, build, input and configuration give the same samples, and the output is never NaN or infinite.",
         "/docs/guides/render-a-patch",
     ),
-    planned(
-        A,
-        "Analysis",
-        "Native FFT, STFT and audio descriptors",
-        "patchback analyze: radix-2 FFT, multi-resolution STFT, RMS and peak envelopes, spectral descriptors, onset proposals and pitch estimation that refuses when confidence is low.",
-        "/docs/concepts/listening",
-    ),
+    Capability {
+        area: "Analysis",
+        label: "Native FFT, STFT and audio descriptors",
+        detail: "patchback analyze --input --out: radix-2 FFT, Hann-windowed STFT at 512, 2048 and 8192 samples, RMS and peak envelopes, spectral centroid, rolloff, flatness, log-band energies, spectral flux and f0 estimation, written to one versioned analysis file. Silent input, an ambiguous or out-of-range pitch, a clip too short for the f0 search, non-finite samples and sizes past the provisional bounds are refused and nothing is written.",
+        status: "shipped",
+        evidence: Some(
+            "crates/patchback-cli/tests/analyze.rs::analyze_writes_one_versioned_analysis_file",
+        ),
+        milestone: None,
+        href: "/docs/concepts/listening",
+    },
     planned(
         A,
         "Fit",
