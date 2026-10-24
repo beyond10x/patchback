@@ -7,7 +7,7 @@ title: Wave a7 approved by Timo
 relations:
 - decides: story:fit-run-artifacts
 - decides: story:dense-data-files
-revision: 2
+revision: 3
 transitions:
 - {from: "draft", to: "approved", at: "2026-10-24T23:09:22Z", actor: "human:timo", revision: 2}
 ---
@@ -105,3 +105,15 @@ follows approval-record:release-process. Wave a6 released 0.5.0 on 2026-10-25.
   written file; `SampleCountMismatch` is the model's check of `rows` against the split.
 - Da7-12 The ESS pin stays at 0.68.0 (wave a5 D5) until the ess repository ships a release
   without the synthesis regression.
+- Da7-13 Six existing cases pinned Da6-26's ceiling (`i64::MAX`) or the pre-dense split layout, in
+  files outside unit 2's assignment (`crates/patchback-dataset/tests/generate.rs`,
+  `crates/patchback-dataset/tests/adversary_pass2.rs`,
+  `crates/patchback-cli/tests/generate_dataset_adversary2.rs`). Da7-8 and Da7-10 supersede
+  them. The coordinator applied the implementor's re-pin patch in the unit tree: the
+  `adversary_pass2.rs` sweeps keep their oracle against `SplitCounts::from_samples` up to a
+  local `I64_SAMPLES` (the function still takes every `u64`), one new case pins
+  `MAX_SAMPLES − 15` with an exact draw bound, and the CLI cases assert exit 2 with clap's
+  `0..=4294967295` range for both `4294967296` and `9223372036854775808`, and the four-file
+  split layout (`order.u32`, `samples.meta`, `x.f32`, `y.f32`). No assertion was dropped; the
+  `2^62 + 8` case moved from exit 1 (the rule's train count) to exit 2, which Da7-10 makes the
+  first refusal it meets.
