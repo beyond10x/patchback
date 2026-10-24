@@ -6,7 +6,10 @@
 //! input; the scale-invariant ones (centroid, rolloff, flatness) do not depend on that division. A spectrum without energy (empty or all
 //! zero) has centroid, rolloff and flatness 0 and every band at [`LOG_FLOOR_DB`].
 
-use crate::{AnalysisError, BAND_EDGES_HZ, LOG_FLOOR_DB, ROLLOFF_FRACTION, check_finite};
+use crate::{
+    ATTACK_SLOPE_BLOCK_FRAMES, ATTACK_SLOPE_FRACTION, AnalysisError, BAND_EDGES_HZ, LOG_FLOOR_DB,
+    ROLLOFF_FRACTION, check_finite,
+};
 
 /// The number of logarithmic bands of [`log_band_energies`].
 pub const BAND_COUNT: usize = BAND_EDGES_HZ.len() - 1;
@@ -176,4 +179,53 @@ pub fn spectral_flux(previous: &[f64], current: &[f64]) -> Result<f64, AnalysisE
         .map(|k| (at(current, k) - at(previous, k)).max(0.0))
         .sum();
     Ok((sum * scale).min(f64::MAX))
+}
+
+/// The zero-crossing rate of `samples`: the share of adjacent pairs `(x[k - 1], x[k])` whose
+/// signs differ, a sample counting as negative when it is below zero (so 0 counts as positive),
+/// in crossings per sample in `[0, 1]`; 0 for fewer than two samples. A sine of `f` Hz at rate
+/// `r` gives `2 f / r`.
+///
+/// Provisional definition (`features/1`, DESIGN.md § 6.3 names the feature and no formula).
+pub fn zero_crossing_rate(samples: &[f32]) -> Result<f64, AnalysisError> {
+    check_finite(samples)?;
+    if samples.len() < 2 {
+        return Ok(0.0);
+    }
+    let crossings = samples
+        .windows(2)
+        .filter(|pair| (pair[0] < 0.0) != (pair[1] < 0.0))
+        .count();
+    Ok(crossings as f64 / (samples.len() - 1) as f64)
+}
+
+/// The attack-envelope slope of `samples` (the attack window of a note) at `sample_rate_hz`, in
+/// full scale per second: the RMS envelope over consecutive blocks of
+/// [`ATTACK_SLOPE_BLOCK_FRAMES`] samples (the last may be shorter), its largest block level `L`,
+/// and the first block `k` whose level reaches [`ATTACK_SLOPE_FRACTION`] of `L`; the slope is
+/// `L / t` with `t = (k + 0.5) ATTACK_SLOPE_BLOCK_FRAMES / sample_rate_hz`, the time from the
+/// window's start to the middle of block `k`. Positive and finite for any finite, non-silent
+/// input; 0 for empty or all-zero input or a sample rate of 0.
+///
+/// Provisional definition (`features/1`, DESIGN.md § 6.3 names the feature and no formula).
+pub fn attack_envelope_slope(samples: &[f32], sample_rate_hz: u32) -> Result<f64, AnalysisError> {
+    check_finite(samples)?;
+    if sample_rate_hz == 0 {
+        return Ok(0.0);
+    }
+    let levels = samples
+        .chunks(ATTACK_SLOPE_BLOCK_FRAMES)
+        .map(rms)
+        .collect::<Result<Vec<_>, _>>()?;
+    let largest = levels.iter().copied().fold(0.0, f64::max);
+    if largest <= 0.0 {
+        return Ok(0.0);
+    }
+    let block = levels
+        .iter()
+        .position(|level| *level >= ATTACK_SLOPE_FRACTION * largest)
+        .unwrap_or(0);
+    let seconds =
+        (block as f64 + 0.5) * ATTACK_SLOPE_BLOCK_FRAMES as f64 / f64::from(sample_rate_hz);
+    Ok(largest / seconds)
 }

@@ -1,7 +1,10 @@
 //! The typed refusals of analysis. Each [`AnalysisError`] names one error of
-//! `spec/domains/analysis.yaml` ([`AnalysisError::domain_error`]).
+//! `spec/domains/analysis.yaml` ([`AnalysisError::domain_error`]), and so does each
+//! [`FeatureError`] of the feature contract ([`FeatureError::domain_error`]).
 
 use std::fmt;
+
+use crate::{FeatureContractId, FeatureSlot, ScalarFeature};
 
 /// Why nothing was analysed. A refusal produces no partial result.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -203,3 +206,300 @@ impl fmt::Display for AnalysisError {
 }
 
 impl std::error::Error for AnalysisError {}
+
+/// Why a value of a feature contract cannot be computed reliably
+/// ([`FeatureError::FeatureNotComputable`]); nothing is estimated in its place (DESIGN.md § 6.3).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum NotComputableReason {
+    /// The analysis of the clip refused it, or the clip or analysis holds what analysis refuses
+    /// (a sample rate other than [`crate::SAMPLE_RATE_HZ`], a non-finite sample).
+    Analysis(AnalysisError),
+    /// The samples handed to extraction are not those of the analysis: `frame_count` samples
+    /// against the analysis' `analysis_frame_count`.
+    ClipMismatch {
+        frame_count: usize,
+        analysis_frame_count: usize,
+    },
+    /// The note does not start before it ends, or ends past the clip's `frame_count` samples.
+    NoteOutsideClip {
+        start_sample: usize,
+        end_sample: usize,
+        frame_count: usize,
+    },
+    /// The contract's band count is not [`crate::BAND_COUNT`], the bands of
+    /// [`crate::BAND_EDGES_HZ`].
+    BandCountUnsupported { band_count: usize },
+    /// The contract does not name [`crate::FEATURE_FFT_LENGTH`], the FFT length the band
+    /// energies and spectral descriptors are read at.
+    FftLengthNotInContract { fft_length: usize },
+    /// The analysis holds no STFT of this length, one the contract names, at any hop.
+    StftMissing { fft_length: usize },
+    /// No frame of [`crate::FEATURE_FFT_LENGTH`] has its centre in the window from
+    /// `start_sample` to `end_sample` (exclusive); an empty window has none.
+    WindowTooShort {
+        start_sample: usize,
+        end_sample: usize,
+    },
+    /// The window's RMS level, `rms_dbfs`, is below [`crate::SILENCE_THRESHOLD_DBFS`].
+    SilentWindow {
+        start_sample: usize,
+        end_sample: usize,
+        rms_dbfs: f64,
+    },
+    /// The analysis' f0 confidence is below [`crate::F0_CONFIDENCE_THRESHOLD`] (or not a number).
+    PitchAmbiguous { confidence: f64 },
+    /// The analysis' f0 is not a positive finite frequency within [`crate::F0_MIN_HZ`] to
+    /// [`crate::F0_MAX_HZ`], each widened by [`crate::F0_RANGE_TOLERANCE_CENTS`].
+    PitchAbsent { f0_hz: f64 },
+}
+
+impl fmt::Display for NotComputableReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Analysis(error) => write!(f, "analysis refused: {error}"),
+            Self::ClipMismatch {
+                frame_count,
+                analysis_frame_count,
+            } => write!(
+                f,
+                "the clip holds {frame_count} samples and its analysis {analysis_frame_count}"
+            ),
+            Self::NoteOutsideClip {
+                start_sample,
+                end_sample,
+                frame_count,
+            } => write!(
+                f,
+                "the note from sample {start_sample} to {end_sample} does not lie in the clip of \
+                 {frame_count} samples"
+            ),
+            Self::BandCountUnsupported { band_count } => write!(
+                f,
+                "{band_count} bands; the band edges give {}",
+                crate::BAND_COUNT
+            ),
+            Self::FftLengthNotInContract { fft_length } => {
+                write!(f, "the contract does not name the FFT length {fft_length}")
+            }
+            Self::StftMissing { fft_length } => {
+                write!(f, "the analysis holds no STFT of length {fft_length}")
+            }
+            Self::WindowTooShort {
+                start_sample,
+                end_sample,
+            } => write!(
+                f,
+                "the window from sample {start_sample} to {end_sample} holds no frame centre"
+            ),
+            Self::SilentWindow {
+                start_sample,
+                end_sample,
+                rms_dbfs,
+            } => write!(
+                f,
+                "the window from sample {start_sample} to {end_sample} is silent: {rms_dbfs:.1} \
+                 dBFS is below {} dBFS",
+                crate::SILENCE_THRESHOLD_DBFS
+            ),
+            Self::PitchAmbiguous { confidence } => write!(
+                f,
+                "f0 confidence {confidence:.3} is below the threshold of {}",
+                crate::F0_CONFIDENCE_THRESHOLD
+            ),
+            Self::PitchAbsent { f0_hz } => write!(
+                f,
+                "f0 of {f0_hz} Hz is not a frequency from {} to {} Hz",
+                crate::F0_MIN_HZ,
+                crate::F0_MAX_HZ
+            ),
+        }
+    }
+}
+
+/// Why a feature contract command was refused. Each [`FeatureError`] names one error of
+/// `spec/domains/analysis.yaml` ([`FeatureError::domain_error`]); a refusal changes nothing and
+/// produces no partial vector.
+#[derive(Clone, Debug, PartialEq)]
+pub enum FeatureError {
+    /// `patchback.analysis.FeatureVersionTaken`: a contract of this version exists, draft or
+    /// published; a change is a new version.
+    FeatureVersionTaken { version: String },
+    /// `patchback.analysis.FeatureCountMismatch`: `features/1` has exactly
+    /// [`crate::FEATURES_1_VALUE_COUNT`] values; only `features/1` is refused this way.
+    FeatureCountMismatch { version: String, value_count: usize },
+    /// `patchback.analysis.FeatureContractFrozen`: the contract is published; it is neither
+    /// amended nor published again.
+    FeatureContractFrozen {
+        feature_contract_id: FeatureContractId,
+    },
+    /// `patchback.analysis.FeatureContractNotFound`: no contract has this identity.
+    FeatureContractNotFound {
+        feature_contract_id: FeatureContractId,
+    },
+    /// `patchback.analysis.FeatureContractNotPublished`: features are extracted only under a
+    /// published contract.
+    FeatureContractNotPublished {
+        feature_contract_id: FeatureContractId,
+    },
+    /// `patchback.analysis.FeatureNotComputable`: the value at `index` of the contract, `feature`,
+    /// cannot be computed reliably, for `reason`; the first such value in contract order.
+    FeatureNotComputable {
+        feature: FeatureSlot,
+        index: usize,
+        reason: NotComputableReason,
+    },
+    /// `patchback.analysis.NonFiniteFeature`: the value at `index` is NaN or infinite; the first
+    /// such value in contract order.
+    NonFiniteFeature {
+        feature_contract_id: FeatureContractId,
+        index: usize,
+    },
+    /// `patchback.analysis.FeatureVersionMismatch`: the vector's `version` is not the contract's.
+    FeatureVersionMismatch { version: String },
+    /// `patchback.analysis.FeatureLengthMismatch`: the vector holds `value_count` values, not the
+    /// contract's count.
+    FeatureLengthMismatch { value_count: usize },
+}
+
+impl FeatureError {
+    /// Every error of `spec/domains/analysis.yaml` the feature contract can emit.
+    pub const DOMAIN_ERRORS: &'static [&'static str] = &[
+        "patchback.analysis.FeatureVersionTaken",
+        "patchback.analysis.FeatureCountMismatch",
+        "patchback.analysis.FeatureContractFrozen",
+        "patchback.analysis.FeatureContractNotFound",
+        "patchback.analysis.FeatureContractNotPublished",
+        "patchback.analysis.FeatureNotComputable",
+        "patchback.analysis.NonFiniteFeature",
+        "patchback.analysis.FeatureVersionMismatch",
+        "patchback.analysis.FeatureLengthMismatch",
+    ];
+
+    /// The error of `spec/domains/analysis.yaml` this refusal is.
+    pub fn domain_error(&self) -> &'static str {
+        match self {
+            Self::FeatureVersionTaken { .. } => "patchback.analysis.FeatureVersionTaken",
+            Self::FeatureCountMismatch { .. } => "patchback.analysis.FeatureCountMismatch",
+            Self::FeatureContractFrozen { .. } => "patchback.analysis.FeatureContractFrozen",
+            Self::FeatureContractNotFound { .. } => "patchback.analysis.FeatureContractNotFound",
+            Self::FeatureContractNotPublished { .. } => {
+                "patchback.analysis.FeatureContractNotPublished"
+            }
+            Self::FeatureNotComputable { .. } => "patchback.analysis.FeatureNotComputable",
+            Self::NonFiniteFeature { .. } => "patchback.analysis.NonFiniteFeature",
+            Self::FeatureVersionMismatch { .. } => "patchback.analysis.FeatureVersionMismatch",
+            Self::FeatureLengthMismatch { .. } => "patchback.analysis.FeatureLengthMismatch",
+        }
+    }
+
+    /// One value of every variant. The `match` below has no wildcard, so a new variant does not
+    /// compile until it is listed here, and the domain test then checks its name.
+    pub fn examples() -> Vec<FeatureError> {
+        let id = FeatureContractId(1);
+        let examples = vec![
+            Self::FeatureVersionTaken {
+                version: crate::FEATURES_1_VERSION.to_string(),
+            },
+            Self::FeatureCountMismatch {
+                version: crate::FEATURES_1_VERSION.to_string(),
+                value_count: 31,
+            },
+            Self::FeatureContractFrozen {
+                feature_contract_id: id,
+            },
+            Self::FeatureContractNotFound {
+                feature_contract_id: id,
+            },
+            Self::FeatureContractNotPublished {
+                feature_contract_id: id,
+            },
+            Self::FeatureNotComputable {
+                feature: FeatureSlot::Scalar(ScalarFeature::NormalizedMidiPitch),
+                index: 31,
+                reason: NotComputableReason::PitchAmbiguous { confidence: 0.2 },
+            },
+            Self::NonFiniteFeature {
+                feature_contract_id: id,
+                index: 26,
+            },
+            Self::FeatureVersionMismatch {
+                version: "features/2".to_string(),
+            },
+            Self::FeatureLengthMismatch { value_count: 31 },
+        ];
+        for example in &examples {
+            match example {
+                Self::FeatureVersionTaken { .. }
+                | Self::FeatureCountMismatch { .. }
+                | Self::FeatureContractFrozen { .. }
+                | Self::FeatureContractNotFound { .. }
+                | Self::FeatureContractNotPublished { .. }
+                | Self::FeatureNotComputable { .. }
+                | Self::NonFiniteFeature { .. }
+                | Self::FeatureVersionMismatch { .. }
+                | Self::FeatureLengthMismatch { .. } => {}
+            }
+        }
+        examples
+    }
+}
+
+impl fmt::Display for FeatureError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::FeatureVersionTaken { version } => write!(
+                f,
+                "feature contract {version} is already defined; a change is a new version"
+            ),
+            Self::FeatureCountMismatch {
+                version,
+                value_count,
+            } => write!(
+                f,
+                "feature contract {version} with {value_count} values: {version} has exactly {}",
+                crate::FEATURES_1_VALUE_COUNT
+            ),
+            Self::FeatureContractFrozen {
+                feature_contract_id,
+            } => write!(
+                f,
+                "{feature_contract_id} is published and frozen; nothing changed"
+            ),
+            Self::FeatureContractNotFound {
+                feature_contract_id,
+            } => write!(f, "{feature_contract_id} does not exist"),
+            Self::FeatureContractNotPublished {
+                feature_contract_id,
+            } => write!(
+                f,
+                "{feature_contract_id} is a draft; features are extracted only under a published \
+                 contract"
+            ),
+            Self::FeatureNotComputable {
+                feature,
+                index,
+                reason,
+            } => write!(
+                f,
+                "feature {index} ({feature}) cannot be computed reliably: {reason}"
+            ),
+            Self::NonFiniteFeature {
+                feature_contract_id,
+                index,
+            } => write!(
+                f,
+                "value {index} of a {feature_contract_id} vector is not finite"
+            ),
+            Self::FeatureVersionMismatch { version } => write!(
+                f,
+                "the vector is of feature contract version {version}, not the contract's"
+            ),
+            Self::FeatureLengthMismatch { value_count } => write!(
+                f,
+                "the vector holds {value_count} values, not the contract's count"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for FeatureError {}
