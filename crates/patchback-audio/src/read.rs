@@ -89,7 +89,12 @@ impl Source for FileSource {
     }
 }
 
-/// Reads a RIFF/WAVE byte slice into a clip, or refuses it.
+/// Reads a RIFF/WAVE byte slice into a clip, or refuses it, in the order of
+/// [`crate::IMPORT_WAV_PRECEDENCE`] from the sample rate on: once the `fmt ` chunk and the
+/// `data` chunk header are read, an unsupported rate, format or channel count and an empty
+/// `data` chunk answer before any truncation or corruption. A file whose `fmt ` or `data` header
+/// cannot be read has no header facts for those checks to decide and is refused as truncated or
+/// corrupt.
 pub fn decode(bytes: &[u8]) -> Result<AudioClip, WavError> {
     read(&mut Slice(bytes)).map_err(|fail| match fail {
         Fail::Wav(error) => error,
@@ -100,7 +105,8 @@ pub fn decode(bytes: &[u8]) -> Result<AudioClip, WavError> {
 /// Reads a RIFF/WAVE file into a clip, or refuses it, with the refusals [`decode`] gives for
 /// the same bytes. A regular file is read chunk by chunk at the offsets its headers declare,
 /// its length taken by seeking to its end. Any other file (a pipe, a FIFO, `/dev/fd/N`) has no
-/// length to look up and is read once, front to back. Neither is ever loaded whole.
+/// length to look up and is read once, front to back. Neither is ever loaded whole. A file that
+/// cannot be opened or read is [`ReadError::Io`].
 pub fn read_wav(path: &Path) -> Result<AudioClip, ReadError> {
     let mut file = File::open(path).map_err(ReadError::Io)?;
     let regular = file.metadata().map_err(ReadError::Io)?.is_file();
@@ -169,18 +175,30 @@ impl<R: Read> Stream<R> {
 }
 
 /// The refusal of a RIFF size that runs past input which ended at `len` bytes.
-fn riff_past_input<E>(declared: u32, len: u64) -> Fail<E> {
-    truncated(Truncation::RiffSize {
+fn riff_past_input(declared: u32, len: u64) -> WavError {
+    WavError::Truncated(Truncation::RiffSize {
         declared,
         available: len - 8,
     })
 }
 
-/// [`read`] over a [`Stream`]. [`read`] refuses a RIFF size past the input before it looks at
-/// any chunk; a stream learns its length only at its end, so a refusal found inside the RIFF
-/// body stands only once the input is known to reach the RIFF end, and the input ending first
-/// is that RIFF-size refusal instead. A `data` chunk is held as raw bytes until the walk ends,
-/// since its `fmt ` may follow it, and only while it is within [`MAX_FRAMES`] frames.
+/// Of a fault the walk recorded and one it found after it, the one ranked first in
+/// [`crate::IMPORT_WAV_PRECEDENCE`] (a truncation before a corruption); on a tie the recorded
+/// one.
+fn first(recorded: Option<WavError>, found: WavError) -> WavError {
+    match recorded {
+        Some(recorded) if recorded.precedence() <= found.precedence() => recorded,
+        _ => found,
+    }
+}
+
+/// [`read`] over a [`Stream`], with the same refusals for the same bytes. [`read`] records a
+/// RIFF size past the input before it looks at any chunk; a stream learns its length only at
+/// its end, so a fault found inside the RIFF body stands only once the input is known to reach
+/// the RIFF end, and the input ending first is that RIFF-size fault instead. The walk steps
+/// over, stops at and takes header facts from the same chunks as [`read`]. A `data` chunk is
+/// held as raw bytes until the walk ends, since its `fmt ` may follow it, and only while it is
+/// within [`MAX_FRAMES`] frames.
 fn stream<R: Read>(input: &mut Stream<R>) -> Result<AudioClip, Fail<io::Error>> {
     let mut header = [0u8; 12];
     let got = input.fill(&mut header)?;
@@ -196,99 +214,132 @@ fn stream<R: Read>(input: &mut Stream<R>) -> Result<AudioClip, Fail<io::Error>> 
     }
     let riff_end = 8 + u64::from(riff_size);
     let past = |input: &Stream<R>| riff_past_input(riff_size, input.offset);
-    let settle = |input: &mut Stream<R>, error: WavError| -> Fail<io::Error> {
-        match input.skip_to(riff_end) {
-            Ok(true) => Fail::Wav(error),
-            Ok(false) => riff_past_input(riff_size, input.offset),
-            Err(fail) => fail,
-        }
+    // The fault a chunk inside the RIFF body stops the walk with, once the input is known to
+    // reach the RIFF end.
+    let settle = |input: &mut Stream<R>, error: WavError| -> Result<WavError, Fail<io::Error>> {
+        Ok(if input.skip_to(riff_end)? {
+            error
+        } else {
+            riff_past_input(riff_size, input.offset)
+        })
     };
 
     let mut fmt: Option<Fmt> = None;
     let mut data: Option<(u32, Option<Vec<u8>>)> = None;
-    while input.offset < riff_end {
+    // The first fault of a chunk the walk stepped over, as `read` records it.
+    let mut recorded: Option<WavError> = None;
+    let fault = loop {
         let offset = input.offset;
+        if offset >= riff_end {
+            break recorded;
+        }
         if riff_end - offset < 8 {
-            return Err(settle(
+            break Some(settle(
                 input,
-                WavError::Truncated(Truncation::ChunkHeader { offset }),
-            ));
+                first(
+                    recorded,
+                    WavError::Truncated(Truncation::ChunkHeader { offset }),
+                ),
+            )?);
         }
         let mut chunk = [0u8; 8];
         if input.fill(&mut chunk)? < 8 {
-            return Err(past(input));
+            break Some(past(input));
         }
         let id = [chunk[0], chunk[1], chunk[2], chunk[3]];
         let size = u32_at(&chunk, 4);
         if !id.iter().all(|b| (0x20..=0x7e).contains(b)) {
-            return Err(settle(
+            break Some(settle(
                 input,
-                WavError::CorruptChunk(Corruption::BadChunkId { offset }),
-            ));
+                first(
+                    recorded,
+                    WavError::CorruptChunk(Corruption::BadChunkId { offset }),
+                ),
+            )?);
         }
         let end = offset + 8 + u64::from(size) + u64::from(size & 1);
-        if end > riff_end {
-            if !input.skip_to(riff_end)? {
-                return Err(past(input));
-            }
-            return Err(if input.skip_to(end)? {
-                corrupt(Corruption::ChunkPastRiffEnd { id, offset })
+        // The input ending inside this chunk: past the RIFF end only a chunk running past it
+        // can end there, and that chunk is then the one truncated.
+        let ended = |input: &Stream<R>, recorded: Option<WavError>| {
+            if input.offset < riff_end {
+                past(input)
             } else {
-                truncated(Truncation::Chunk { id, offset, size })
-            });
-        }
+                first(
+                    recorded,
+                    WavError::Truncated(Truncation::Chunk { id, offset, size }),
+                )
+            }
+        };
+        // The header facts this chunk carries, taken as `read` takes them; the fault it stops
+        // the walk with, and the fault of a chunk the walk steps over, when its size runs
+        // nowhere past the RIFF end.
+        let mut stop = None;
+        let mut over = None;
         match &id {
             b"fmt " => {
                 if fmt.is_some() {
-                    return Err(settle(
-                        input,
-                        WavError::CorruptChunk(Corruption::DuplicateFmt),
-                    ));
+                    over = Some(Corruption::DuplicateFmt);
+                } else if size < 16 {
+                    stop = Some(Corruption::FmtSize { size });
+                } else {
+                    let mut bytes = [0u8; 16];
+                    if input.fill(&mut bytes)? < 16 {
+                        break Some(ended(input, recorded));
+                    }
+                    fmt = Some(Fmt::parse(&bytes));
+                    if size > MAX_FMT_BYTES {
+                        over = Some(Corruption::FmtSize { size });
+                    }
                 }
-                if !(16..=MAX_FMT_BYTES).contains(&size) {
-                    return Err(settle(
-                        input,
-                        WavError::CorruptChunk(Corruption::FmtSize { size }),
-                    ));
-                }
-                let mut bytes = [0u8; 16];
-                if input.fill(&mut bytes)? < 16 {
-                    return Err(past(input));
-                }
-                fmt = Some(Fmt::parse(&bytes));
             }
             b"data" => {
                 if data.is_some() {
-                    return Err(settle(
-                        input,
-                        WavError::CorruptChunk(Corruption::DuplicateData),
-                    ));
-                }
-                let frame_bytes = fmt.as_ref().map_or(8, |fmt| u64::from(fmt.block_align));
-                let bound = widen(MAX_FRAMES).saturating_mul(frame_bytes.min(8));
-                let bytes = if u64::from(size) <= bound {
-                    let mut bytes = Vec::new();
-                    if !input.take(size, &mut bytes)? {
-                        return Err(past(input));
-                    }
-                    Some(bytes)
+                    over = Some(Corruption::DuplicateData);
+                } else if end > riff_end {
+                    data = Some((size, None));
                 } else {
-                    None
-                };
-                data = Some((size, bytes));
+                    let frame_bytes = fmt.as_ref().map_or(8, |fmt| u64::from(fmt.block_align));
+                    let bound = widen(MAX_FRAMES).saturating_mul(frame_bytes.min(8));
+                    if u64::from(size) <= bound {
+                        let mut bytes = Vec::new();
+                        if !input.take(size, &mut bytes)? {
+                            data = Some((size, None));
+                            break Some(ended(input, recorded));
+                        }
+                        data = Some((size, Some(bytes)));
+                    } else {
+                        data = Some((size, None));
+                    }
+                }
             }
             _ => {}
         }
-        if !input.skip_to(end)? {
-            return Err(past(input));
+        if end > riff_end {
+            if !input.skip_to(riff_end)? {
+                break Some(past(input));
+            }
+            let found = if input.skip_to(end)? {
+                WavError::CorruptChunk(Corruption::ChunkPastRiffEnd { id, offset })
+            } else {
+                WavError::Truncated(Truncation::Chunk { id, offset, size })
+            };
+            break Some(first(recorded, found));
         }
-    }
+        if let Some(how) = stop {
+            break Some(settle(input, first(recorded, WavError::CorruptChunk(how)))?);
+        }
+        if let Some(how) = over {
+            recorded = Some(first(recorded, WavError::CorruptChunk(how)));
+        }
+        if !input.skip_to(end)? {
+            break Some(past(input));
+        }
+    };
 
-    let fmt = fmt.ok_or(corrupt(Corruption::MissingFmt))?;
-    let (data_size, bytes) = data.ok_or(corrupt(Corruption::MissingData))?;
-    let (format, frames) = check_data(&fmt, data_size)?;
+    let (fmt, (data_size, bytes)) = header_facts(fmt, data, fault)?;
+    let (format, frames) = check_data(&fmt, data_size, fault)?;
     // A data chunk past the held bound holds more than MAX_FRAMES frames, which check_data
-    // refuses; this refusal is not reached.
+    // refuses, and one not held for a fault was refused with it; this refusal is not reached.
     let bytes = bytes.ok_or(Fail::Wav(WavError::InputTooLong {
         frame_count: widen(frames),
     }))?;
@@ -356,6 +407,29 @@ fn truncated<E>(how: Truncation) -> Fail<E> {
     Fail::Wav(WavError::Truncated(how))
 }
 
+/// Reads a source of known length, refusing in the order of [`crate::IMPORT_WAV_PRECEDENCE`]
+/// from the sample rate on, wherever the header facts that order is about exist.
+///
+/// The 12-byte RIFF header is checked first: input that is not RIFF/WAVE, shorter than the
+/// header, or whose RIFF size cannot hold the form type has no header facts and is refused at
+/// once. The chunks are then walked, and a fault the walk finds is recorded, not answered; of
+/// two, the one ranked first is kept ([`first`]). A RIFF size past the end of the input is
+/// recorded before the walk, which then goes on to the end of the input. A chunk inside the
+/// input and the RIFF body is stepped over with its fault recorded: a second `fmt ` or `data`
+/// (the first one counts) and a `fmt ` body over [`MAX_FMT_BYTES`]. A chunk that cannot be
+/// trusted or stepped over stops the walk: a chunk header cut short or not printable, a chunk
+/// past the end of the input or the RIFF size, a `fmt ` body shorter than 16 bytes. The header
+/// facts are kept from every chunk read, the one the walk stops at included (a `fmt ` body whose
+/// first 16 bytes are in the input, a `data` header).
+///
+/// Once the `fmt ` chunk and the `data` chunk header are read, [`check_data`] answers the
+/// unsupported sample rate, sample format, channel count and an empty `data` chunk (steps 3 to 6
+/// of the precedence) before the recorded fault, then a block align or byte rate that
+/// disagrees, a partial frame, the frame bound, and, while the samples are read, a non-finite
+/// sample. Where they are not read (the RIFF header cut short, no `fmt ` or no `data` chunk, a
+/// chunk header corrupt or cut before both were found) the model has no header facts for the
+/// file, so steps 3 to 6 have nothing to decide, and the recorded fault is the refusal, or
+/// [`Corruption::MissingFmt`] or [`Corruption::MissingData`] when there is none.
 fn read<S: Source>(source: &mut S) -> Result<AudioClip, Fail<S::Error>> {
     let len = source.len();
     let mut header = [0u8; 12];
@@ -372,69 +446,131 @@ fn read<S: Source>(source: &mut S) -> Result<AudioClip, Fail<S::Error>> {
         }));
     }
     let riff_end = 8 + u64::from(riff_size);
-    if riff_end > len {
-        return Err(truncated(Truncation::RiffSize {
-            declared: riff_size,
-            available: len - 8,
-        }));
-    }
+    let mut fault = (riff_end > len).then(|| riff_past_input(riff_size, len));
 
     let mut fmt: Option<Fmt> = None;
     let mut data: Option<(u64, u32)> = None;
     let mut offset = 12u64;
     while offset < riff_end {
         if riff_end - offset < 8 {
-            return Err(truncated(Truncation::ChunkHeader { offset }));
+            fault = Some(first(
+                fault,
+                WavError::Truncated(Truncation::ChunkHeader { offset }),
+            ));
+            break;
+        }
+        if offset + 8 > len {
+            // Only where the RIFF size runs past the input, which `fault` already holds.
+            break;
         }
         let mut chunk = [0u8; 8];
         source.read_at(offset, &mut chunk)?;
         let id = [chunk[0], chunk[1], chunk[2], chunk[3]];
         let size = u32_at(&chunk, 4);
         if !id.iter().all(|b| (0x20..=0x7e).contains(b)) {
-            return Err(corrupt(Corruption::BadChunkId { offset }));
+            fault = Some(first(
+                fault,
+                WavError::CorruptChunk(Corruption::BadChunkId { offset }),
+            ));
+            break;
         }
         let body = offset + 8;
         let end = body + u64::from(size) + u64::from(size & 1);
-        if end > len {
-            return Err(truncated(Truncation::Chunk { id, offset, size }));
-        }
-        if end > riff_end {
-            return Err(corrupt(Corruption::ChunkPastRiffEnd { id, offset }));
-        }
+        let mut stop = if end > len {
+            Some(WavError::Truncated(Truncation::Chunk { id, offset, size }))
+        } else if end > riff_end {
+            Some(WavError::CorruptChunk(Corruption::ChunkPastRiffEnd {
+                id,
+                offset,
+            }))
+        } else {
+            None
+        };
+        // A fault of a chunk that lies inside the input and the RIFF body: the walk records
+        // it and steps over the chunk.
+        let mut over = None;
         match &id {
             b"fmt " => {
                 if fmt.is_some() {
-                    return Err(corrupt(Corruption::DuplicateFmt));
+                    over = Some(Corruption::DuplicateFmt);
+                } else if size < 16 {
+                    stop.get_or_insert(WavError::CorruptChunk(Corruption::FmtSize { size }));
+                } else {
+                    if size > MAX_FMT_BYTES {
+                        over = Some(Corruption::FmtSize { size });
+                    }
+                    if body + 16 <= len {
+                        let mut bytes = [0u8; 16];
+                        source.read_at(body, &mut bytes)?;
+                        fmt = Some(Fmt::parse(&bytes));
+                    }
                 }
-                if !(16..=MAX_FMT_BYTES).contains(&size) {
-                    return Err(corrupt(Corruption::FmtSize { size }));
-                }
-                let mut bytes = [0u8; 16];
-                source.read_at(body, &mut bytes)?;
-                fmt = Some(Fmt::parse(&bytes));
             }
             b"data" => {
                 if data.is_some() {
-                    return Err(corrupt(Corruption::DuplicateData));
+                    over = Some(Corruption::DuplicateData);
+                } else {
+                    data = Some((body, size));
                 }
-                data = Some((body, size));
             }
             _ => {}
+        }
+        if let Some(error) = stop {
+            fault = Some(first(fault, error));
+            break;
+        }
+        if let Some(how) = over {
+            fault = Some(first(fault, WavError::CorruptChunk(how)));
         }
         offset = end;
     }
 
-    let fmt = fmt.ok_or(corrupt(Corruption::MissingFmt))?;
-    let (data_offset, data_size) = data.ok_or(corrupt(Corruption::MissingData))?;
-    let (format, frames) = check_data(&fmt, data_size)?;
+    let (fmt, (data_offset, data_size)) = header_facts(fmt, data, fault)?;
+    let (format, frames) = check_data(&fmt, data_size, fault)?;
     let samples = read_samples(source, data_offset, frames, fmt.channel_count, format)?;
     Ok(AudioClip::read(samples, fmt.channel_count, format))
 }
 
-/// Refuses an unsupported `fmt ` ([`check_fmt`]), a `data` size that is not whole frames, and a
-/// frame count that is zero or past [`MAX_FRAMES`]; otherwise the sample format and frame count.
-fn check_data<E>(fmt: &Fmt, data_size: u32) -> Result<(WavSampleFormat, usize), Fail<E>> {
+/// The `fmt ` fields and the `data` header the walk read. Without either, the file has no
+/// header facts and is refused with `fault`, the fault that ended the walk, or, when the walk
+/// reached the RIFF end, with the chunk it lacks.
+fn header_facts<D, E>(
+    fmt: Option<Fmt>,
+    data: Option<D>,
+    fault: Option<WavError>,
+) -> Result<(Fmt, D), Fail<E>> {
+    match (fmt, data) {
+        (Some(fmt), Some(data)) => Ok((fmt, data)),
+        (fmt, _) => Err(Fail::Wav(fault.unwrap_or(WavError::CorruptChunk(
+            if fmt.is_none() {
+                Corruption::MissingFmt
+            } else {
+                Corruption::MissingData
+            },
+        )))),
+    }
+}
+
+/// Refuses a file whose `fmt ` and `data` header were read, in the order of
+/// [`crate::IMPORT_WAV_PRECEDENCE`]: an unsupported sample rate, sample format or channel count
+/// ([`check_fmt`]) and an empty `data` chunk, the input refusals; then `fault`, the truncation or
+/// corruption the walk found; then a block align or byte rate that disagrees ([`check_layout`])
+/// and a `data` size that is not whole frames, which are corrupt too; then a frame count past
+/// [`MAX_FRAMES`]. Otherwise the sample format and frame count. The model's frame count is zero
+/// exactly when the `data` chunk is: a shorter `data` chunk than one frame is a partial frame.
+fn check_data<E>(
+    fmt: &Fmt,
+    data_size: u32,
+    fault: Option<WavError>,
+) -> Result<(WavSampleFormat, usize), Fail<E>> {
     let format = check_fmt(fmt)?;
+    if data_size == 0 {
+        return Err(Fail::Wav(WavError::EmptyAudio));
+    }
+    if let Some(fault) = fault {
+        return Err(Fail::Wav(fault));
+    }
+    check_layout(fmt)?;
     if !data_size.is_multiple_of(u32::from(fmt.block_align)) {
         return Err(corrupt(Corruption::PartialFrame {
             data_size,
@@ -451,8 +587,8 @@ fn check_data<E>(fmt: &Fmt, data_size: u32) -> Result<(WavSampleFormat, usize), 
     Ok((format, frames))
 }
 
-/// Refuses an unsupported or inconsistent `fmt `, in the order the domain lists the refusals:
-/// sample rate, sample format, channel count, then block align and byte rate.
+/// Refuses an unsupported `fmt `, in the order the domain declares the refusals: sample rate,
+/// sample format, channel count.
 fn check_fmt<E>(fmt: &Fmt) -> Result<WavSampleFormat, Fail<E>> {
     if fmt.sample_rate_hz != SAMPLE_RATE_HZ {
         return Err(Fail::Wav(WavError::UnsupportedSampleRate {
@@ -474,6 +610,12 @@ fn check_fmt<E>(fmt: &Fmt) -> Result<WavSampleFormat, Fail<E>> {
             channel_count: fmt.channel_count,
         }));
     }
+    Ok(format)
+}
+
+/// Refuses a supported `fmt ` ([`check_fmt`]) whose block align disagrees with its channel count
+/// and bits per sample, or whose byte rate disagrees with its sample rate and block align.
+fn check_layout<E>(fmt: &Fmt) -> Result<(), Fail<E>> {
     let block_align = u32::from(fmt.channel_count) * u32::from(fmt.bits_per_sample) / 8;
     if u32::from(fmt.block_align) != block_align {
         return Err(corrupt(Corruption::BlockAlign {
@@ -485,7 +627,7 @@ fn check_fmt<E>(fmt: &Fmt) -> Result<WavSampleFormat, Fail<E>> {
             declared: fmt.byte_rate,
         }));
     }
-    Ok(format)
+    Ok(())
 }
 
 /// Reads `frames` frames of `channels` interleaved samples from `offset`, refusing a non-finite

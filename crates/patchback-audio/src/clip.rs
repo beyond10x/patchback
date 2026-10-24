@@ -3,6 +3,7 @@
 use std::fmt;
 
 use crate::error::WavError;
+use crate::import::{AudioOrigin, WavImport};
 
 /// The only sample rate Patchback reads, writes and renders (DESIGN.md § 5.3). Any other rate is
 /// refused, never converted.
@@ -51,13 +52,17 @@ impl WavSampleFormat {
     }
 }
 
-/// Mono audio at [`SAMPLE_RATE_HZ`]: between 1 and [`MAX_FRAMES`] finite samples.
+/// Mono audio at [`SAMPLE_RATE_HZ`]: between 1 and [`MAX_FRAMES`] finite samples, and, when it
+/// was imported with a [`WavImport`], its origin, provenance, licence and render id.
 #[derive(Clone, PartialEq)]
 pub struct AudioClip {
     samples: Vec<f32>,
     source_channel_count: u16,
     downmixed: bool,
     source_format: Option<WavSampleFormat>,
+    /// The request the clip was imported under; `None` for a clip read without one
+    /// ([`crate::decode`], [`crate::read_wav`]) or built by [`AudioClip::from_mono`].
+    import: Option<WavImport>,
 }
 
 /// The mean of a stereo frame, the one downmix formula (DESIGN.md § 6.1): `(left + right) / 2`
@@ -101,6 +106,7 @@ impl AudioClip {
             source_channel_count: 1,
             downmixed: false,
             source_format: None,
+            import: None,
         })
     }
 
@@ -115,7 +121,14 @@ impl AudioClip {
             source_channel_count,
             downmixed: source_channel_count == 2,
             source_format: Some(source_format),
+            import: None,
         }
+    }
+
+    /// This clip recording the request it was imported under.
+    pub(crate) fn imported(mut self, import: WavImport) -> Self {
+        self.import = Some(import);
+        self
     }
 
     /// The mono samples.
@@ -146,6 +159,30 @@ impl AudioClip {
     /// The sample format of the WAV file the clip was read from, if it was read from one.
     pub fn source_format(&self) -> Option<WavSampleFormat> {
         self.source_format
+    }
+
+    /// Where the audio came from, when the clip was imported with a [`WavImport`]; `None` for a
+    /// clip read by [`crate::decode`] or [`crate::read_wav`], or built by
+    /// [`AudioClip::from_mono`], which records no origin.
+    pub fn origin(&self) -> Option<AudioOrigin> {
+        self.import.as_ref().map(|import| import.origin)
+    }
+
+    /// The provenance the import recorded. Always `Some` for an
+    /// [`AudioOrigin::ExternalRecording`] clip.
+    pub fn provenance(&self) -> Option<&str> {
+        self.import.as_ref()?.provenance.as_deref()
+    }
+
+    /// The licence the import recorded. Always `Some` for an [`AudioOrigin::ExternalRecording`]
+    /// clip.
+    pub fn licence(&self) -> Option<&str> {
+        self.import.as_ref()?.licence.as_deref()
+    }
+
+    /// The render the import named, if it named one.
+    pub fn render_id(&self) -> Option<&str> {
+        self.import.as_ref()?.render_id.as_deref()
     }
 }
 
