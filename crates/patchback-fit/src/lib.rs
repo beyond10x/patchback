@@ -1,6 +1,17 @@
 //! Candidate search and the audio comparison loss (DESIGN.md § 4.1, § 9), in Rust `std` only
 //! (DESIGN.md § 3), on the FFT, STFT and descriptors of `patchback-analysis`.
 //!
+//! # The fit
+//!
+//! [`fit`] is the bounded derivative-free search of DESIGN.md § 9.2 within one known topology:
+//! seeded restarts of coordinate search over the normalized parameters, each candidate rendered
+//! by `patchback-dsp` and scored by [`compare`], stopped at a render, wall-time or restart bound
+//! or when a restart improves less than a threshold. Its module documentation states the exact
+//! rule. [`FitRun`] is the run of `spec/domains/fit.yaml` with its commands; [`FitError`] names
+//! the errors they refuse with. The provisional values of the search are [`INITIAL_STEP`] (the
+//! D-a6-2 value), [`MIN_STEP`], [`DEFAULT_MAX_RENDERS`], [`DEFAULT_MAX_WALL_TIME_MS`],
+//! [`DEFAULT_MAX_RESTARTS`] and [`DEFAULT_IMPROVEMENT_THRESHOLD`].
+//!
 //! # The comparison
 //!
 //! [`compare`] (and [`compare_signals`] on bare samples) compares a candidate rendering with a
@@ -74,9 +85,20 @@
 
 mod error;
 mod loss;
+mod run;
+mod search;
 
-pub use error::CompareError;
+pub use error::{CompareError, FitError};
 pub use loss::{Comparison, LossComponents, Signal, compare, compare_signals, loss_components};
+pub use run::{
+    DEFAULT_IMPROVEMENT_THRESHOLD, DEFAULT_MAX_RENDERS, DEFAULT_MAX_RESTARTS,
+    DEFAULT_MAX_WALL_TIME_MS, EvaluationOutcome, FailureReason, FitBounds, FitRun, FitState,
+    SearchBound, StopReason,
+};
+pub use search::{
+    Evaluation, FitConfig, FitOutcome, INITIAL_STEP, MIN_STEP, Rejection, default_point, fit,
+    patch_at, restart_point,
+};
 
 /// The weight of the log-spectral component (DESIGN.md § 9.1).
 pub const WEIGHT_LOG_SPECTRAL: f64 = 0.45;
