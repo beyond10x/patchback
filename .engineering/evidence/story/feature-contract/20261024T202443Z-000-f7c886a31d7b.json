@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-24T20:24:43Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-contract",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "b10x-build-slot cargo test --locked -p patchback-analysis (tree patchback-impl-feature-contract, base c338101)",
+    "reference": "128 passed, 0 failed, 11 lanes, exit 0; clippy --all-targets -D warnings exit 0; cargo fmt --check exit 0"
+  }
+}

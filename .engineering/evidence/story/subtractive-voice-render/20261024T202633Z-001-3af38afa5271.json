@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-24T20:26:33Z",
+  "actor": "human:timo",
+  "artifact": "story:subtractive-voice-render",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "coordinator: baseline a5/subtractive-voice-render/scratch/base-cli.txt + base-dsp.txt vs treatment a5/coordinator/verify/subtractive-voice-render-test.txt",
+    "reference": "baseline 15 lanes 119 passed on c338101 vs treatment 23 lanes 195 passed (cli render 18, render_adversary 5, render_adversary2 2; dsp adversary 4, adversary2 5, domain 3, render 17, units 21), exit 0; correction-2 diff read: out {out:?}, two expectations re-pinned quoted, one assertion added, nothing relaxed"
+  }
+}

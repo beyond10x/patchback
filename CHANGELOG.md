@@ -6,6 +6,71 @@ All notable changes to Patchback are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `patchback-dsp`: the DSP of the fixed `subtractive-mono/1` voice (story
+  subtractive-voice-render): `PolyBlepSaw` (phase accumulator, polyBLEP, frequency clamped to
+  `MAX_OSCILLATOR_HZ`), `Drive` (`tanh(g x) / tanh(g)`), `SvfLowpass` (TPT state-variable
+  lowpass, cutoff clamped to `[MIN_CUTOFF_HZ, MAX_CUTOFF_HZ]` below Nyquist, resonance to the
+  contract's 0.5 to 12), `Adsr` (linear segments, note-on, retrigger, note-off, zero and
+  near-zero times take one sample), `Smoother`, `Limiter` and `OutputStage`, each in `f64` and
+  deterministic. `render` walks a compiled `ExecutionPlan` with a `NoteSequence` block by block
+  (`DEFAULT_BLOCK_FRAMES` 256; the block size never changes the samples) and returns the samples
+  with a `RenderReport` of the frame count, block size, `limited` and the limited sample count;
+  a sequence not at 48 kHz, a block size of zero or less, a note that does not end after it
+  starts (`RenderError::InvalidNoteTiming`, `NoteSequenceNotFound`, as the sequence loader
+  refuses it), a render past `MAX_FRAMES` and a non-finite sample are refused as `RenderError`s
+  naming errors of `spec/domains/audio.yaml`. `RENDER_TAIL_FRAMES` (4 800 frames of silence
+  after the release, a margin for analysis windows past the note end), `LIMITER_THRESHOLD` (1.0)
+  and `SMOOTHING_SECONDS` (0.002) are provisional.
+- `patchback render --patch <file> --notes <file> --out <wav> [--block-size <frames>]` (story
+  subtractive-voice-render): writes a mono 48 kHz float32 WAV of the last note's end, the
+  release and the tail, and prints `out`, `sample_rate_hz`, `block_size_frames`, `frame_count`,
+  `limited` and `limited_samples` as `key value` lines (control characters in `out` escaped, as
+  in a refusal). Refusals print one line naming `UnsupportedSampleRate`, `InvalidBlockSize`,
+  `PatchNotFound`, `NoteSequenceNotFound`, `PatchNotCompiled` (state `Loaded`), `InputTooLong`
+  or `NonFiniteRender`, exit 1 and write nothing; an existing `--out` is never overwritten.
+- `patchback_audio::WavImport` and `AudioOrigin` (story external-audio-provenance): an import
+  request beside the bytes or the file, `WavImport::decode` and `WavImport::read`, records the
+  clip's origin, provenance, licence and render id (`AudioClip::origin`, `provenance`, `licence`,
+  `render_id`); an `ExternalRecording` without provenance is refused as
+  `WavError::ProvenanceMissing`, and one with provenance and without a licence as
+  `WavError::LicenceMissing`, on every import, and no clip exists after either. The two guards
+  are answered before a byte is read or the file is opened, so a missing, unreadable, truncated
+  or corrupt file without provenance is refused for its provenance. The refusals follow the
+  order ESS evaluates `ImportWav` in, which `IMPORT_WAV_PRECEDENCE` and `WavError::precedence`
+  state: the guards, then an unsupported rate, format or channel count and an empty file, then
+  truncated and corrupt files, then the frame bound and non-finite samples. `decode`, `read_wav`
+  and the `patchback analyze` and `compare` commands take no request and record no origin.
+- `patchback-analysis` feature contract (story feature-contract): `FeatureRegistry` holds
+  contracts by version, each defined once as a draft (`define`), amendable in its FFT lengths
+  while a draft (`amend`) and frozen by `publish`; `FeatureContractDefinition::features_1` is
+  `features/1`, 32 values: eight band energies of `BAND_EDGES_HZ` over attack, body and release,
+  window-major, then RMS, peak, spectral centroid, rolloff, spectral flatness, zero-crossing
+  rate, attack-envelope slope and normalized MIDI pitch, at FFT lengths 512, 2048 and 8192.
+  `extract_features` and `analyze_and_extract` read one `NoteSpan` of an analysed clip into a
+  `FeatureVector` of 32 finite values, and `FeatureContract::check` admits a vector only at the
+  contract's version and length with every value finite. Refusals are `FeatureError`s naming the
+  domain's errors: a draft is `FeatureContractNotPublished`, a silent or too short window or an
+  ambiguous or absent pitch is `FeatureNotComputable` with the value and a `NotComputableReason`,
+  never an estimate, and a NaN or infinite value is `NonFiniteFeature`. Window bounds
+  (`ATTACK_WINDOW_FRAMES`, `RELEASE_OFFSET_FRAMES`, `RELEASE_WINDOW_FRAMES`), the
+  `FEATURE_FFT_LENGTH` and the attack-slope constants are provisional.
+- `patchback_analysis::zero_crossing_rate` and `attack_envelope_slope` (story
+  feature-contract): sign changes per sample, and the RMS-envelope rise to 90 % of its largest
+  256-sample block level, in full scale per second.
+
+### Changed
+
+- `patchback render` no longer exits 3 (not implemented); `fit` is the one stub left.
+- `patchback_audio::decode` and `read_wav`, and so `patchback analyze` and `patchback compare`
+  (story external-audio-provenance): a WAV file with both an unsupported sample rate, sample
+  format or channel count or an empty `data` chunk and a truncation or corruption is now refused
+  for the rate, format, channel count or empty file, wherever its `fmt ` chunk and `data` chunk
+  header can be read. A file whose `fmt ` or `data` header cannot be read is still refused as
+  truncated or corrupt. Of a truncation and a corruption the reader finds in one file, the
+  truncation is refused, a second `fmt ` or `data` chunk or an oversized `fmt ` included.
+
 ## [0.3.0] - 2026-10-23
 
 ### Added

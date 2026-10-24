@@ -196,8 +196,11 @@ struct Output {
     exclusive: bool,
 }
 
-fn run(ess: &Path, args: &[&OsStr]) -> Result<Vec<u8>> {
+/// Run `ess` with `args` in `cwd`, the specification directory: an `ess` that dispatches to the
+/// release `ess-inputs.yaml` requires looks for that file in its working directory.
+fn run(ess: &Path, cwd: &Path, args: &[&OsStr]) -> Result<Vec<u8>> {
     let output = Command::new(ess)
+        .current_dir(cwd)
         .args(args)
         .output()
         .map_err(io(format!("running {}", ess.display())))?;
@@ -217,12 +220,14 @@ fn run(ess: &Path, args: &[&OsStr]) -> Result<Vec<u8>> {
 
 /// `ess generate --kind <kind>` over `spec` into `out`.
 fn ess_generate(ess: &Path, spec: &Path, kind: &str, out: &Path) -> Result<()> {
+    let out = std::path::absolute(out).map_err(io(out.display()))?;
     run(
         ess,
+        spec,
         &[
             "generate".as_ref(),
             "--path".as_ref(),
-            spec.as_os_str(),
+            ".".as_ref(),
             "--kind".as_ref(),
             kind.as_ref(),
             "--out".as_ref(),
@@ -313,11 +318,12 @@ fn ess_outputs(root: &Path, ess: &Path) -> Result<Vec<Output>> {
     let spec = root.join("spec");
     let compiled = run(
         ess,
+        &spec,
         &[
             "specify".as_ref(),
             "compile".as_ref(),
             "--path".as_ref(),
-            spec.as_os_str(),
+            ".".as_ref(),
             "--format".as_ref(),
             "json".as_ref(),
         ],

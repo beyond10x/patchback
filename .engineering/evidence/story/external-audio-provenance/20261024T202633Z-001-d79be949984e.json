@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-24T20:26:33Z",
+  "actor": "human:timo",
+  "artifact": "story:external-audio-provenance",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "coordinator: baseline a5/external-audio-provenance/scratch/base-test.txt vs treatment a5/coordinator/verify/external-audio-provenance-test.txt",
+    "reference": "baseline 6 lanes 53 passed on c338101 vs treatment 9 lanes 90 passed (provenance 15, provenance_adversary 16, provenance_adversary2 6 new), exit 0; adversary pass 2 green, 7 source mutants and 3 YAML mutants killed"
+  }
+}

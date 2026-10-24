@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:subtractive-voice-render
 kind: story
-status: active
+status: implemented
 title: Render the subtractive voice
 relations:
 - decomposes: epic:sound-engine
@@ -25,10 +25,11 @@ scope:
   path: crates/patchback-dsp
 - confidence: cited
   path: crates/patchback-dsp/Cargo.toml
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-24T18:57:05Z", actor: "human:timo", revision: 8}
 - {from: "proposed", to: "active", at: "2026-10-24T18:57:05Z", actor: "human:timo", revision: 9}
+- {from: "active", to: "implemented", at: "2026-10-24T20:36:40Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":2,"review_outcome":2,"verification":1}}}
 ---
 # Render the subtractive voice
 

@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-24T20:26:33Z",
+  "actor": "human:timo",
+  "artifact": "story:subtractive-voice-render",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "correction round 2 (D14), verified by the coordinator",
+    "review": "review-result:subtractive-voice-render-adversary-2",
+    "outcome": "fixed"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-24T20:24:43Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-contract",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "coordinator: baseline a5/feature-contract/scratch/base-test.txt vs treatment a5/coordinator/verify/feature-contract-test.txt",
+    "reference": "baseline 91 passed on c338101 vs treatment 128 passed (features 20, adversary_features 7, adversary2_features 6 new), exit 0; correction-2 diff read: features.rs frames_in checked arithmetic and two doc lines, no test edited"
+  }
+}

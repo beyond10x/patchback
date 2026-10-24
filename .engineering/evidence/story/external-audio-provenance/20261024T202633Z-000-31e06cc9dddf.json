@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-24T20:26:33Z",
+  "actor": "human:timo",
+  "artifact": "story:external-audio-provenance",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "b10x-build-slot cargo test --locked -p patchback-audio (tree patchback-impl-external-audio-provenance, base c338101)",
+    "reference": "9 lanes, 90 passed, 0 failed, exit 0; clippy --all-targets -D warnings exit 0; cargo fmt --check exit 0"
+  }
+}

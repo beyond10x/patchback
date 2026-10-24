@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-24T20:26:33Z",
+  "actor": "human:timo",
+  "artifact": "story:external-audio-provenance",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "correction round 1 (D6, D7, D13)",
+    "review": "review-result:external-audio-provenance-adversary-1",
+    "outcome": "fixed"
+  }
+}

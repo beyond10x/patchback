@@ -21,7 +21,7 @@ pub const FILE: &str = "status.json";
 pub const PAGE: &str = "status.mdx";
 
 /// The date [`CAPABILITIES`] was last checked against `main` and the planning store.
-pub const AS_OF: &str = "2026-10-23";
+pub const AS_OF: &str = "2026-10-24";
 
 /// A milestone of DESIGN.md § 13 and the epic that carries it.
 #[derive(Clone, Copy)]
@@ -134,7 +134,7 @@ pub const CAPABILITIES: &[Capability] = &[
     Capability {
         area: "Score",
         label: "Note events and the notes.events file",
-        detail: "A versioned, line-oriented list of sample-timestamped note events, parsed into a note sequence and written in canonical form; write then parse is bit-exact and sample offsets are exact. Notes that do not end after they start, overlap in a monophonic sequence or fall outside the MIDI or velocity range, unknown versions, duplicate keys, malformed numbers, lines outside the grammar and lengths past the provisional bounds are refused with the line, and nothing is loaded. Notes only; checking the rate against the rendering patch comes with rendering.",
+        detail: "A versioned, line-oriented list of sample-timestamped note events, parsed into a note sequence and written in canonical form; write then parse is bit-exact and sample offsets are exact. Notes that do not end after they start, overlap in a monophonic sequence or fall outside the MIDI or velocity range, unknown versions, duplicate keys, malformed numbers, lines outside the grammar and lengths past the provisional bounds are refused with the line, and nothing is loaded. Notes only; patchback render refuses a sequence whose rate is not the rendering rate.",
         status: "shipped",
         evidence: Some(
             "crates/patchback-core/tests/note_events.rs::write_then_parse_is_identity_over_generated_sequences",
@@ -142,20 +142,26 @@ pub const CAPABILITIES: &[Capability] = &[
         milestone: None,
         href: "/docs/reference/files#events-events",
     },
-    planned(
-        A,
-        "Sound engine",
-        "The fixed subtractive voice",
-        "One monophonic voice at 48 kHz: anti-aliased saw oscillator, drive, resonant lowpass, ADSR and output gain, driven by note events.",
-        "/docs/concepts/patch#the-fixed-subtractive-voice",
-    ),
-    planned(
-        A,
-        "Sound engine",
-        "Deterministic offline rendering",
-        "patchback render plays a patch with a score into a WAV. Fixed seed, build, input and configuration give the same samples, and the output is never NaN or infinite.",
-        "/docs/guides/render-a-patch",
-    ),
+    Capability {
+        area: "Sound engine",
+        label: "The fixed subtractive voice",
+        detail: "One monophonic voice at 48 kHz: a polyBLEP saw oscillator, a bounded tanh drive, a TPT state-variable lowpass with cutoff clamped below Nyquist and resonance to its contract range, a linear ADSR with sample-accurate note-on, retrigger and note-off and safe zero times, a smoothed VCA and output gain, and a protective limiter whose engagement is counted and reported. Golden waveform, envelope and filter tests hold the units; high-note aliasing against a naive saw is measured.",
+        status: "shipped",
+        evidence: Some("crates/patchback-dsp/tests/units.rs::the_adsr_matches_its_golden_segments"),
+        milestone: None,
+        href: "/docs/concepts/patch#the-fixed-subtractive-voice",
+    },
+    Capability {
+        area: "Sound engine",
+        label: "Deterministic offline rendering",
+        detail: "patchback render --patch --notes --out [--block-size]: a compiled patch plays a note sequence into a mono 48 kHz float32 WAV lasting to the last note's end plus the release and a provisional 100 ms tail. The same inputs give the same bytes at every block size; bounded controls give finite samples. Whether the limiter engaged and how many samples it changed are printed. An unsupported rate, a block size of zero or less, a patch or note sequence that does not load, an uncompiled patch, a render past the length bound and a non-finite sample are refused and nothing is written.",
+        status: "shipped",
+        evidence: Some(
+            "crates/patchback-cli/tests/render.rs::render_writes_a_float32_wav_with_the_default_block_size_and_with_512",
+        ),
+        milestone: None,
+        href: "/docs/guides/render-a-patch",
+    },
     Capability {
         area: "Analysis",
         label: "Native FFT, STFT and audio descriptors",
@@ -199,13 +205,17 @@ pub const CAPABILITIES: &[Capability] = &[
         "Over a seeded holdout of clips synthesized by Patchback, the fit's median normalized audio loss is compared with the default patch's, with wall-clock time, render evaluations and listening examples recorded.",
         "/docs/concepts/closed-loop#the-starting-point",
     ),
-    planned(
-        A,
-        "Audio",
-        "Provenance for every fixture",
-        "An external recording is imported only with its licence and provenance recorded beside it; a clip synthesized by Patchback carries its origin.",
-        "/docs/concepts/guarantees#fixtures",
-    ),
+    Capability {
+        area: "Audio",
+        label: "Provenance for every fixture",
+        detail: "An external recording is imported only with its provenance and licence recorded beside the clip; one missing either is refused and no clip exists. A clip imported as synthesized by Patchback needs neither and records its origin and, when given, its render. The two checks come before the file is read: a recording missing either is refused even when the file is missing, truncated or corrupt. The patchback commands take no origin, provenance or licence yet.",
+        status: "shipped",
+        evidence: Some(
+            "crates/patchback-audio/tests/provenance.rs::external_recording_with_provenance_and_licence_imports_and_keeps_both",
+        ),
+        milestone: None,
+        href: "/docs/concepts/guarantees#fixtures",
+    },
     Capability {
         area: "Dependencies",
         label: "A dependency gate",
@@ -228,11 +238,20 @@ pub const CAPABILITIES: &[Capability] = &[
         milestone: None,
         href: "/docs/guides/train-the-regressor#check-and-train",
     },
+    Capability {
+        area: "Analysis",
+        label: "The frozen feature contract features/1",
+        detail: "32 values per note: eight band energies over attack, body and release windows, then RMS, peak, spectral centroid, rolloff, flatness, zero-crossing rate, attack-envelope slope and normalized MIDI pitch. A contract is defined once per version, amended only as a draft and frozen by publishing; extraction runs only under a published contract, and a value that cannot be computed reliably or is not finite is refused rather than estimated.",
+        status: "shipped",
+        evidence: Some("crates/patchback-analysis/tests/features.rs::feature_contract_extract"),
+        milestone: None,
+        href: "/docs/concepts/listening#features1",
+    },
     planned(
         B,
         "Analysis",
-        "The frozen feature contract features/1",
-        "32 values per note: band energies over attack, body and release, plus eight descriptors. Normalization statistics come from the training split only.",
+        "Training-split normalization statistics",
+        "Per-feature means and standard deviations come from the training split only and are reused unchanged for inference.",
         "/docs/concepts/listening#features1",
     ),
     planned(

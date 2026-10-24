@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-24T20:26:03Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-contract",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "correction round 1 (D8, D9, D10)",
+    "review": "review-result:feature-contract-adversary-1",
+    "outcome": "fixed"
+  }
+}

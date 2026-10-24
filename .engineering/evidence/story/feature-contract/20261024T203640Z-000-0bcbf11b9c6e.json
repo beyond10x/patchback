@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-24T20:36:40Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-contract",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check on wave/a5 (992aabb plus the coordinator's patchback-docs fix): 73 suites, 747 tests passed, 397 scenarios passed, docs-check and dependency-audit exit 0",
+    "reference": "scratch 0905d614 a5/coordinator/gate2/check.txt"
+  }
+}

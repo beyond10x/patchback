@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-24T20:26:33Z",
+  "actor": "human:timo",
+  "artifact": "story:external-audio-provenance",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "pass 2 green; judgement recorded as D15, no code change",
+    "review": "review-result:external-audio-provenance-adversary-2",
+    "outcome": "no-op"
+  }
+}

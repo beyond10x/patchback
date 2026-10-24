@@ -69,9 +69,39 @@ patchback render --patch patches/example.patch --notes notes.events --out out.wa
 
 | Argument | Meaning |
 | --- | --- |
-| `--patch` | The `.patch` file to play |
-| `--notes` | The `.events` file to play it with |
-| `--out` | The WAV to write, at 48 kHz |
+| `--patch` | The `.patch` file to play; it is loaded, validated and compiled first |
+| `--notes` | The `.events` file to play it with, at 48 kHz |
+| `--out` | The mono 48 kHz float32 WAV to write; an existing file is never overwritten |
+| `--block-size` | Frames per processing block, a positive integer; 256 by default. It changes how the work is cut, never the samples |
+
+The render lasts until the last note ends, then for the envelope's release, then for a 100 ms
+tail. It prints one `key value` line per value to stdout, always these keys in this order; the
+`out` value is the path quoted and escaped as a refusal quotes a path (`\n`, `\\`, `\xNN` for a
+byte outside UTF-8), so one record is one line whatever the path holds:
+
+```text
+out "out.wav"
+sample_rate_hz 48000
+block_size_frames 256
+frame_count 43200
+limited false
+limited_samples 0
+```
+
+`limited true` means the protective output limiter set samples above full scale to full scale;
+`limited_samples` counts them. A refused render writes nothing and prints one line to stderr
+naming the error:
+
+```text
+patchback: render refused: patchback.audio.InvalidBlockSize: block size 0 frames; a block is a positive number of frames
+patchback: render refused: patchback.audio.PatchNotFound: "missing.patch": No such file or directory (os error 2)
+```
+
+| Exit status | Meaning |
+| --- | --- |
+| 0 | Rendered and written |
+| 1 | Refused: a rate other than 48 kHz, a block size of zero or less, a patch or score that cannot be read or loaded, a patch that fails validation, a render past the length bound, a non-finite sample, or an output that exists or cannot be written |
+| 2 | Usage error: a missing `--patch`, `--notes` or `--out`, a `--block-size` that is not an integer, or an unknown flag |
 
 ## patchback analyze
 
