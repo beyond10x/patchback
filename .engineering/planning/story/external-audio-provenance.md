@@ -2,17 +2,21 @@
 format: aep.planning-md/3
 id: story:external-audio-provenance
 kind: story
-status: draft
+status: active
 title: Provenance for external audio
 relations:
 - decomposes: epic:sound-engine
 - informed_by: executable-system-specification:patchback-contracts
 - depends_on: story:wav-io
 - depends_on: story:workspace-scaffold
+- serves: vision:patchback
 scope:
 - confidence: inferred
   path: crates/patchback-audio
-revision: 2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-24T18:57:05Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-10-24T18:57:05Z", actor: "human:timo", revision: 4}
 ---
 # Provenance for external audio
 

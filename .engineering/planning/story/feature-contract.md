@@ -2,13 +2,20 @@
 format: aep.planning-md/3
 id: story:feature-contract
 kind: story
-status: draft
+status: active
 title: Feature contract features/1
 relations:
 - decomposes: epic:modelspec-regressor
 - informed_by: executable-system-specification:patchback-contracts
 - depends_on: story:analysis-core
-revision: 1
+- serves: vision:patchback
+scope:
+- confidence: cited
+  path: crates/patchback-analysis
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-24T18:57:06Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-10-24T18:57:06Z", actor: "human:timo", revision: 4}
 ---
 # Feature contract features/1
 
