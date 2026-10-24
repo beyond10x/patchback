@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:fit-run-artifacts
 kind: story
-status: draft
+status: active
 title: Fit run artifacts
 relations:
 - decomposes: epic:sound-engine
@@ -10,10 +10,14 @@ relations:
 - depends_on: story:bounded-search-fit
 - depends_on: story:patch-file-format
 - depends_on: story:workspace-scaffold
+- serves: vision:patchback
 scope:
 - confidence: inferred
   path: crates/patchback-fit
-revision: 3
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-24T23:09:44Z", actor: "human:timo", revision: 4}
+- {from: "proposed", to: "active", at: "2026-10-24T23:09:44Z", actor: "human:timo", revision: 5}
 ---
 # Fit run artifacts
 

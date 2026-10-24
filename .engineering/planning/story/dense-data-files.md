@@ -2,12 +2,13 @@
 format: aep.planning-md/3
 id: story:dense-data-files
 kind: story
-status: draft
+status: active
 title: ModelSpec dense-data files
 relations:
 - decomposes: epic:modelspec-regressor
 - informed_by: executable-system-specification:patchback-contracts
 - depends_on: story:dataset-generation
+- serves: vision:patchback
 scope:
 - confidence: cited
   path: crates/patchback-dataset
@@ -19,7 +20,10 @@ scope:
   path: crates/patchback-dataset/src/lib.rs
 - confidence: inferred
   path: spec/domains/dataset.yaml
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-24T23:09:44Z", actor: "human:timo", revision: 6}
+- {from: "proposed", to: "active", at: "2026-10-24T23:09:44Z", actor: "human:timo", revision: 7}
 ---
 # ModelSpec dense-data files
 
