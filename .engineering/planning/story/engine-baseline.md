@@ -11,8 +11,30 @@ relations:
 - depends_on: story:workspace-scaffold
 scope:
 - confidence: inferred
+  path: CHANGELOG.md
+- confidence: inferred
+  path: crates/patchback-cli/src/benchmark.rs
+- confidence: inferred
+  path: crates/patchback-cli/src/main.rs
+- confidence: inferred
+  path: crates/patchback-dataset/src/generate.rs
+- confidence: cited
+  path: crates/patchback-docs/src/status.rs
+- confidence: inferred
   path: crates/patchback-fit
-revision: 4
+- confidence: inferred
+  path: crates/patchback-fit/src/benchmark.rs
+- confidence: inferred
+  path: crates/patchback-fit/src/error.rs
+- confidence: inferred
+  path: crates/patchback-fit/src/lib.rs
+- confidence: inferred
+  path: crates/patchback-fit/tests/domain.rs
+- confidence: inferred
+  path: crates/patchback-fit/tests/engine_baseline.rs
+- confidence: inferred
+  path: website/docs/reference/cli.md
+revision: 7
 ---
 # Engine baseline against the default patch
 
@@ -49,13 +71,88 @@ and Milestone A does not wait on it (approval-record:engine-baseline-holdout).
 
 ## Scope
 
-- `crates/patchback-fit` (inferred: § 4.1 names no benchmark crate; the benchmark runs the fit
-  against the default patch, and `patchback-fit` holds candidate search and audio loss).
+Derived 2026-10-25 by `story-scoper`. Every line is **cited** (read from the story or the tree) or
+**inferred** (a reading that could be wrong).
+
+- **Primary surface:** `crates/patchback-fit`: the `Benchmark` model and the engine-baseline
+  harness, beside `fit`, `compare` and `default_point` (DESIGN.md § 4.1 "Candidate search + audio
+  loss"); no benchmark code exists yet — inferred
+- **Files:** `crates/patchback-fit/src/benchmark.rs` (new): `Benchmark` with `start`
+  (`StartBenchmark`, outcomes in declared order: `invalid-holdout-size`,
+  `weight-artifact-required`, `unknown-topology`, `started`) and `record_baseline_result`
+  (`RecordBaselineResult`: `no-such-benchmark`, `kind-mismatch`, `target-met` at `>= 20`,
+  `target-not-met`, `wrong-state`), plus the median and reduction computation — inferred
+- **Files:** `crates/patchback-fit/src/lib.rs:86-101` (the `mod`/`pub use` block) and
+  `crates/patchback-fit/src/error.rs:125-255` (`FitError` or a new `BenchmarkError`:
+  `InvalidHoldoutSize`, `WeightArtifactRequired`, `BenchmarkNotFound`, `BenchmarkKindMismatch`,
+  `BenchmarkStateConflict`; `DOMAIN_ERRORS`, `domain_error`, `examples`) — inferred
+- **Files:** `crates/patchback-fit/tests/domain.rs` (`every_fit_variant_maps_into_the_declared_list`,
+  `NOT_EMITTED_BY_THE_CRATE`) and a new `crates/patchback-fit/tests/engine_baseline.rs`, one test
+  per scenario, the pattern of `crates/patchback-dataset/tests/scenarios.rs` — inferred
+- **Contract, read not changed:** `spec/domains/fit.yaml:400-449` (`Benchmark`: `topology_id`,
+  `seed`, `example_count`, invariant `example_count > 0`), `:1384-1442` (`StartBenchmark`),
+  `:1445-1524` (`RecordBaselineResult`), `:1836-1864` (`Benchmarks` view), `:631-663` (errors)
+  and the eight `spec/scenarios/engine-baseline-*.yaml` — cited
+- **Symbols:** `patchback.fit.Benchmark`, `BenchmarkKind`, `TargetVerdict`, `StartBenchmark`,
+  `RecordBaselineResult`, `BenchmarkStarted`, `BenchmarkCompleted`, `Benchmarks` — cited (spec;
+  none exists in Rust). Reused: `fit`, `FitConfig`, `FitOutcome::log`, `default_point`,
+  `patch_at`, `compare` (`crates/patchback-fit/src/lib.rs:91-101`) — cited
+- **Also likely:** `crates/patchback-cli/src/benchmark.rs` (new) and
+  `crates/patchback-cli/src/main.rs:52-80` (`Command`), a verb that synthesizes the holdout with
+  `PatchDraw::from_seed` and renders it, fits each clip and writes listening examples. DESIGN.md
+  § 11 lists no such verb; the spec's wire names are `start-benchmark` and
+  `record-baseline-result`. In the CLI because `patchback-cli` already takes both
+  `patchback-dataset` and `patchback-fit` (`crates/patchback-cli/Cargo.toml`), and
+  `patchback-fit` does not take `patchback-dataset` — inferred
+- **Also likely:** `crates/patchback-dataset/src/generate.rs:143-232` (`PatchDraw`, `from_seed`,
+  `patch`, `notes`), read, not edited — inferred
+- **Documents:** `crates/patchback-docs/src/status.rs:205-211`, the planned row "A baseline
+  against the default patch" (Milestone A), which states this story's Outcome and moves to
+  `shipped` with a test as evidence; its generated `website/data/status.json` and
+  `website/docs/status.mdx` follow — cited
+- **Documents:** `website/docs/reference/cli.md` (a new verb section), `CHANGELOG.md`
+  `## [Unreleased]` — inferred
+- **Confidence:** medium. The contract is cited to the line and the capability row exists. The
+  story names no Rust path, and whether the harness sits in `patchback-fit` (needs a
+  `patchback-dataset` dependency) or in `patchback-cli` is a choice.
+- **Would collide with:** any unit on `crates/patchback-fit/src/lib.rs`, `src/error.rs` or
+  `tests/domain.rs` (wave a7 `story:fit-run-artifacts` adds its `results` module there, and
+  `story:ml-init-benchmark` shares `benchmark.rs`). Also any unit or coordinator close writing
+  `crates/patchback-cli/src/main.rs`, `crates/patchback-docs/src/status.rs`,
+  `website/docs/reference/cli.md`, `CHANGELOG.md` or `Cargo.lock`. Not
+  `crates/patchback-dataset/src/dense.rs` or `DatasetSplit` (a7 unit 2): the dataset crate is
+  only read here — inferred
+- **Safety fact:** additive. No Rust code reads or writes a benchmark: `git grep -n -i
+  'benchmark\|holdout' -- crates` hits only the prose at `crates/patchback-docs/src/status.rs:209,290`.
+  The one trap: the default arm's per-clip loss is evaluation 1's `total` (restart 0 starts at
+  `default_point`, `crates/patchback-fit/src/search.rs:26-27`). It is not `FitRun::initial_loss`,
+  which is the first *valid* candidate's loss (`crates/patchback-fit/src/run.rs:303-306`) and
+  silently becomes a non-default candidate's when the default render is rejected — step 2,
+  unproven
 
 ## Open questions
 
-- The specification still models the holdout as a dataset split: `spec/domains/fit.yaml`
-  Benchmark references a `patchback.dataset.DatasetSplit` (UNMAPPED marker there), and both
-  acceptance scenarios pass `holdout_split_id`. The spec owner remodels `Benchmark.holdout` as a
-  set of synthesized reference clips; this story is not proposed until that lands.
-- How many reference clips the holdout holds, and their seed.
+- The holdout's clip count and seed: `spec/domains/fit.yaml` takes both as inputs of
+  `StartBenchmark` (`example_count`, invariant `> 0`; `seed`); DESIGN.md § 12.2 says only "a
+  seeded holdout set"; the scenarios' 200, 1 and seeds 1234, 77, 99 are fixtures; no constant
+  exists (`HELD_OUT_REFERENCE` 4,992 is the dataset's held-out count, which
+  approval-record:engine-baseline-holdout rules out as the holdout). A default would be a new
+  provisional constant beside `DEFAULT_MAX_RENDERS`. The code offers one derivation rule to
+  reuse: `SplitMix64(seed)` to patch seeds, `PatchDraw::from_seed` to one clip each. Whether
+  each clip's fit seed equals the benchmark seed or is derived from it is open.
+- Where the harness lives: `patchback-fit` (then it takes `patchback-dataset`, and
+  `Cargo.lock` joins the scope) or `patchback-cli` (which takes both today).
+- Topology identity: the spec's `TopologyId` is a Uuid (`spec/domains/patch.yaml:13-15`); the
+  code knows topologies by name (`known_topology(&str)`,
+  `crates/patchback-core/src/patch/validate.rs:178`), as `FitError::TopologyNotFound` does.
+- A holdout clip the fit refuses (`ReferenceSilent`, `PitchAmbiguous`): counted, skipped or
+  redrawn is not said anywhere; `Pipeline::run`'s diagnostic rule is a precedent, not a rule.
+- The median of an even count is defined nowhere (the scenarios use 200).
+- Listening examples: the spec has only `List<String>` paths; where they are written and how
+  many is open (`website/docs/reference/files.md` may join the scope).
+- The default arm's per-clip loss is evaluation 1's `total`, not `FitRun::initial_loss` (the
+  first valid candidate's), which differs when the default render is rejected.
+- Fixed build and device (§ 12.2): the rate is fixed at 48 kHz by `compare`; nothing records
+  build or device (a7's `run.meta` carries versions).
+- Stale leftovers for the spec owner: `fit.yaml:398` calls approval-record:engine-baseline-holdout
+  a draft (it is approved); DESIGN.md § 17 lists OQ-28 as open.
