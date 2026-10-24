@@ -1,0 +1,53 @@
+# Adversary (wave a6, benchmark holdout): StartBenchmark answers its refusals in declaration
+# order, input refusals before the unknown-topology existence refusal. Every step names an
+# undeclared topology, so unknown-topology also holds on each; the earlier declared refusal wins.
+type: ess-scenario/1
+domain: patchback.fit
+scenario: engine-baseline-refusal-precedence
+summary: With every StartBenchmark refusal holding at once, the first declared refusal answers.
+
+timeline:
+  - at: 2026-10-22T15:00:00Z
+    command: patchback.fit.StartBenchmark
+    actor: patchback.fit.Operator
+    input:
+      kind: MlInit
+      topology_id: 3e9a4c20-0000-4000-8000-00000000a001
+      seed: 1234
+      example_count: 0
+    outcome: invalid-holdout-size
+    error:
+      name: patchback.fit.InvalidHoldoutSize
+      fields:
+        example_count: 0
+    no_events: [patchback.fit.BenchmarkStarted]
+
+  - at: 2026-10-22T15:00:01Z
+    command: patchback.fit.StartBenchmark
+    actor: patchback.fit.Operator
+    input:
+      kind: EngineBaseline
+      topology_id: 3e9a4c20-0000-4000-8000-00000000a001
+      seed: 1234
+      example_count: -1
+    outcome: invalid-holdout-size
+    error:
+      name: patchback.fit.InvalidHoldoutSize
+      fields:
+        example_count: -1
+    no_events: [patchback.fit.BenchmarkStarted]
+
+  - at: 2026-10-22T15:00:02Z
+    command: patchback.fit.StartBenchmark
+    actor: patchback.fit.Operator
+    input:
+      kind: MlInit
+      topology_id: 3e9a4c20-0000-4000-8000-00000000a001
+      seed: 1234
+      example_count: 1
+    outcome: weight-artifact-required
+    error:
+      name: patchback.fit.WeightArtifactRequired
+      fields:
+        topology_id: 3e9a4c20-0000-4000-8000-00000000a001
+    no_events: [patchback.fit.BenchmarkStarted]

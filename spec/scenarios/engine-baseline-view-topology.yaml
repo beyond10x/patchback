@@ -1,0 +1,63 @@
+# Adversary (wave a6, benchmark holdout): the started Benchmark records the topology its holdout is
+# synthesized in, and the Benchmarks view publishes it. Two benchmarks in one topology keep their
+# own seed and size: the holdout is defined by seed, example_count and topology_id.
+type: ess-scenario/1
+domain: patchback.fit
+scenario: engine-baseline-view-topology
+summary: Two benchmarks started in one declared topology each publish that topology, their seed and their size.
+
+arrange:
+  - instance: first
+    entity: patchback.fit.Benchmark
+  - instance: second
+    entity: patchback.fit.Benchmark
+
+timeline:
+  - at: 2026-10-22T16:59:00Z
+    command: patchback.patch.DeclareTopology
+    actor: patchback.patch.Operator
+    input:
+      topology_id: 3e9a4c20-0000-4000-8000-00000000c001
+      name: subtractive-mono/1
+      parameters: []
+    outcome: declared
+
+  - at: 2026-10-22T17:00:00Z
+    command: patchback.fit.StartBenchmark
+    actor: patchback.fit.Operator
+    input:
+      kind: EngineBaseline
+      topology_id: 3e9a4c20-0000-4000-8000-00000000c001
+      seed: 1234
+      example_count: 1
+    outcome: started
+    capture: {instance: first, event: patchback.fit.BenchmarkStarted, field: benchmark_id}
+
+  - at: 2026-10-22T17:00:01Z
+    command: patchback.fit.StartBenchmark
+    actor: patchback.fit.Operator
+    input:
+      kind: EngineBaseline
+      topology_id: 3e9a4c20-0000-4000-8000-00000000c001
+      seed: 99
+      example_count: 200
+    outcome: started
+    capture: {instance: second, event: patchback.fit.BenchmarkStarted, field: benchmark_id}
+
+assert:
+  - view: patchback.fit.Benchmarks
+    contains:
+      benchmark_id: {$instance: first}
+      state: Running
+      kind: EngineBaseline
+      topology_id: 3e9a4c20-0000-4000-8000-00000000c001
+      seed: 1234
+      example_count: 1
+  - view: patchback.fit.Benchmarks
+    contains:
+      benchmark_id: {$instance: second}
+      state: Running
+      kind: EngineBaseline
+      topology_id: 3e9a4c20-0000-4000-8000-00000000c001
+      seed: 99
+      example_count: 200

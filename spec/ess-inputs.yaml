@@ -41,9 +41,14 @@ scenarios:
   - scenarios/dependency-gate-cli-parser.yaml
   - scenarios/dependency-gate-forbidden-crate.yaml
   - scenarios/dependency-gate-no-crates-passes.yaml
+  - scenarios/engine-baseline-refusal-precedence.yaml
   - scenarios/engine-baseline-target-met-at-boundary.yaml
   - scenarios/engine-baseline-target-met.yaml
   - scenarios/engine-baseline-target-not-met.yaml
+  - scenarios/engine-baseline-topology-recorded.yaml
+  - scenarios/engine-baseline-unknown-topology.yaml
+  - scenarios/engine-baseline-unknown-topology-ml-init.yaml
+  - scenarios/engine-baseline-view-topology.yaml
   - scenarios/external-audio-acceptance-recording-with-provenance.yaml
   - scenarios/external-audio-provenance-accepted.yaml
   - scenarios/external-audio-provenance-licence-missing.yaml
