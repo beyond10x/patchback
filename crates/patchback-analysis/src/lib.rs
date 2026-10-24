@@ -19,6 +19,12 @@
 //! - [`cross_correlation`]: `sum_n a[n] b[n + d]` over a bounded lag range, by blocks of [`fft`],
 //!   for the time alignment of the comparison loss (DESIGN.md § 9.1).
 //! - [`analyze`]: the whole of `patchback analyze` over one clip.
+//! - [`FeatureRegistry`]: the feature contracts by version, `features/1`
+//!   ([`FeatureContractDefinition::features_1`]) among them, defined as drafts, amended, then
+//!   published and frozen; [`extract_features`] of one note of an [`Analysis`] under a published
+//!   contract, refused as a typed [`FeatureError`]; and the check every reader of a vector makes
+//!   ([`FeatureContract::check`]). [`zero_crossing_rate`] and [`attack_envelope_slope`] are the
+//!   two descriptors only the contract uses.
 //!
 //! Every function refuses a non-finite input value ([`AnalysisError::NonFiniteSamples`]) and
 //! returns finite values or a typed [`AnalysisError`] (DESIGN.md § 2 invariant 4).
@@ -31,12 +37,17 @@
 //! [`MAX_STFT_VALUES`], [`HOP_DIVISOR`], [`SILENCE_THRESHOLD_DBFS`],
 //! [`F0_CONFIDENCE_THRESHOLD`], [`F0_MIN_HZ`], [`F0_MAX_HZ`], [`F0_WINDOW`],
 //! [`F0_RANGE_TOLERANCE_CENTS`], [`ROLLOFF_FRACTION`], [`BAND_EDGES_HZ`] and [`LOG_FLOOR_DB`].
+//! The feature contract's window bounds, FFT length and descriptor definitions are provisional
+//! the same way (OQ-15, DESIGN.md § 17): [`FEATURE_FFT_LENGTH`], [`ATTACK_WINDOW_FRAMES`],
+//! [`RELEASE_OFFSET_FRAMES`], [`RELEASE_WINDOW_FRAMES`], [`ATTACK_SLOPE_BLOCK_FRAMES`] and
+//! [`ATTACK_SLOPE_FRACTION`].
 
 mod analyze;
 mod complex;
 mod correlation;
 mod descriptors;
 mod error;
+mod features;
 mod fft;
 mod pitch;
 mod stft;
@@ -48,10 +59,16 @@ pub use analyze::{
 pub use complex::Complex;
 pub use correlation::{cross_correlation, cross_correlation_fft_length};
 pub use descriptors::{
-    BAND_COUNT, log_band_energies, peak, rms, spectral_centroid, spectral_flatness, spectral_flux,
-    spectral_rolloff,
+    BAND_COUNT, attack_envelope_slope, log_band_energies, peak, rms, spectral_centroid,
+    spectral_flatness, spectral_flux, spectral_rolloff, zero_crossing_rate,
 };
-pub use error::AnalysisError;
+pub use error::{AnalysisError, FeatureError, NotComputableReason};
+pub use features::{
+    BandWindow, FEATURES_1_BAND_WINDOWS, FEATURES_1_SCALARS, FEATURES_1_VALUE_COUNT,
+    FEATURES_1_VERSION, FeatureContract, FeatureContractDefinition, FeatureContractId,
+    FeatureContractState, FeatureRegistry, FeatureSlot, FeatureVector, NoteSpan, ScalarFeature,
+    analyze_and_extract, extract_features,
+};
 pub use fft::{fft, ifft};
 pub use pitch::{F0_RANGE_TOLERANCE_CENTS, PitchEstimate, estimate_f0};
 pub use stft::{Stft, log_magnitude, stft};
@@ -126,6 +143,43 @@ pub const BAND_EDGES_HZ: [f64; 9] = [
 /// The floor of every logarithmic value, in dB: a zero magnitude or energy is reported as this
 /// rather than as minus infinity. Provisional.
 pub const LOG_FLOOR_DB: f64 = -120.0;
+
+/// The FFT length whose STFT frames the feature contract's band energies, spectral centroid,
+/// rolloff and flatness are read from, at whatever hop the analysis holds it (the model leaves
+/// the hop open), with [`BAND_EDGES_HZ`] as band edges (bin width 23.4375 Hz at 48 kHz, so the lowest band
+/// holds eight bins). A frame belongs to a window when its centre, `start + FEATURE_FFT_LENGTH /
+/// 2`, lies in the window.
+///
+/// Provisional: DESIGN.md § 6.3 names the FFT lengths 512, 2048 and 8192 and no FFT size per
+/// feature (OQ-15).
+pub const FEATURE_FFT_LENGTH: usize = 2_048;
+
+/// The attack window of a note: from its start sample for this many samples (100 ms at 48 kHz),
+/// cut at its end sample. The body window runs from there to the note's end sample.
+///
+/// Provisional: DESIGN.md § 6.3 names attack, body and release windows and no bounds (OQ-15).
+pub const ATTACK_WINDOW_FRAMES: usize = 4_800;
+
+/// The release window starts this many samples after the note's end sample (its gate end).
+///
+/// Provisional: DESIGN.md § 6.3 names no bound (OQ-15).
+pub const RELEASE_OFFSET_FRAMES: usize = 0;
+
+/// The release window's length in samples (200 ms at 48 kHz), cut at the clip's end.
+///
+/// Provisional: DESIGN.md § 6.3 names no bound (OQ-15).
+pub const RELEASE_WINDOW_FRAMES: usize = 9_600;
+
+/// The block length, in samples, of the RMS envelope [`attack_envelope_slope`] reads.
+///
+/// Provisional: DESIGN.md § 6.3 names the feature and no definition (OQ-15).
+pub const ATTACK_SLOPE_BLOCK_FRAMES: usize = 256;
+
+/// [`attack_envelope_slope`] times the rise to the first block whose level reaches this share of
+/// the window's largest block level.
+///
+/// Provisional: DESIGN.md § 6.3 names the feature and no definition (OQ-15).
+pub const ATTACK_SLOPE_FRACTION: f64 = 0.9;
 
 /// Refuses the first non-finite value of `values`.
 pub(crate) fn check_finite<T: Copy + Into<f64>>(values: &[T]) -> Result<(), AnalysisError> {
