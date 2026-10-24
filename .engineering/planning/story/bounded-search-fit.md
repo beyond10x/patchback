@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:bounded-search-fit
 kind: story
-status: draft
+status: active
 title: Bounded derivative-free fit
 relations:
 - decomposes: epic:sound-engine
@@ -10,10 +10,26 @@ relations:
 - depends_on: story:subtractive-voice-render
 - depends_on: story:audio-comparison
 - depends_on: story:workspace-scaffold
+- serves: vision:patchback
 scope:
+- confidence: cited
+  path: crates/patchback-cli/src/fit.rs
 - confidence: inferred
+  path: crates/patchback-cli/tests/fit.rs
+- confidence: cited
   path: crates/patchback-fit
-revision: 3
+- confidence: cited
+  path: crates/patchback-fit/src/error.rs
+- confidence: cited
+  path: crates/patchback-fit/src/lib.rs
+- confidence: inferred
+  path: crates/patchback-fit/src/search.rs
+- confidence: inferred
+  path: crates/patchback-fit/tests
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-24T20:47:32Z", actor: "human:timo", revision: 7}
+- {from: "proposed", to: "active", at: "2026-10-24T20:47:32Z", actor: "human:timo", revision: 8}
 ---
 # Bounded derivative-free fit
 

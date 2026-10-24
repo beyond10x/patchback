@@ -2,33 +2,31 @@
 format: aep.planning-md/3
 id: story:dataset-generation
 kind: story
-status: draft
+status: active
 title: Seeded paired dataset generation
 relations:
 - decomposes: epic:modelspec-regressor
 - informed_by: executable-system-specification:patchback-contracts
 - depends_on: story:subtractive-voice-render
 - depends_on: story:feature-contract
+- serves: vision:patchback
 scope:
-- confidence: inferred
-  path: crates/patchback-cli/Cargo.toml
-- confidence: inferred
-  path: crates/patchback-cli/src/generate_dataset.rs
 - confidence: cited
-  path: crates/patchback-cli/src/main.rs
+  path: crates/patchback-cli/src/generate_dataset.rs
 - confidence: inferred
-  path: crates/patchback-cli/tests/dispatch.rs
+  path: crates/patchback-cli/tests/generate_dataset.rs
 - confidence: cited
   path: crates/patchback-dataset
-- confidence: cited
-  path: crates/patchback-dataset/Cargo.toml
+- confidence: inferred
+  path: crates/patchback-dataset/src
 - confidence: cited
   path: crates/patchback-dataset/src/lib.rs
 - confidence: inferred
   path: crates/patchback-dataset/tests
-- confidence: inferred
-  path: spec/domains/dataset.yaml
-revision: 4
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-24T20:47:32Z", actor: "human:timo", revision: 8}
+- {from: "proposed", to: "active", at: "2026-10-24T20:47:32Z", actor: "human:timo", revision: 9}
 ---
 # Seeded paired dataset generation
 
