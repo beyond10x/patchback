@@ -87,6 +87,19 @@ pub enum WavError {
     NonFiniteSample { frame: u64, channel: u16 },
     /// `patchback.audio.SampleOutOfRange`: PCM16 export of a sample outside `[-1, 1]`.
     SampleOutOfRange { frame: u64, value: f32 },
+    /// `patchback.audio.ProvenanceMissing`: an [`AudioOrigin::ExternalRecording`] import named
+    /// no provenance ([`WavImport`]). The domain's `path` is the one the caller passed in, as
+    /// for [`WavError::EmptyAudio`].
+    ///
+    /// [`AudioOrigin::ExternalRecording`]: crate::AudioOrigin::ExternalRecording
+    /// [`WavImport`]: crate::WavImport
+    ProvenanceMissing,
+    /// `patchback.audio.LicenceMissing`: an [`AudioOrigin::ExternalRecording`] import named its
+    /// provenance and no licence ([`WavImport`]).
+    ///
+    /// [`AudioOrigin::ExternalRecording`]: crate::AudioOrigin::ExternalRecording
+    /// [`WavImport`]: crate::WavImport
+    LicenceMissing,
 }
 
 impl WavError {
@@ -101,6 +114,8 @@ impl WavError {
         "patchback.audio.InputTooLong",
         "patchback.audio.NonFiniteSamples",
         "patchback.audio.SampleOutOfRange",
+        "patchback.audio.ProvenanceMissing",
+        "patchback.audio.LicenceMissing",
     ];
 
     /// The error of `spec/domains/audio.yaml` this refusal is.
@@ -115,7 +130,23 @@ impl WavError {
             Self::InputTooLong { .. } => "patchback.audio.InputTooLong",
             Self::NonFiniteSample { .. } => "patchback.audio.NonFiniteSamples",
             Self::SampleOutOfRange { .. } => "patchback.audio.SampleOutOfRange",
+            Self::ProvenanceMissing => "patchback.audio.ProvenanceMissing",
+            Self::LicenceMissing => "patchback.audio.LicenceMissing",
         }
+    }
+
+    /// The rank of this refusal on import: the index of its
+    /// [`domain_error`](Self::domain_error) in [`IMPORT_WAV_PRECEDENCE`]; lower is answered
+    /// first. An export refusal ([`WavError::SampleOutOfRange`]) is no refusal of `ImportWav` and
+    /// ranks after all of them, at `IMPORT_WAV_PRECEDENCE.len()`.
+    ///
+    /// [`IMPORT_WAV_PRECEDENCE`]: crate::IMPORT_WAV_PRECEDENCE
+    pub fn precedence(&self) -> usize {
+        let error = self.domain_error();
+        crate::IMPORT_WAV_PRECEDENCE
+            .iter()
+            .position(|declared| *declared == error)
+            .unwrap_or(crate::IMPORT_WAV_PRECEDENCE.len())
     }
 
     /// One value of every variant. The `match` below has no wildcard, so a new variant does not
@@ -142,6 +173,8 @@ impl WavError {
                 frame: 0,
                 value: 2.0,
             },
+            Self::ProvenanceMissing,
+            Self::LicenceMissing,
         ];
         for example in &examples {
             match example {
@@ -153,7 +186,9 @@ impl WavError {
                 | Self::EmptyAudio
                 | Self::InputTooLong { .. }
                 | Self::NonFiniteSample { .. }
-                | Self::SampleOutOfRange { .. } => {}
+                | Self::SampleOutOfRange { .. }
+                | Self::ProvenanceMissing
+                | Self::LicenceMissing => {}
             }
         }
         examples
@@ -193,6 +228,14 @@ impl fmt::Display for WavError {
             Self::SampleOutOfRange { frame, value } => write!(
                 f,
                 "sample {value} at frame {frame} is outside [-1, 1] and cannot be written as PCM16"
+            ),
+            Self::ProvenanceMissing => write!(
+                f,
+                "an external recording is imported only with its provenance recorded"
+            ),
+            Self::LicenceMissing => write!(
+                f,
+                "an external recording is imported only with its licence recorded"
             ),
         }
     }
