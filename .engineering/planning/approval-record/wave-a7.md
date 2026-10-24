@@ -7,7 +7,7 @@ title: Wave a7 approved by Timo
 relations:
 - decides: story:fit-run-artifacts
 - decides: story:dense-data-files
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "approved", at: "2026-10-24T23:09:22Z", actor: "human:timo", revision: 2}
 ---
@@ -117,3 +117,14 @@ follows approval-record:release-process. Wave a6 released 0.5.0 on 2026-10-25.
   split layout (`order.u32`, `samples.meta`, `x.f32`, `y.f32`). No assertion was dropped; the
   `2^62 + 8` case moved from exit 1 (the rule's train count) to exit 2, which Da7-10 makes the
   first refusal it meets.
+- Da7-15 (unit 1 adversary pass 1, F1) The limiter warning of `report.txt` and `FitResults.warnings`
+  reads `limiter engaged on <n> of <m> rendered samples`, `n` the render report's
+  `limited_samples` and `m` its `frame_count`, both of the uncut render of the best patch.
+  `reconstructed.wav` stays the render cut or padded to the reference's frame count, so the
+  warning says which samples it counts. Counting only inside the reference's length would need
+  the limiter's sample positions, which `patchback-dsp` does not report; a later story if a
+  consumer needs it.
+- Da7-16 (F2, F3) `parse_trace` refuses an evaluation line whose evaluation count differs from
+  its sequence, and a best-after value that rises above the previous line's or is `-` after a
+  number; each is a named parser refusal. `write_trace` never writes such a line; the refusals
+  hold the replay the studio reads to `TraceFrame`'s invariant ("never rises").
