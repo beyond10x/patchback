@@ -5,3 +5,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
+
+[dependencies]
+patchback-analysis = { path = "../patchback-analysis" }
+patchback-audio = { path = "../patchback-audio" }
+patchback-core = { path = "../patchback-core" }
+patchback-dsp = { path = "../patchback-dsp" }

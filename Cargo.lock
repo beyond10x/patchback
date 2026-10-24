@@ -147,6 +147,7 @@ dependencies = [
  "patchback-analysis",
  "patchback-audio",
  "patchback-core",
+ "patchback-dataset",
  "patchback-dsp",
  "patchback-fit",
 ]
@@ -158,6 +159,12 @@ version = "0.4.0"
 [[package]]
 name = "patchback-dataset"
 version = "0.4.0"
+dependencies = [
+ "patchback-analysis",
+ "patchback-audio",
+ "patchback-core",
+ "patchback-dsp",
+]
 
 [[package]]
 name = "patchback-docs"
@@ -181,6 +188,8 @@ version = "0.4.0"
 dependencies = [
  "patchback-analysis",
  "patchback-audio",
+ "patchback-core",
+ "patchback-dsp",
 ]
 
 [[package]]

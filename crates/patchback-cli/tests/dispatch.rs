@@ -1,17 +1,20 @@
-//! The `patchback` binary's dispatch on clap derive: help, version, the not-yet-implemented
-//! subcommands, `render`, `analyze`, `compare` and clap's usage errors, each with its exit status
-//! and output; what `render` renders and refuses is in `tests/render.rs`, `analyze` in
-//! `tests/analyze.rs`, and `compare` in `tests/compare.rs`.
+//! The `patchback` binary's dispatch on clap derive: help, version, the argument parsing of
+//! every subcommand and clap's usage errors, each with its exit status and output. What a
+//! subcommand does with parsed arguments is in its own file: `tests/patch_validate.rs`,
+//! `tests/render.rs`, `tests/analyze.rs`, `tests/compare.rs`, `tests/fit.rs` and
+//! `tests/generate_dataset.rs`.
 
 use std::process::{Command, Output};
 
-/// The subcommands DESIGN.md § 11 names that are recognised and not implemented yet, as typed
-/// (`patch validate` is implemented: `tests/patch_validate.rs`; `render`: `tests/render.rs`;
-/// `analyze`: `tests/analyze.rs`; `compare`: `tests/compare.rs`).
-const STUBS: &[&[&str]] = &[&["fit"]];
-
 /// The top-level commands the root help lists.
-const TOP_LEVEL: &[&str] = &["patch", "render", "analyze", "compare", "fit"];
+const TOP_LEVEL: &[&str] = &[
+    "patch",
+    "render",
+    "analyze",
+    "compare",
+    "fit",
+    "generate-dataset",
+];
 
 fn run(args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_patchback"))
@@ -94,17 +97,17 @@ fn version_prints_the_package_version_and_exits_0() {
     }
 }
 
-/// `patchback <stub>` writes one stderr line and exits 3.
-fn assert_not_implemented(stub: &[&str]) {
-    let name = stub.join(" ");
-    let out = run(stub);
-    assert_eq!(out.status.code(), Some(3), "{stub:?}");
-    assert!(out.stdout.is_empty(), "{stub:?}");
-    assert_eq!(
-        lines(&out.stderr),
-        [format!("patchback: {name} is not implemented yet")],
-        "{stub:?}"
-    );
+/// `patchback <command>` without its required flags: exit 2, nothing on stdout, clap's error
+/// naming each missing flag.
+fn assert_required_flags(command: &[&str], flags: &[&str]) {
+    let out = run(command);
+    assert_eq!(out.status.code(), Some(2), "{command:?}");
+    assert!(out.stdout.is_empty(), "{command:?}");
+    let stderr = text(&out.stderr);
+    assert!(stderr.starts_with("error: "), "{command:?}: {stderr}");
+    for flag in flags {
+        assert!(stderr.contains(flag), "{command:?}: {stderr}");
+    }
 }
 
 #[test]
@@ -132,18 +135,99 @@ fn render_without_its_arguments_is_a_usage_error_and_exits_2() {
 }
 
 #[test]
-fn fit_is_not_implemented_and_exits_3() {
-    assert_not_implemented(&["fit"]);
+fn fit_without_its_arguments_is_a_usage_error_and_exits_2() {
+    assert_required_flags(
+        &["fit"],
+        &["--input <INPUT>", "--notes <NOTES>", "--out <OUT>"],
+    );
+    assert_required_flags(
+        &["fit", "--input", "a.wav"],
+        &["--notes <NOTES>", "--out <OUT>"],
+    );
 }
 
 #[test]
-fn an_argument_a_stub_does_not_take_is_a_usage_error_and_exits_2() {
-    for stub in STUBS {
-        for extra in ["--anything", "song.patch"] {
-            let mut argv = stub.to_vec();
-            argv.push(extra);
-            assert_usage_error(&argv, extra);
-        }
+fn fit_with_an_argument_it_does_not_take_is_a_usage_error_and_exits_2() {
+    let base = [
+        "fit", "--input", "a.wav", "--notes", "a.events", "--out", "run",
+    ];
+    for extra in ["--anything", "song.patch"] {
+        let mut argv = base.to_vec();
+        argv.push(extra);
+        assert_usage_error(&argv, extra);
+    }
+}
+
+#[test]
+fn a_max_renders_that_is_not_an_integer_is_a_usage_error_and_exits_2() {
+    for value in ["many", "2.5", "-1"] {
+        assert_usage_error(
+            &[
+                "fit",
+                "--input",
+                "a.wav",
+                "--notes",
+                "a.events",
+                "--out",
+                "run",
+                "--max-renders",
+                value,
+            ],
+            value,
+        );
+    }
+}
+
+#[test]
+fn generate_dataset_without_its_arguments_is_a_usage_error_and_exits_2() {
+    assert_required_flags(
+        &["generate-dataset"],
+        &["--seed <SEED>", "--samples <SAMPLES>", "--out <OUT>"],
+    );
+    assert_required_flags(
+        &["generate-dataset", "--seed", "1"],
+        &["--samples <SAMPLES>", "--out <OUT>"],
+    );
+}
+
+#[test]
+fn generate_dataset_with_an_argument_it_does_not_take_is_a_usage_error_and_exits_2() {
+    let base = [
+        "generate-dataset",
+        "--seed",
+        "1",
+        "--samples",
+        "64",
+        "--out",
+        "dataset",
+    ];
+    for extra in ["--anything", "song.patch"] {
+        let mut argv = base.to_vec();
+        argv.push(extra);
+        assert_usage_error(&argv, extra);
+    }
+}
+
+#[test]
+fn a_seed_or_sample_count_that_is_not_an_integer_is_a_usage_error_and_exits_2() {
+    for (flag, value) in [("--seed", "random"), ("--seed", "-1"), ("--samples", "1e3")] {
+        let other = if flag == "--seed" {
+            "--samples"
+        } else {
+            "--seed"
+        };
+        assert_usage_error(
+            &[
+                "generate-dataset",
+                flag,
+                value,
+                other,
+                "1",
+                "--out",
+                "dataset",
+            ],
+            value,
+        );
     }
 }
 
@@ -246,6 +330,11 @@ fn help_after_compare_prints_its_help_and_exits_0() {
 #[test]
 fn help_after_fit_prints_its_help_and_exits_0() {
     assert_help_after(&["fit"]);
+}
+
+#[test]
+fn help_after_generate_dataset_prints_its_help_and_exits_0() {
+    assert_help_after(&["generate-dataset"]);
 }
 
 #[test]

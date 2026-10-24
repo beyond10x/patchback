@@ -1,11 +1,13 @@
 //! `patchback`, the application entry point (DESIGN.md § 4.1, § 11).
 //!
 //! The binary recognises the Milestone A subcommands, `patch validate`, `render`, `analyze`,
-//! `compare` and `fit`. `patch validate <file>` ([`patch_validate`]), `render --patch <file>
-//! --notes <file> --out <wav> [--block-size <frames>]` ([`render`]), `analyze --input <wav>
-//! --out <dir>` ([`analyze`]) and `compare --reference <wav> --candidate <wav>` ([`compare`])
-//! are implemented; `fit` is not implemented yet and takes no argument yet. The command line is
-//! parsed with clap derive, the one reviewed command-line crate (DESIGN.md § 3).
+//! `compare` and `fit`, and the Milestone B `generate-dataset`. `patch validate <file>`
+//! ([`patch_validate`]), `render --patch <file> --notes <file> --out <wav> [--block-size
+//! <frames>]` ([`render`]), `analyze --input <wav> --out <dir>` ([`analyze`]) and `compare
+//! --reference <wav> --candidate <wav>` ([`compare`]) are implemented; `fit` ([`fit`]) and
+//! `generate-dataset` ([`generate_dataset`]) parse their arguments and are not implemented yet.
+//! The command line is parsed with clap derive, the one reviewed command-line crate (DESIGN.md
+//! § 3).
 //!
 //! Exit statuses:
 //!
@@ -13,16 +15,18 @@
 //! |---|---|
 //! | 0 | `patch validate` found the patch valid and printed one line naming it, its node and edge counts, to stdout; or `render` wrote its WAV and printed the output path, sample rate, block size, frame count, `limited true` or `limited false` and the limited sample count as `key value` lines to stdout; or `analyze` wrote its analysis file and printed its path to stdout; or `compare` printed the loss, its four components, their weights and the alignment lag as `key value` lines to stdout; or `--help` or `-h` (on the root or on any command) or `help [command]` printed clap's help to stdout; or `--version` or `-V` printed `patchback <version>` to stdout |
 //! | 1 | `patch validate` refused (an unreadable file, a file the parser refuses, a graph validation refuses), with one line on stderr: `patchback: patch validate refused: <domain error>: "<file>": <line or node or edge>: <reason>`; or `render` refused (an unsupported sample rate, a block size of zero or less, a patch or note sequence not found, a patch not compiled, a render too long, a non-finite sample, an existing output or one it cannot write) and wrote nothing, with one line on stderr: `patchback: render refused: <domain error>: <message>` for a domain refusal; or `analyze` refused (unreadable or refused WAV, a refused analysis, an existing analysis file, an output it cannot write) and wrote nothing, with one line on stderr naming the reason: `patchback: analyze refused: <domain error>: <message>` for a domain refusal; or `compare` refused (a missing clip, a refused WAV, clips at different rates, lengths alignment cannot absorb), with one line on stderr: `patchback: compare refused: <domain error>: <message>` for a domain refusal |
-//! | 2 | usage error, reported by clap on stderr: no arguments or `patch` alone (the help, to stderr), an unknown command or flag, `patch validate` without its file or with a second one, a missing `--patch`, `--notes`, `--out`, `--input`, `--reference` or `--candidate`, a `--block-size` that is not an integer, or an argument a command does not take |
-//! | 3 | a recognised command that is not implemented yet (`fit`), with one line on stderr |
+//! | 2 | usage error, reported by clap on stderr: no arguments or `patch` alone (the help, to stderr), an unknown command or flag, `patch validate` without its file or with a second one, a missing `--patch`, `--notes`, `--out`, `--input`, `--reference`, `--candidate`, `--seed` or `--samples`, a `--block-size`, `--max-renders`, `--seed` or `--samples` that is not an integer, or an argument a command does not take |
+//! | 3 | a recognised command whose arguments parse and whose implementation is pending (`fit`, `generate-dataset`), with one line on stderr |
 //!
 //! Where clap's conventions differ from the std-only parser of wave a1: help is the help of the
 //! command it follows, not one shared usage text; an unknown command is reported as clap's
-//! `error: unrecognized subcommand '<name>'`; and an argument a stub does not take, or a help
-//! flag after such an argument, is a usage error (2) rather than the stub's status 3.
+//! `error: unrecognized subcommand '<name>'`; and an argument a command does not take, or a help
+//! flag after such an argument, is a usage error (2).
 
 mod analyze;
 mod compare;
+mod fit;
+mod generate_dataset;
 mod patch_validate;
 mod render;
 
@@ -30,9 +34,6 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-
-/// The command is recognised but not implemented yet.
-const NOT_IMPLEMENTED: u8 = 3;
 
 /// The command ran and refused; it wrote nothing.
 const REFUSED: u8 = 1;
@@ -92,7 +93,9 @@ enum Command {
         candidate: PathBuf,
     },
     /// Recover a patch that reproduces a reference WAV
-    Fit,
+    Fit(fit::FitArgs),
+    /// Generate the deterministic training, validation and test splits
+    GenerateDataset(generate_dataset::GenerateDatasetArgs),
 }
 
 #[derive(Subcommand)]
@@ -102,21 +105,6 @@ enum PatchCommand {
         /// The .patch file to load, validate and compile
         file: PathBuf,
     },
-}
-
-impl Command {
-    /// The command as typed, for its one stderr line.
-    fn name(&self) -> &'static str {
-        match self {
-            Command::Patch {
-                command: PatchCommand::Validate { .. },
-            } => "patch validate",
-            Command::Render { .. } => "render",
-            Command::Analyze { .. } => "analyze",
-            Command::Compare { .. } => "compare",
-            Command::Fit => "fit",
-        }
-    }
 }
 
 fn main() -> ExitCode {
@@ -163,9 +151,7 @@ fn main() -> ExitCode {
                 ExitCode::from(REFUSED)
             }
         },
-        command => {
-            eprintln!("patchback: {} is not implemented yet", command.name());
-            ExitCode::from(NOT_IMPLEMENTED)
-        }
+        Command::Fit(args) => fit::run(args),
+        Command::GenerateDataset(args) => generate_dataset::run(args),
     }
 }
