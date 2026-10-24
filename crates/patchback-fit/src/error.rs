@@ -1,12 +1,14 @@
-//! The typed refusals of the comparison. Each [`CompareError`] names one error of
+//! The typed refusals of the comparison and of the fit. Each [`CompareError`] names one error of
 //! `spec/domains/fit.yaml`, or, for an input analysis refuses, of `spec/domains/analysis.yaml`
-//! ([`CompareError::domain_error`]).
+//! ([`CompareError::domain_error`]); each [`FitError`] one error of `spec/domains/fit.yaml`, or
+//! the comparison refusal it passes on ([`FitError::domain_error`]).
 
 use std::fmt;
 
 use patchback_analysis::AnalysisError;
 
 use crate::ALIGNMENT_TOLERANCE_FRAMES;
+use crate::run::{FitState, SearchBound};
 
 /// Why nothing was compared. A refusal produces no partial result.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -116,3 +118,185 @@ impl fmt::Display for CompareError {
 }
 
 impl std::error::Error for CompareError {}
+
+/// Why a fit refused to start, why a command of a [`crate::FitRun`] was refused, or why a run
+/// ended without a patch. A refusal produces no partial result.
+#[derive(Clone, Debug, PartialEq)]
+pub enum FitError {
+    /// `patchback.fit.InvalidSearchBound`: a render, wall-time or restart bound is not positive.
+    InvalidSearchBound { bound: SearchBound, value: i64 },
+    /// `patchback.fit.TopologyNotFound`: the renderer knows no topology of this name, so no
+    /// patch of it can be generated.
+    TopologyNotFound { topology: String },
+    /// `patchback.fit.ReferenceSilent`: the reference's analysis found it silent
+    /// (`patchback.analysis.SilentInput`).
+    ReferenceSilent { cause: AnalysisError },
+    /// `patchback.fit.PitchAmbiguous`: the reference's analysis could not estimate its
+    /// fundamental (`patchback.analysis.PitchAmbiguous`, `ClipTooShortForPitch` or
+    /// `PitchOutOfRange`, D-a6-4).
+    PitchAmbiguous { cause: AnalysisError },
+    /// `patchback.fit.FitNotRunning`: the run has ended, so it takes no further candidate and no
+    /// second ending.
+    FitNotRunning { state: FitState },
+    /// `patchback.fit.RenderBudgetExhausted`: the run has spent its render evaluations; the
+    /// candidate is not counted.
+    RenderBudgetExhausted,
+    /// `patchback.fit.NoValidCandidate`: the run holds no valid candidate, so it cannot complete;
+    /// a fit that ends so has failed with `FailureReason::NoValidCandidate`.
+    NoValidCandidate,
+    /// A fit that failed with `FailureReason::RendererFault`: a generated patch was refused by
+    /// graph validation (D-a6-6; unreachable while every point of the unit cube maps into the
+    /// contracts' ranges). The run has no valid patch to write, so it is named
+    /// `patchback.fit.NoValidCandidate`; the message names the validation error.
+    RendererFault { message: String },
+    /// The reference's analysis refused it for a reason the comparison shares (an empty clip, a
+    /// rate other than 48 kHz, a clip past the analysis duration bound, a non-finite sample):
+    /// every comparison against it would be refused, so the fit is.
+    Compare(CompareError),
+}
+
+impl FitError {
+    /// Every error of `spec/` this type can name: the errors of `spec/domains/fit.yaml` it
+    /// decides, then every error [`FitError::Compare`] passes on ([`CompareError::DOMAIN_ERRORS`]).
+    pub const DOMAIN_ERRORS: &'static [&'static str] = &[
+        "patchback.fit.InvalidSearchBound",
+        "patchback.fit.TopologyNotFound",
+        "patchback.fit.ReferenceSilent",
+        "patchback.fit.PitchAmbiguous",
+        "patchback.fit.FitNotRunning",
+        "patchback.fit.RenderBudgetExhausted",
+        "patchback.fit.NoValidCandidate",
+        "patchback.fit.SampleRateMismatch",
+        "patchback.fit.LengthOutsideAlignment",
+        "patchback.analysis.EmptyAudio",
+        "patchback.analysis.UnsupportedSampleRate",
+        "patchback.analysis.InvalidHopLength",
+        "patchback.analysis.FftLengthNotPowerOfTwo",
+        "patchback.analysis.FftLengthOverBound",
+        "patchback.analysis.DurationOverBound",
+        "patchback.analysis.FrameCountOverBound",
+        "patchback.analysis.NonFiniteSamples",
+        "patchback.analysis.SilentInput",
+        "patchback.analysis.ClipTooShortForPitch",
+        "patchback.analysis.PitchAmbiguous",
+        "patchback.analysis.PitchOutOfRange",
+    ];
+
+    /// The error of `spec/` this refusal is.
+    pub fn domain_error(&self) -> &'static str {
+        match self {
+            Self::InvalidSearchBound { .. } => "patchback.fit.InvalidSearchBound",
+            Self::TopologyNotFound { .. } => "patchback.fit.TopologyNotFound",
+            Self::ReferenceSilent { .. } => "patchback.fit.ReferenceSilent",
+            Self::PitchAmbiguous { .. } => "patchback.fit.PitchAmbiguous",
+            Self::FitNotRunning { .. } => "patchback.fit.FitNotRunning",
+            Self::RenderBudgetExhausted => "patchback.fit.RenderBudgetExhausted",
+            Self::NoValidCandidate | Self::RendererFault { .. } => "patchback.fit.NoValidCandidate",
+            Self::Compare(error) => error.domain_error(),
+        }
+    }
+
+    /// One value of every variant, and every comparison refusal. The `match` below has no
+    /// wildcard, so a new variant does not compile until it is listed here, and the domain test
+    /// then checks its name.
+    pub fn examples() -> Vec<FitError> {
+        let mut examples = vec![
+            Self::InvalidSearchBound {
+                bound: SearchBound::RenderEvaluations,
+                value: 0,
+            },
+            Self::InvalidSearchBound {
+                bound: SearchBound::WallTime,
+                value: 0,
+            },
+            Self::InvalidSearchBound {
+                bound: SearchBound::Restarts,
+                value: -1,
+            },
+            Self::TopologyNotFound {
+                topology: "subtractive-mono/9".to_owned(),
+            },
+            Self::ReferenceSilent {
+                cause: AnalysisError::SilentInput { rms_dbfs: -120.0 },
+            },
+            Self::PitchAmbiguous {
+                cause: AnalysisError::PitchAmbiguous { confidence: 0.1 },
+            },
+            Self::FitNotRunning {
+                state: FitState::Completed,
+            },
+            Self::FitNotRunning {
+                state: FitState::Failed,
+            },
+            Self::RenderBudgetExhausted,
+            Self::NoValidCandidate,
+            Self::RendererFault {
+                message: "a parameter outside its contract".to_owned(),
+            },
+        ];
+        examples.extend(CompareError::examples().into_iter().map(Self::Compare));
+        for example in &examples {
+            match example {
+                Self::InvalidSearchBound { .. }
+                | Self::TopologyNotFound { .. }
+                | Self::ReferenceSilent { .. }
+                | Self::PitchAmbiguous { .. }
+                | Self::FitNotRunning { .. }
+                | Self::RenderBudgetExhausted
+                | Self::NoValidCandidate
+                | Self::RendererFault { .. }
+                | Self::Compare(_) => {}
+            }
+        }
+        examples
+    }
+}
+
+impl From<CompareError> for FitError {
+    fn from(error: CompareError) -> Self {
+        Self::Compare(error)
+    }
+}
+
+impl fmt::Display for FitError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidSearchBound { bound, value } => write!(
+                f,
+                "the {bound} bound is {value}; a fit runs only within positive bounds"
+            ),
+            Self::TopologyNotFound { topology } => write!(
+                f,
+                "no topology named {topology:?} is known to the renderer; no run starts"
+            ),
+            Self::ReferenceSilent { cause } => write!(
+                f,
+                "the reference holds no note above the silence threshold ({cause}); no run starts"
+            ),
+            Self::PitchAmbiguous { cause } => write!(
+                f,
+                "the fundamental of the reference cannot be estimated ({}: {cause}); no run starts",
+                cause.domain_error()
+            ),
+            Self::FitNotRunning { state } => write!(
+                f,
+                "the fit run is {state}; it takes no further candidate and no second ending"
+            ),
+            Self::RenderBudgetExhausted => f.write_str(
+                "the run has spent its render evaluations; the candidate is not evaluated",
+            ),
+            Self::NoValidCandidate => f.write_str(
+                "the run holds no valid candidate: every render or comparison was refused or \
+                 non-finite; the run failed and nothing is written",
+            ),
+            Self::RendererFault { message } => write!(
+                f,
+                "a generated patch was refused by validation ({message}); the run failed with \
+                 RendererFault and nothing is written"
+            ),
+            Self::Compare(error) => write!(f, "the reference is refused: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for FitError {}
