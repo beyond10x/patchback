@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-24T22:10:00Z",
+  "actor": "human:timo",
+  "artifact": "story:bounded-search-fit",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "correction round 1, tree patchback-impl-bounded-search-fit: cargo test -p patchback-fit -p patchback-cli 219 passed, 0 failed; clippy and fmt exit 0 (a6/bounded-search-fit/correction-report-1.md)",
+    "review": "review-result:bounded-search-fit-adversary-1",
+    "outcome": "fixed"
+  }
+}

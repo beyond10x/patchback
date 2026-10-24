@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-25T01:05:00Z",
+  "actor": "human:timo",
+  "artifact": "story:dataset-generation",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "coordinator: unit diff read (2 tracked files, 270 insertions, 11 new files); adversary pass 2 compared the correction against pass 1 (no assertion lost, five mutants still caught); four acceptance scenarios in spec/scenarios/dataset-generation-*.yaml pass interpreted after Da6-18; seed 42 at 48 samples writes byte-identical files across two processes"
+  }
+}

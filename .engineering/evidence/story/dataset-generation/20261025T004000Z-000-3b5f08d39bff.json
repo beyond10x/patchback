@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-25T00:40:00Z",
+  "actor": "human:timo",
+  "artifact": "story:dataset-generation",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "coordinator gate on tree patchback-impl-dataset-generation at 831971b: cargo test --locked -p patchback-dataset -p patchback-cli --no-fail-fast, 26 binaries ok, 207 passed, 0 failed; clippy -D warnings and fmt --check exit 0 (a6/coordinator/verify/unit2-gate.txt)"
+  }
+}

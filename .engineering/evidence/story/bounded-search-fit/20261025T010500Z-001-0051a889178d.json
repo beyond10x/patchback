@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-25T01:05:00Z",
+  "actor": "human:timo",
+  "artifact": "story:bounded-search-fit",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "coordinator: unit diff read (4 tracked files, 603 insertions, 7 new files); correction 2 diffed against scratch/snap-before-corr2 (only the N1 case changed among the test files); six acceptance scenarios in spec/scenarios/bounded-search-fit-*.yaml pass interpreted; the Milestone A demo off the step grid: loss 0.021532814785200735 -> 0.012082857524406226 (adversary pass 1)"
+  }
+}

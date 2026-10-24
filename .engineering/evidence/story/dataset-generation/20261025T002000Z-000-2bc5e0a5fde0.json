@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-25T00:20:00Z",
+  "actor": "human:timo",
+  "artifact": "story:dataset-generation",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "A1 closed by the adversary's case, A3 fixed in crates/patchback-cli/src/main.rs at integration, A2 recorded as Da6-31 for story:dense-data-files, F5 carried (Da6-28); a6/dataset-generation/adversary-report-2.md",
+    "review": "review-result:dataset-generation-adversary-2",
+    "outcome": "fixed"
+  }
+}

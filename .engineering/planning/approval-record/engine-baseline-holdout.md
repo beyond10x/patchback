@@ -2,11 +2,13 @@
 format: aep.planning-md/3
 id: approval-record:engine-baseline-holdout
 kind: approval-record
-status: draft
+status: approved
 title: 'Milestone A holdout: synthesized reference clips, not a dataset split'
 relations:
 - decides: story:engine-baseline
-revision: 1
+revision: 2
+transitions:
+- {from: "draft", to: "approved", at: "2026-10-24T21:19:29Z", actor: "human:timo", revision: 2}
 ---
 # Milestone A holdout: synthesized reference clips, not a dataset split
 

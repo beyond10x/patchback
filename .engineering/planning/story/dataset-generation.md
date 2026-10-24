@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:dataset-generation
 kind: story
-status: active
+status: implemented
 title: Seeded paired dataset generation
 relations:
 - decomposes: epic:modelspec-regressor
@@ -23,10 +23,11 @@ scope:
   path: crates/patchback-dataset/src/lib.rs
 - confidence: inferred
   path: crates/patchback-dataset/tests
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-24T20:47:32Z", actor: "human:timo", revision: 8}
 - {from: "proposed", to: "active", at: "2026-10-24T20:47:32Z", actor: "human:timo", revision: 9}
+- {from: "active", to: "implemented", at: "2026-10-24T22:51:31Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":2,"review_outcome":2,"verification":1}}}
 ---
 # Seeded paired dataset generation
 

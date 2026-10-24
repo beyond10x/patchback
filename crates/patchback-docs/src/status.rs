@@ -184,13 +184,17 @@ pub const CAPABILITIES: &[Capability] = &[
         milestone: None,
         href: "/docs/reference/cli#patchback-compare",
     },
-    planned(
-        A,
-        "Fit",
-        "Bounded derivative-free search",
-        "patchback fit: seeded restarts and coordinate search over the normalized parameters within a render budget (--max-renders), keeping the best valid patch.",
-        "/docs/concepts/closed-loop#the-search",
-    ),
+    Capability {
+        area: "Fit",
+        label: "Bounded derivative-free search",
+        detail: "patchback fit --input --notes --out: from the default patch, then from seeded restart points, coordinate search over the eight normalized parameters (step 0.25, halving) renders and scores each candidate against the reference and keeps only a strictly lower valid loss. It stops at the render budget (--max-renders), the wall-time bound (--max-wall-time-ms), the restart count (--max-restarts) or when a restart improves less than --improvement-threshold, and writes the best patch as patch.patch. The same seed and inputs give the same patch. Invalid bounds, a missing reference or note sequence, a silent or unpitched reference and a run without a valid candidate are refused and nothing is written. The defaults and the smallest step are provisional.",
+        status: "shipped",
+        evidence: Some(
+            "crates/patchback-cli/tests/fit.rs::fit_writes_the_best_patch_and_reports_the_run",
+        ),
+        milestone: None,
+        href: "/docs/reference/cli#patchback-fit",
+    },
     planned(
         A,
         "Fit",
@@ -254,13 +258,17 @@ pub const CAPABILITIES: &[Capability] = &[
         "Per-feature means and standard deviations come from the training split only and are reused unchanged for inference.",
         "/docs/concepts/listening#features1",
     ),
-    planned(
-        B,
-        "Dataset",
-        "A deterministic paired dataset",
-        "patchback generate-dataset renders seeded random patches and writes row-major little-endian x.f32 and y.f32 files, split by patch identity.",
-        "/docs/guides/train-the-regressor",
-    ),
+    Capability {
+        area: "Dataset",
+        label: "A deterministic paired dataset",
+        detail: "patchback generate-dataset draws patch seeds from SplitMix64 of --seed. From each seed's own xoshiro256** stream it draws eight normalized parameters, a MIDI note from 36 to 84 and a gate from 0.25 to 1.5 s, log-uniform. It renders each draw with the same DSP engine and extracts features/1, then fills train, validation and test to exact multiples of the batch size 16. Splits are isolated by patch seed. Clipped, silent and noisy renders go to a separate diagnostic set and never into a split. The same seed writes byte-identical dataset.meta and samples.meta files. The x.f32 and y.f32 dense files come with the next story.",
+        status: "shipped",
+        evidence: Some(
+            "crates/patchback-dataset/tests/generate.rs::a_real_generation_fills_each_split_with_valid_isolated_samples",
+        ),
+        milestone: None,
+        href: "/docs/reference/cli#patchback-generate-dataset",
+    },
     planned(
         B,
         "Model",

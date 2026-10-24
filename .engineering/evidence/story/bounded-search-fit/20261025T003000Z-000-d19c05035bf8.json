@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-25T00:30:00Z",
+  "actor": "human:timo",
+  "artifact": "story:bounded-search-fit",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "correction round 2, tree patchback-impl-bounded-search-fit: N1 re-pinned to Da6-29 (five runs, margin 58 to 71 ms), N2 fixed with fs::symlink_metadata (Da6-30); cargo test -p patchback-fit -p patchback-cli 225 passed, 0 failed; clippy and fmt exit 0 (a6/bounded-search-fit/correction-report-2.md); the coordinator diffed the test files against scratch/snap-before-corr2: only the N1 case changed",
+    "review": "review-result:bounded-search-fit-adversary-2",
+    "outcome": "fixed"
+  }
+}

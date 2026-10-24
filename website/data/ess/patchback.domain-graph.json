@@ -624,8 +624,8 @@
           "type": "BenchmarkKind"
         },
         {
-          "name": "holdout_split_id",
-          "type": "DatasetSplitId"
+          "name": "topology_id",
+          "type": "TopologyId"
         },
         {
           "name": "seed",
@@ -1769,9 +1769,9 @@
       "cardinality": "one",
       "from": "patchback.fit.Benchmark",
       "kind": "references",
-      "name": "holdout",
-      "to": "patchback.dataset.DatasetSplit",
-      "via": "holdout_split_id"
+      "name": "topology",
+      "to": "patchback.patch.Topology",
+      "via": "topology_id"
     },
     {
       "cardinality": "one",

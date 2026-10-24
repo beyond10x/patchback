@@ -12,7 +12,7 @@ relations:
 scope:
 - confidence: inferred
   path: crates/patchback-fit
-revision: 3
+revision: 4
 ---
 # Engine baseline against the default patch
 
@@ -33,6 +33,12 @@ and Milestone A does not wait on it (approval-record:engine-baseline-holdout).
 
 - spec/scenarios/engine-baseline-target-met.yaml
 - spec/scenarios/engine-baseline-target-not-met.yaml
+- spec/scenarios/engine-baseline-target-met-at-boundary.yaml
+- spec/scenarios/engine-baseline-unknown-topology.yaml
+- spec/scenarios/engine-baseline-unknown-topology-ml-init.yaml
+- spec/scenarios/engine-baseline-refusal-precedence.yaml
+- spec/scenarios/engine-baseline-topology-recorded.yaml
+- spec/scenarios/engine-baseline-view-topology.yaml
 
 ## Numeric obligations
 

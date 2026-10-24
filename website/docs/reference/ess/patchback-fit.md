@@ -97,7 +97,7 @@ An instance is identified by `benchmark_id`, a `patchback.fit.BenchmarkId`. The 
 It holds:
 
 - `kind` — `patchback.fit.BenchmarkKind`
-- `holdout_split_id` — `patchback.dataset.DatasetSplitId`
+- `topology_id` — `patchback.patch.TopologyId`
 - `seed` — `Integer`
 - `example_count` — `Integer`
 - `weight_artifact_id` — `Optional<patchback.model.WeightArtifactId>`, which may be absent
@@ -112,7 +112,7 @@ It holds:
 - `wall_time_ms` — `Optional<Integer>`, which may be absent
 - `listening_examples` — `Optional<List<String>>`, which may be absent
 
-It references at most one [`patchback.dataset.DatasetSplit`](patchback-dataset.md#datasetsplit), as `holdout`, carried by `Benchmark.holdout_split_id`. It references at most one [`patchback.model.WeightArtifact`](patchback-model.md#weightartifact), as `weight_artifact`, carried by `Benchmark.weight_artifact_id`.
+It references at most one [`patchback.patch.Topology`](patchback-patch.md#topology), as `topology`, carried by `Benchmark.topology_id`. It references at most one [`patchback.model.WeightArtifact`](patchback-model.md#weightartifact), as `weight_artifact`, carried by `Benchmark.weight_artifact_id`.
 
 Every instance satisfies `example_count > 0` — a predicate over this entity's own fields, checked against them rather than stored as a sentence, so an invariant reading something the entity does not have is refused instead of documented.
 
@@ -336,7 +336,7 @@ It exposes:
 - `benchmark_id` — `patchback.fit.BenchmarkId`
 - `state` — `patchback.fit.Benchmark.State`
 - `kind` — `patchback.fit.BenchmarkKind`
-- `holdout_split_id` — `patchback.dataset.DatasetSplitId`
+- `topology_id` — `patchback.patch.TopologyId`
 - `seed` — `Integer`
 - `example_count` — `Integer`
 - `target_verdict` — `Optional<patchback.fit.TargetVerdict>`, which may be absent
@@ -664,18 +664,20 @@ It has four outcomes.
 It takes:
 
 - `kind` — `patchback.fit.BenchmarkKind`
-- `holdout_split_id` — `patchback.dataset.DatasetSplitId`
+- `topology_id` — `patchback.patch.TopologyId`
 - `seed` — `Integer`
 - `example_count` — `Integer`
 - `weight_artifact_id` — `Optional<patchback.model.WeightArtifactId>`, which may be absent
 
-It has three outcomes.
+It has four outcomes.
 
 **`invalid-holdout-size`** — Taken when `example_count <= 0` holds of the input. No entity in this specification changes. It reports `patchback.fit.InvalidHoldoutSize`, carrying `example_count`. It emits nothing. A test reaches it by constructing an input that satisfies that condition.
 
-**`weight-artifact-required`** — Taken when `(kind == MlInit and not (defined(weight_artifact_id)))` holds of the input. No entity in this specification changes. It reports `patchback.fit.WeightArtifactRequired`, carrying `holdout_split_id`. It emits nothing. A test reaches it by constructing an input that satisfies that condition.
+**`weight-artifact-required`** — Taken when `(kind == MlInit and not (defined(weight_artifact_id)))` holds of the input. No entity in this specification changes. It reports `patchback.fit.WeightArtifactRequired`, carrying `topology_id`. It emits nothing. A test reaches it by constructing an input that satisfies that condition.
 
-**`started`** — The default branch, taken when no other outcome's condition matched. It creates a `patchback.fit.Benchmark`, which starts in `Running`. The new instance's identity is published as `benchmark_id` on `patchback.fit.BenchmarkStarted`. It emits `patchback.fit.BenchmarkStarted`. It sets `kind` from `input.kind`, `holdout_split_id` from `input.holdout_split_id`, `seed` from `input.seed`, `example_count` from `input.example_count` and `weight_artifact_id` from `input.weight_artifact_id`. A test reaches it by constructing an input that satisfies no other outcome's condition.
+**`unknown-topology`** — The holdout's patches are sampled in a declared topology; no benchmark starts. Taken when no `patchback.patch.Topology` carries the identity `input.topology_id` names. No entity in this specification changes. It reports `patchback.fit.TopologyNotFound`, carrying `topology_id`. It emits nothing. A test reaches it by arranging the row of the other entity the input names, or its absence, and sending the command for it.
+
+**`started`** — The default branch, taken when no other outcome's condition matched. It creates a `patchback.fit.Benchmark`, which starts in `Running`. The new instance's identity is published as `benchmark_id` on `patchback.fit.BenchmarkStarted`. It emits `patchback.fit.BenchmarkStarted`. It sets `kind` from `input.kind`, `topology_id` from `input.topology_id`, `seed` from `input.seed`, `example_count` from `input.example_count` and `weight_artifact_id` from `input.weight_artifact_id`. A test reaches it by constructing an input that satisfies no other outcome's condition.
 
 ### `StartFit`
 
@@ -786,7 +788,7 @@ It carries:
 
 - `benchmark_id` — `patchback.fit.BenchmarkId`
 - `kind` — `patchback.fit.BenchmarkKind`
-- `holdout_split_id` — `patchback.dataset.DatasetSplitId`
+- `topology_id` — `patchback.patch.TopologyId`
 - `seed` — `Integer`
 
 Emitted by `patchback.fit.StartBenchmark` on its `started` outcome.
@@ -1214,6 +1216,8 @@ It carries:
 
 - `topology_id` — `patchback.patch.TopologyId`
 
+Reported by `patchback.fit.StartBenchmark` on its `unknown-topology` outcome.
+
 Reported by `patchback.fit.StartFit` on its `unknown-topology` outcome.
 
 ### `WeightArtifactRequired`
@@ -1222,7 +1226,7 @@ An ML-init benchmark names no weight artifact to predict from (DESIGN.md 13 B).
 
 It carries:
 
-- `holdout_split_id` — `patchback.dataset.DatasetSplitId`
+- `topology_id` — `patchback.patch.TopologyId`
 
 Reported by `patchback.fit.StartBenchmark` on its `weight-artifact-required` outcome.
 
@@ -1245,4 +1249,4 @@ It may invoke [`CompleteFit`](#completefit), [`EvaluateCandidate`](#evaluatecand
 
 ---
 
-Generated from patchback v1 · model digest `8c276c5c277defa049c8c1f876eab6fa0cde53ee4be54ae69a53dad8a0d45bfc` · contract digest `slice-sha256/2:cc94728aa66ac2a3371e41e7ed7712139f1b050342b35e8322e636669eb8f8a3`. Do not edit this file; change the specification and regenerate it with `task docs-generate`.
+Generated from patchback v1 · model digest `dfed68c2b32d82d33aace116ff4c1b275e7bafd1959ccbb6011eb10a8efadb0a` · contract digest `slice-sha256/2:58ed098cb50c08de3e31c606299f933343fc15816e7ed8dff46a92fc673f7446`. Do not edit this file; change the specification and regenerate it with `task docs-generate`.

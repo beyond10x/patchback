@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-25T00:45:00Z",
+  "actor": "human:timo",
+  "artifact": "story:bounded-search-fit",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "coordinator gate on tree patchback-impl-bounded-search-fit at 61c813d: cargo test --locked -p patchback-fit -p patchback-cli --no-fail-fast, 26 binaries ok, 225 passed, 0 failed; clippy -D warnings and fmt --check exit 0 (a6/coordinator/verify/unit1-gate.txt)"
+  }
+}

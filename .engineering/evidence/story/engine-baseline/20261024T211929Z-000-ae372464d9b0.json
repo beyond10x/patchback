@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-24T21:19:29Z",
+  "actor": "human:timo",
+  "artifact": "story:engine-baseline",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "adopted engine-baseline-unknown-topology-ml-init.yaml (Da6-21); coordinator gate on the unit: validate 130 scenarios, conform 403 passed 0 failed, acceptance-check exit 0; merged as c2ece3f",
+    "reference": "scratch 0905d614 a6/coordinator/verify/holdout-conform.txt",
+    "review": "review-result:benchmark-holdout-adversary-2",
+    "outcome": "fixed"
+  }
+}

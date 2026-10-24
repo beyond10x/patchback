@@ -227,7 +227,8 @@ positions are exact up to the largest 64-bit value.
 
 ## A fit run
 
-`patchback fit --out results/` writes:
+`patchback fit --out results/` writes `patch.patch` today; the other four files are story
+fit-run-artifacts. The run's directory:
 
 ```text
 results/
@@ -243,8 +244,57 @@ ModelSpec version and the feature contract.
 
 ## The dataset
 
-`patchback generate-dataset --out data/` writes ModelSpec's dense-data layout, one directory
-per split:
+`patchback generate-dataset --out data/` writes `data/dataset.meta` and one directory per split,
+`data/train/`, `data/val/` and `data/test/`, each holding `samples.meta`. Both files are
+line-oriented, versioned UTF-8 text like `.patch`: a header line, then one record per line, with
+fields separated by one space.
+
+### `dataset.meta`
+
+```text
+patchback-dataset-meta 1
+seed 42
+prng xoshiro256**
+batch_size 16
+feature_contract features/1
+topology subtractive-mono/1
+train 16
+validation 16
+test 16
+diagnostic_silence 4
+diagnostic_noise 23
+diagnostic_clipping 20
+```
+
+| Record | Value |
+| --- | --- |
+| `patchback-dataset-meta` | the format version, `1`; first line |
+| `seed` | the `--seed` the dataset was generated from |
+| `prng` | the generator, `xoshiro256**` |
+| `batch_size` | `16`; every split count is a multiple of it |
+| `feature_contract` | `features/1` |
+| `topology` | `subtractive-mono/1` |
+| `train`, `validation`, `test` | the split's sample count; the validation split's directory is `val/` |
+| `diagnostic_silence`, `diagnostic_noise`, `diagnostic_clipping` | the patches set aside in the diagnostic set, by kind |
+
+The records appear once each, in this order.
+
+### `samples.meta`
+
+```text
+patchback-dataset-samples 1
+13679457532755275413 80 49509
+6349198060258255764 58 31590
+```
+
+After the header line, `patchback-dataset-samples 1`, there is one line per sample in the order
+the samples were drawn: the patch seed, the MIDI note and the gate in samples at 48 kHz, all
+unsigned decimal integers. Line `i + 1` describes row `i` of the split's dense files.
+
+### Dense files
+
+The dense files are not written yet (story dense-data-files). They will follow ModelSpec's
+dense-data layout, one directory per split:
 
 ```text
 data/train/x.f32         N × 32 f32 feature matrix, one sample per row

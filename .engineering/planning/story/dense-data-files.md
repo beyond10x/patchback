@@ -19,7 +19,7 @@ scope:
   path: crates/patchback-dataset/src/lib.rs
 - confidence: inferred
   path: spec/domains/dataset.yaml
-revision: 4
+revision: 5
 ---
 # ModelSpec dense-data files
 
@@ -48,6 +48,10 @@ are refused and nothing is written.
 
 - What the `order.u32` check is (permutation of 0..N, indices below N, or length N).
 - Writing to a split already Written has no refusal (ESS gap).
+- The row ceiling: `order.u32` indexes at most 2^32 rows a split, and DESIGN.md § 12.3 bounds
+  memory, while `patchback generate-dataset --samples` admits up to 9223372036854775807 and
+  holds every sample in memory until the files are written (wave a6, Da6-31; unit 2 adversary
+  pass 2, A2). This story decides the ceiling and where it is refused.
 
 ## Scope
 

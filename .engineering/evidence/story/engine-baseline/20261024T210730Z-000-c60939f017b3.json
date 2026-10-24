@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-24T21:07:30Z",
+  "actor": "human:timo",
+  "artifact": "story:engine-baseline",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "correction round 1 of the holdout remodel (Da6-16, Da6-17): 3 scenarios adopted as engine-baseline-*.yaml, unknown-topology step in its own file; task spec-conform 402 passed, 0 failed",
+    "reference": "scratch 0905d614 a6/benchmark-holdout/correction-report-1.md",
+    "review": "review-result:benchmark-holdout-adversary-1",
+    "outcome": "fixed"
+  }
+}

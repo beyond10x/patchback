@@ -6,6 +6,104 @@ All notable changes to Patchback are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `patchback_core::prng` (wave a6 scaffold): `SplitMix64` and `Xoshiro256StarStar`
+  (`xoshiro256**`, the generator DESIGN.md § 7.1 names), `next_u64`, `next_f64` in `[0, 1)`,
+  `from_state` and `state`, held by the reference vectors of both generators.
+- `patchback_fit::fit` (story bounded-search-fit): the bounded derivative-free fit of DESIGN.md
+  § 9.2 within `subtractive-mono/1`. Restart 0 starts at the default patch (`default_point`,
+  every parameter at its contract default); restart `r >= 1` at eight draws of
+  `Xoshiro256StarStar` seeded with the `r`-th output of `SplitMix64::new(seed)` (`restart_point`),
+  so nearby seeds and restarts never share a start. A restart begins only while no bound is
+  reached, so `FitOutcome::restarts` counts restarts that rendered. Each restart runs coordinate
+  search over the normalized parameters in index order, raising then lowering one parameter by
+  the step (`INITIAL_STEP` 0.25, halving after a sweep without improvement, the restart ending
+  below `MIN_STEP` 1/32 or after a sweep that improves by less than the threshold); each
+  candidate is the patch `patch_at` builds, rendered, cut or padded to the reference's length
+  and scored with `compare`. Only a strictly lower finite loss is retained. The run stops at the
+  first of `RenderBudgetExhausted`, `TimeBudgetExhausted` (no render starts once the wall time
+  since `fit` was entered has reached `max_wall_time_ms`, except the run's first candidate,
+  which is always evaluated, so a time bound stops a run instead of failing it; a render in
+  progress is not interrupted, so the recorded `wall_time_ms`, the whole run's, may exceed the
+  bound by the reference analysis plus one evaluation), `ImprovementBelowThreshold` (a restart after
+  the first lowered the best by less than `improvement_threshold`) and `RestartsExhausted` (all
+  `max_restarts` restarts ran; with one restart, every natural end). `FitOutcome` carries the
+  completed run, the best patch, its normalized values and scored render, and the
+  per-evaluation log (`Evaluation`: sequence, restart, outcome, normalized values, components
+  and total, best after, `Rejection`). Before the search, a non-positive bound is refused as
+  `FitError::InvalidSearchBound`, an unknown topology as `TopologyNotFound`, a silent reference
+  as `ReferenceSilent` and an unpitched one as `PitchAmbiguous`; a run without a valid candidate
+  fails with `NoValidCandidate`. Same seed and inputs give the same log and patch.
+- `patchback_fit::FitRun` (story bounded-search-fit): the fit run of `spec/domains/fit.yaml`
+  with its commands as methods: `start` (refuses a non-positive bound, `FitBounds::check`),
+  `evaluate` (`first-retained`, `improved` for a strictly lower loss, `not-improved`; a
+  non-finite or negative loss is counted as rejected), `reject`, `complete` (refused
+  `NoValidCandidate` with nothing retained) and `fail`; a third evaluation of a budget of two is
+  refused `RenderBudgetExhausted` and not counted, an ended run refuses everything with
+  `FitNotRunning`. `FitError` names the errors of `spec/domains/fit.yaml`
+  (`FitError::DOMAIN_ERRORS`, `domain_error`, `examples`). `DEFAULT_MAX_RENDERS` (2 000),
+  `DEFAULT_MAX_WALL_TIME_MS` (60 000), `DEFAULT_MAX_RESTARTS` (4),
+  `DEFAULT_IMPROVEMENT_THRESHOLD` (0.0001) and `MIN_STEP` are provisional.
+- `patchback fit --input <wav> --notes <events> --out <dir> [--max-renders 2000]
+  [--max-wall-time-ms 60000] [--max-restarts 4] [--improvement-threshold 0.0001] [--seed 0]
+  [--block-size 256]` (story bounded-search-fit): fits `subtractive-mono/1` to the reference
+  with its known notes, writes `<out>/patch.patch` (canonical text; the directory is created
+  when absent) and prints `out`, `init`, `evaluations`, `restarts`, `initial_loss`, `best_loss`,
+  the four loss components, `stop_reason`, `wall_time_ms` and `limited` as `key value` lines.
+  Refusals print one line naming `InvalidSearchBound`, `ClipNotFound`, `NoteSequenceNotFound`,
+  `ReferenceSilent`, `PitchAmbiguous` or `NoValidCandidate`, exit 1 and write nothing; an
+  existing `patch.patch` is never overwritten, and an `--out` that is not a directory (a
+  regular file, a symlink that does not resolve to a directory, or a path beneath a file) is
+  refused before the search as `cannot write "<path>": is not a directory`. `wall_time_ms` may
+  exceed `--max-wall-time-ms` by the reference analysis plus one evaluation.
+- `patchback-dataset`: the model of `spec/domains/dataset.yaml` (story dataset-generation).
+  `DatasetStore` holds datasets, splits, sampled patches, samples, diagnostic sets and diagnostic
+  examples, and its methods are the commands `generate_dataset`, `open_split`, `draw_patch`,
+  `add_sample`, `open_diagnostic_set` and `add_diagnostic_example`. A split count that is not a
+  positive multiple of the batch size is refused as `SplitCountNotBatchMultiple`, a patch seed
+  already drawn into a split of the dataset as `PatchAlreadyDrawn`, and unknown identities as
+  `UnknownDataset`, `UnknownSplit`, `UnknownPatch` and `UnknownDiagnosticSet` (`DatasetError`).
+  A `Sample` carries `x: [f64; 32]` and `y: [f64; 8]`. A `DiagnosticExample` carries its patch
+  seed, its note and the `DiagnosticCause` that put it there.
+- `patchback_dataset::Generator` (story dataset-generation) draws patch seeds from `SplitMix64`
+  of the dataset seed. From each seed's own `xoshiro256**` stream it draws a `PatchDraw`: eight
+  normalized parameters uniform in `[0, 1)`, a MIDI note from `MIDI_LOWEST` 36 to `MIDI_HIGHEST`
+  84, and a gate log-uniform from `GATE_SHORTEST_SECONDS` 0.25 to `GATE_LONGEST_SECONDS` 1.5,
+  at velocity 1.0 from sample 0. It renders the draw with `patchback-dsp`, extracts and checks
+  `features/1`, and fills train, validation and test in that order, each to its exact count. A
+  limited render is a `Clipping` diagnostic example. A silent window or input is `Silence`. Any
+  other refused or non-finite feature is `Noise`. A diagnostic example never enters a split.
+  After `MAX_DRAWS_PER_SAMPLE` (4) draws a sample the generator stops with
+  `GenerateError::Exhausted`. `SplitCounts::from_samples` maps `--samples` to the split counts
+  (60,000 gives 50,016 / 4,992 / 4,992; 48 gives 16 / 16 / 16), exactly for every count up to
+  `MAX_SAMPLES` (`i64::MAX`). `SplitRole::dir` names a split's directory (`train`, `val`,
+  `test`, DESIGN.md § 7.2) and `SplitRole::key` its record name (`train`, `validation`,
+  `test`). The training distribution and the draw bound are provisional (DESIGN.md OQ-19).
+- `patchback generate-dataset --seed <n> --samples <n> --out <dir>` (story dataset-generation)
+  writes `dataset.meta` (`patchback-dataset-meta 1`) and one `samples.meta`
+  (`patchback-dataset-samples 1`) for each of `train/`, `val/` and `test/`. The output is
+  byte-identical for the same seed. It prints `out` and the split and diagnostic counts as
+  `key value` lines. `--samples` admits 0 to 9223372036854775807; a larger value is a usage
+  error (exit 2). A split count that is not a positive multiple of 16 (`--samples 47`) is
+  refused with `patchback.dataset.SplitCountNotBatchMultiple`. An existing `dataset.meta` or
+  `samples.meta` is never overwritten. A failed write removes what the run wrote. The dense
+  `x.f32`, `y.f32` and `order.u32` files are not written yet (story dense-data-files).
+
+### Changed
+
+- `patchback fit` and `patchback generate-dataset` are implemented: no command of the binary
+  exits 3 as not implemented any more.
+- `spec/domains/fit.yaml` (approval-record:engine-baseline-holdout): `Benchmark` records its
+  holdout as `topology_id`, a seeded set of references rendered within a declared topology, in
+  place of `holdout_split_id`, a dataset split; `StartBenchmark` refuses an undeclared topology
+  as `TopologyNotFound` for both benchmark kinds, after `invalid-holdout-size` and before
+  `weight-artifact-required`, and `BenchmarkStarted`, `WeightArtifactRequired` and the
+  `Benchmarks` view carry `topology_id`. Eight `engine-baseline-*.yaml` scenarios pin it; 403
+  conformance scenarios pass.
+- `spec/scenarios/dataset-generation-count-not-batch-multiple.yaml` refuses 50,008 samples at
+  batch size 16; the 50,000 it refused is 16 × 3,125.
+
 ## [0.4.0] - 2026-10-24
 
 ### Added
