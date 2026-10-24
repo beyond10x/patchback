@@ -6,6 +6,8 @@ All notable changes to Patchback are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-24
+
 ### Added
 
 - `patchback-dsp`: the DSP of the fixed `subtractive-mono/1` voice (story
@@ -173,7 +175,8 @@ All notable changes to Patchback are recorded here. The format follows
   revision 0.4, § 3); help, version and usage errors follow clap (usage errors exit 2), and the
   dependency gate admits `clap` with exactly its reviewed `Cargo.lock` closure.
 
-[Unreleased]: https://github.com/beyond10x/patchback/compare/0.3.0...HEAD
+[Unreleased]: https://github.com/beyond10x/patchback/compare/0.4.0...HEAD
+[0.4.0]: https://github.com/beyond10x/patchback/compare/0.3.0...0.4.0
 [0.3.0]: https://github.com/beyond10x/patchback/compare/0.2.0...0.3.0
 [0.2.0]: https://github.com/beyond10x/patchback/compare/0.1.0...0.2.0
 [0.1.0]: https://github.com/beyond10x/patchback/releases/tag/0.1.0
