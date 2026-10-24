@@ -6,6 +6,9 @@
 # refused (whether a synthesized clip must name one is UNMAPPED on AudioClip).
 # UNMAPPED: DESIGN.md gives no port names; the ports and node-local parameter keys are the
 # placeholders of patch-graph-validation-accepted.
+# The rendered WAV lasts to the note's end plus the patch's 0.3 s release and the provisional 100 ms
+# tail (`RENDER_TAIL_FRAMES`): 24000 + 14400 + 4800 = 43200 frames. DESIGN.md 6.1 counts the release
+# into a recording ("including release").
 type: ess-scenario/1
 domain: patchback.audio
 scenario: subtractive-voice-render-renders
@@ -125,7 +128,7 @@ timeline:
       channel_count: 1
       format_tag: 3
       bits_per_sample: 32
-      frame_count: 24000
+      frame_count: 43200
     outcome: imported
     capture: {instance: rendered-clip, event: patchback.audio.ClipImported, field: audio_clip_id}
 

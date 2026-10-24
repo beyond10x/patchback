@@ -1,14 +1,14 @@
 //! The `patchback` binary's dispatch on clap derive: help, version, the not-yet-implemented
-//! subcommands, `analyze`, `compare` and clap's usage errors, each with its exit status and
-//! output; what `analyze` computes and refuses is in `tests/analyze.rs`, and `compare` in
-//! `tests/compare.rs`.
+//! subcommands, `render`, `analyze`, `compare` and clap's usage errors, each with its exit status
+//! and output; what `render` renders and refuses is in `tests/render.rs`, `analyze` in
+//! `tests/analyze.rs`, and `compare` in `tests/compare.rs`.
 
 use std::process::{Command, Output};
 
 /// The subcommands DESIGN.md § 11 names that are recognised and not implemented yet, as typed
-/// (`patch validate` is implemented: `tests/patch_validate.rs`; `analyze`: `tests/analyze.rs`;
-/// `compare`: `tests/compare.rs`).
-const STUBS: &[&[&str]] = &[&["render"], &["fit"]];
+/// (`patch validate` is implemented: `tests/patch_validate.rs`; `render`: `tests/render.rs`;
+/// `analyze`: `tests/analyze.rs`; `compare`: `tests/compare.rs`).
+const STUBS: &[&[&str]] = &[&["fit"]];
 
 /// The top-level commands the root help lists.
 const TOP_LEVEL: &[&str] = &["patch", "render", "analyze", "compare", "fit"];
@@ -108,8 +108,27 @@ fn assert_not_implemented(stub: &[&str]) {
 }
 
 #[test]
-fn render_is_not_implemented_and_exits_3() {
-    assert_not_implemented(&["render"]);
+fn render_with_an_argument_it_does_not_take_is_a_usage_error_and_exits_2() {
+    let base = [
+        "render", "--patch", "a.patch", "--notes", "a.events", "--out", "a.wav",
+    ];
+    for extra in ["--anything", "song.patch"] {
+        let mut argv = base.to_vec();
+        argv.push(extra);
+        assert_usage_error(&argv, extra);
+    }
+}
+
+#[test]
+fn render_without_its_arguments_is_a_usage_error_and_exits_2() {
+    let out = run(&["render"]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(out.stdout.is_empty());
+    let stderr = text(&out.stderr);
+    assert!(stderr.starts_with("error: "), "{stderr}");
+    for flag in ["--patch <PATCH>", "--notes <NOTES>", "--out <OUT>"] {
+        assert!(stderr.contains(flag), "{stderr}");
+    }
 }
 
 #[test]

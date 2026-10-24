@@ -147,6 +147,7 @@ dependencies = [
  "patchback-analysis",
  "patchback-audio",
  "patchback-core",
+ "patchback-dsp",
  "patchback-fit",
 ]
 
@@ -169,6 +170,10 @@ dependencies = [
 [[package]]
 name = "patchback-dsp"
 version = "0.3.0"
+dependencies = [
+ "patchback-audio",
+ "patchback-core",
+]
 
 [[package]]
 name = "patchback-fit"
