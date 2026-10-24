@@ -4,7 +4,7 @@
 type: ess-scenario/1
 domain: patchback.dataset
 scenario: dataset-generation-count-not-batch-multiple
-summary: A split of 50,000 samples at batch size 16 is refused with SplitCountNotBatchMultiple; 50,016 opens.
+summary: A split of 50,008 samples at batch size 16 is refused with SplitCountNotBatchMultiple; 50,016 opens.
 
 arrange:
   - instance: dataset
@@ -32,7 +32,7 @@ timeline:
     input:
       dataset_id: {$instance: dataset}
       role: Train
-      sample_count: 50000
+      sample_count: 50008
     outcome: count-not-batch-multiple
     error:
       name: patchback.dataset.SplitCountNotBatchMultiple
