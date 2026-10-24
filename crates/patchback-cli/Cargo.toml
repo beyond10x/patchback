@@ -18,3 +18,4 @@ patchback-core = { path = "../patchback-core" }
 patchback-dataset = { path = "../patchback-dataset" }
 patchback-dsp = { path = "../patchback-dsp" }
 patchback-fit = { path = "../patchback-fit" }
+patchback-model = { path = "../patchback-model" }

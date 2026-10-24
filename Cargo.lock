@@ -150,6 +150,7 @@ dependencies = [
  "patchback-dataset",
  "patchback-dsp",
  "patchback-fit",
+ "patchback-model",
 ]
 
 [[package]]
