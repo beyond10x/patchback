@@ -1,0 +1,23 @@
+# The holdout's reference clips are synthesized in the benchmark's topology
+# (approval-record:engine-baseline-holdout); a benchmark naming an undeclared topology is refused
+# after the input checks, and no benchmark starts.
+type: ess-scenario/1
+domain: patchback.fit
+scenario: engine-baseline-unknown-topology
+summary: An engine baseline in an undeclared topology is refused with TopologyNotFound and no benchmark starts.
+
+timeline:
+  - at: 2026-10-22T14:00:02Z
+    command: patchback.fit.StartBenchmark
+    actor: patchback.fit.Operator
+    input:
+      kind: EngineBaseline
+      topology_id: 3e9a4c20-0000-4000-8000-000000000301
+      seed: 1234
+      example_count: 200
+    outcome: unknown-topology
+    error:
+      name: patchback.fit.TopologyNotFound
+      fields:
+        topology_id: 3e9a4c20-0000-4000-8000-000000000301
+    no_events: [patchback.fit.BenchmarkStarted]

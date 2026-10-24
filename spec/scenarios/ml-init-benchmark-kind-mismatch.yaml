@@ -12,12 +12,21 @@ arrange:
     entity: patchback.fit.Benchmark
 
 timeline:
+  - at: 2026-10-22T13:59:00Z
+    command: patchback.patch.DeclareTopology
+    actor: patchback.patch.Operator
+    input:
+      topology_id: 3e9a4c20-0000-4000-8000-000000000201
+      name: subtractive-mono/1
+      parameters: []
+    outcome: declared
+
   - at: 2026-10-22T14:00:00Z
     command: patchback.fit.StartBenchmark
     actor: patchback.fit.Operator
     input:
       kind: EngineBaseline
-      holdout_split_id: 3e9a4c20-0000-4000-8000-000000000201
+      topology_id: 3e9a4c20-0000-4000-8000-000000000201
       seed: 1234
       example_count: 200
     outcome: started
@@ -28,7 +37,7 @@ timeline:
     actor: patchback.fit.Operator
     input:
       kind: MlInit
-      holdout_split_id: 3e9a4c20-0000-4000-8000-000000000201
+      topology_id: 3e9a4c20-0000-4000-8000-000000000201
       seed: 1234
       example_count: 200
       weight_artifact_id: 3e9a4c20-0000-4000-8000-000000000202

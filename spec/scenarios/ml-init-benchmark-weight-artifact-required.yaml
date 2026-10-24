@@ -11,7 +11,7 @@ timeline:
     actor: patchback.fit.Operator
     input:
       kind: MlInit
-      holdout_split_id: 3e9a4c20-0000-4000-8000-000000000301
+      topology_id: 3e9a4c20-0000-4000-8000-000000000301
       seed: 1234
       example_count: 200
     outcome: weight-artifact-required
@@ -23,7 +23,7 @@ timeline:
     actor: patchback.fit.Operator
     input:
       kind: MlInit
-      holdout_split_id: 3e9a4c20-0000-4000-8000-000000000301
+      topology_id: 3e9a4c20-0000-4000-8000-000000000301
       seed: 1234
       example_count: 0
       weight_artifact_id: 3e9a4c20-0000-4000-8000-000000000302

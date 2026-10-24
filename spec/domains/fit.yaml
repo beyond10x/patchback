@@ -392,27 +392,26 @@ entities:
 
   # DESIGN.md 12.2 Sound matching, 13 A demo and B "Compare default vs ML-init vs
   # ML-init-plus-search". One Benchmark is one holdout, so every arm it records ran on the same
-  # holdout by construction.
-  # UNMAPPED: Milestone A (13) runs before the dataset domain exists (Milestone B). The draft
-  # approval-record:engine-baseline-holdout makes the engine baseline's "seeded holdout set" (12.2)
-  # a set of synthesized reference clips, not a DatasetSplit; DESIGN.md does not say so yet. This
-  # model still references a DatasetSplit until the owner settles it (DESIGN.md section 17, OQ-28).
-  # UNMAPPED: the holdout split's role (test, not train or validation, DESIGN.md 7.1) is a fact of
-  # patchback.dataset; no guard reads it here.
+  # holdout by construction. Milestone A (13) runs before the dataset domain exists (Milestone B),
+  # so the holdout is not a DatasetSplit: approval-record:engine-baseline-holdout makes the "seeded
+  # holdout set" (12.2) a set of reference clips Patchback synthesizes from `seed` in `topology_id`.
+  # UNMAPPED: that approval record is still a draft and DESIGN.md does not say so yet; this model
+  # follows the record until the owner settles it (DESIGN.md section 17, OQ-28).
   - name: patchback.fit.Benchmark
     naming:
       summary: >-
-        One benchmark of the closed-loop optimizer over a seeded synthetic holdout, recording the
-        median audio loss of each arm and, for the engine baseline, whether the go/no-go target
-        was met (DESIGN.md 12.2).
+        One benchmark of the closed-loop optimizer over a seeded synthetic holdout: a seeded set
+        of `example_count` reference clips synthesized by Patchback in `topology_id` from `seed`,
+        each with its known note sequence. It records the median audio loss of each arm and, for
+        the engine baseline, whether the go/no-go target was met (DESIGN.md 12.2).
     identity:
       name: benchmark_id
       type: patchback.fit.BenchmarkId
     fields:
       - name: kind
         type: patchback.fit.BenchmarkKind
-      - name: holdout_split_id
-        type: patchback.dataset.DatasetSplitId
+      - name: topology_id
+        type: patchback.patch.TopologyId
       - name: seed
         type: Integer
       - name: example_count
@@ -443,11 +442,11 @@ entities:
     invariants:
       - example_count > 0
     relations:
-      - name: holdout
+      - name: topology
         kind: references
-        target: patchback.dataset.DatasetSplit
+        target: patchback.patch.Topology
         cardinality: one
-        via: holdout_split_id
+        via: topology_id
       - name: weight_artifact
         kind: references
         target: patchback.model.WeightArtifact
@@ -632,8 +631,8 @@ errors:
   - name: patchback.fit.WeightArtifactRequired
     summary: An ML-init benchmark names no weight artifact to predict from (DESIGN.md 13 B).
     fields:
-      - name: holdout_split_id
-        type: patchback.dataset.DatasetSplitId
+      - name: topology_id
+        type: patchback.patch.TopologyId
 
   - name: patchback.fit.InvalidHoldoutSize
     summary: The holdout set holds no example.
@@ -1393,8 +1392,8 @@ commands:
     input:
       - name: kind
         type: patchback.fit.BenchmarkKind
-      - name: holdout_split_id
-        type: patchback.dataset.DatasetSplitId
+      - name: topology_id
+        type: patchback.patch.TopologyId
       - name: seed
         type: Integer
       - name: example_count
@@ -1415,14 +1414,21 @@ commands:
             - not defined(weight_artifact_id)
         error: patchback.fit.WeightArtifactRequired
         payload:
-          patchback.fit.WeightArtifactRequired: {holdout_split_id: input.holdout_split_id}
+          patchback.fit.WeightArtifactRequired: {topology_id: input.topology_id}
+
+      - name: unknown-topology
+        when_related: {via: input.topology_id, exists: false}
+        error: patchback.fit.TopologyNotFound
+        payload:
+          patchback.fit.TopologyNotFound: {topology_id: input.topology_id}
+        summary: The holdout's patches are sampled in a declared topology; no benchmark starts.
 
       - name: started
         creates: patchback.fit.Benchmark
         instance: benchmark_id
         sets:
           kind: input.kind
-          holdout_split_id: input.holdout_split_id
+          topology_id: input.topology_id
           seed: input.seed
           example_count: input.example_count
           weight_artifact_id: input.weight_artifact_id
@@ -1431,7 +1437,7 @@ commands:
           patchback.fit.BenchmarkStarted:
             benchmark_id: {generated: true}
             kind: input.kind
-            holdout_split_id: input.holdout_split_id
+            topology_id: input.topology_id
             seed: input.seed
 
   # DESIGN.md 12.2: the >=20% target is "a go/no-go experiment target, not a guaranteed result".
@@ -1689,8 +1695,8 @@ events:
         type: patchback.fit.BenchmarkId
       - name: kind
         type: patchback.fit.BenchmarkKind
-      - name: holdout_split_id
-        type: patchback.dataset.DatasetSplitId
+      - name: topology_id
+        type: patchback.patch.TopologyId
       - name: seed
         type: Integer
 
@@ -1837,8 +1843,8 @@ views:
         type: patchback.fit.Benchmark.State
       - name: kind
         type: patchback.fit.BenchmarkKind
-      - name: holdout_split_id
-        type: patchback.dataset.DatasetSplitId
+      - name: topology_id
+        type: patchback.patch.TopologyId
       - name: seed
         type: Integer
       - name: example_count

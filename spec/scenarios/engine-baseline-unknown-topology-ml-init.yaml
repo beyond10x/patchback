@@ -1,0 +1,52 @@
+# Adversary (wave a6, benchmark holdout, pass 2): the topology existence check is one outcome of
+# StartBenchmark and holds for both benchmark kinds. engine-baseline-unknown-topology.yaml and the
+# synthesized StartBenchmark/outcome/unknown-topology reach it only with kind EngineBaseline; this
+# file reaches it with kind MlInit and a weight artifact, then starts the same benchmark once the
+# topology is declared and pins the topology it carries.
+type: ess-scenario/1
+domain: patchback.fit
+scenario: engine-baseline-unknown-topology-ml-init
+summary: An ML-init benchmark in an undeclared topology is refused with TopologyNotFound; in the declared topology it starts and carries it.
+
+timeline:
+  - at: 2026-10-22T17:00:00Z
+    command: patchback.fit.StartBenchmark
+    actor: patchback.fit.Operator
+    input:
+      kind: MlInit
+      topology_id: 3e9a4c20-0000-4000-8000-00000000c001
+      seed: 1234
+      example_count: 200
+      weight_artifact_id: 3e9a4c20-0000-4000-8000-00000000c002
+    outcome: unknown-topology
+    error:
+      name: patchback.fit.TopologyNotFound
+      fields:
+        topology_id: 3e9a4c20-0000-4000-8000-00000000c001
+    no_events: [patchback.fit.BenchmarkStarted]
+
+  - at: 2026-10-22T17:00:01Z
+    command: patchback.patch.DeclareTopology
+    actor: patchback.patch.Operator
+    input:
+      topology_id: 3e9a4c20-0000-4000-8000-00000000c001
+      name: subtractive-mono/1
+      parameters: []
+    outcome: declared
+
+  - at: 2026-10-22T17:00:02Z
+    command: patchback.fit.StartBenchmark
+    actor: patchback.fit.Operator
+    input:
+      kind: MlInit
+      topology_id: 3e9a4c20-0000-4000-8000-00000000c001
+      seed: 1234
+      example_count: 200
+      weight_artifact_id: 3e9a4c20-0000-4000-8000-00000000c002
+    outcome: started
+    events:
+      - event: patchback.fit.BenchmarkStarted
+        payload:
+          kind: MlInit
+          topology_id: 3e9a4c20-0000-4000-8000-00000000c001
+          seed: 1234

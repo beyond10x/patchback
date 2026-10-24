@@ -1,0 +1,68 @@
+# Adversary (wave a6, benchmark holdout): the holdout is defined by seed, example_count and
+# topology_id. Existence is checked by identity, not by "some topology exists"; the started
+# benchmark carries the topology it was started in, and so does the WeightArtifactRequired refusal.
+type: ess-scenario/1
+domain: patchback.fit
+scenario: engine-baseline-topology-recorded
+summary: A benchmark in another topology than the declared one is refused; one in the declared topology starts and carries it.
+
+arrange:
+  - instance: bench
+    entity: patchback.fit.Benchmark
+
+timeline:
+  - at: 2026-10-22T15:59:00Z
+    command: patchback.patch.DeclareTopology
+    actor: patchback.patch.Operator
+    input:
+      topology_id: 3e9a4c20-0000-4000-8000-00000000b001
+      name: subtractive-mono/1
+      parameters: []
+    outcome: declared
+
+  - at: 2026-10-22T16:00:00Z
+    command: patchback.fit.StartBenchmark
+    actor: patchback.fit.Operator
+    input:
+      kind: EngineBaseline
+      topology_id: 3e9a4c20-0000-4000-8000-00000000b002
+      seed: 1234
+      example_count: 1
+    outcome: unknown-topology
+    error:
+      name: patchback.fit.TopologyNotFound
+      fields:
+        topology_id: 3e9a4c20-0000-4000-8000-00000000b002
+    no_events: [patchback.fit.BenchmarkStarted]
+
+  - at: 2026-10-22T16:00:01Z
+    command: patchback.fit.StartBenchmark
+    actor: patchback.fit.Operator
+    input:
+      kind: MlInit
+      topology_id: 3e9a4c20-0000-4000-8000-00000000b001
+      seed: 1234
+      example_count: 1
+    outcome: weight-artifact-required
+    error:
+      name: patchback.fit.WeightArtifactRequired
+      fields:
+        topology_id: 3e9a4c20-0000-4000-8000-00000000b001
+    no_events: [patchback.fit.BenchmarkStarted]
+
+  - at: 2026-10-22T16:00:02Z
+    command: patchback.fit.StartBenchmark
+    actor: patchback.fit.Operator
+    input:
+      kind: EngineBaseline
+      topology_id: 3e9a4c20-0000-4000-8000-00000000b001
+      seed: 77
+      example_count: 1
+    outcome: started
+    events:
+      - event: patchback.fit.BenchmarkStarted
+        payload:
+          kind: EngineBaseline
+          topology_id: 3e9a4c20-0000-4000-8000-00000000b001
+          seed: 77
+    capture: {instance: bench, event: patchback.fit.BenchmarkStarted, field: benchmark_id}
