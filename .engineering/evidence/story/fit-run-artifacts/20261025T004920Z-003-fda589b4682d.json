@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-25T00:49:20Z",
+  "actor": "human:timo",
+  "artifact": "story:fit-run-artifacts",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "correction round 2: Da7-20, the limited row, doc lines; 287 cases green; four characterised trace patterns stay with the owner",
+    "review": "review-result:fit-run-artifacts-adversary-2",
+    "outcome": "fixed"
+  }
+}

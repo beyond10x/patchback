@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:fit-run-artifacts
 kind: story
-status: active
+status: implemented
 title: Fit run artifacts
 relations:
 - decomposes: epic:sound-engine
@@ -14,10 +14,11 @@ relations:
 scope:
 - confidence: inferred
   path: crates/patchback-fit
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-24T23:09:44Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-10-24T23:09:44Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-10-25T00:49:21Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":1}}}
 ---
 # Fit run artifacts
 

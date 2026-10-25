@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-25T00:49:20Z",
+  "actor": "human:timo",
+  "artifact": "story:fit-run-artifacts",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "real 20-render fit run: report.txt, run.meta, notes.events, trace.events and stdout match the reference docs field for field; compare of the reference and reconstructed.wav prints the best loss; two processes give identical files but wall_time_ms (adversary pass 2 report, scratch fit-run-artifacts/scratch/doc-run)"
+  }
+}
