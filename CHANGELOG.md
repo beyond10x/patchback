@@ -6,6 +6,88 @@ All notable changes to Patchback are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `patchback_fit::write_results` (story fit-run-artifacts): writes the six files of a completed
+  fit run (DESIGN.md § 11) into a directory: `patch.patch` (the best patch, canonical),
+  `notes.events` (the note sequence, canonical), `reconstructed.wav` (the clip the best patch was
+  scored on, float32, so `patchback compare` of the reference and it gives the best loss again),
+  `report.txt`, `run.meta` and `trace.events`, each created new and never overwritten, in the
+  order of `RESULT_FILES`. Every file's bytes are made before the first is written, and a
+  creation or write that fails removes every file and directory the call created
+  (`ResultsError::Io`). A failed run is refused `FitError::FailedRunHasNoPatch` and a running one
+  `FitError::FitStillRunning`, in the order of `WriteFitResults`, before anything is touched
+  (`admit_results`). `FitResults` names the directory, the retained candidate, the recovered
+  patch, the WAV's path, the warnings and the files written; `RunMeta` is what the caller fills
+  (seed, block size, ModelSpec version, SHA-256 of the input files).
+- `report.txt` (`patchback-fit-report 1`, `patchback_fit::report_text`): `patchback`,
+  `initial_loss`, `best_loss`, the four components, `evaluations`, `restarts`, `stop_reason`,
+  `wall_time_ms`, then one `warning` line per warning
+  (`warning limiter engaged on <n> of <m> rendered samples` when the limiter changed `<n>` of the
+  `<m>` samples of the best patch's whole render, before it is cut or padded to the reference's
+  length for `reconstructed.wav`; `FitResults::warnings` carries the same text). No `confidence`
+  record (Da7-4).
+- `run.meta` (`patchback-fit-run-meta 1`, `patchback_fit::run_meta_text`): `patchback`, `init`,
+  `seed`, `topology`, `feature_contract`, `prng`, `modelspec`, `reference sha256 <hex>`,
+  `notes sha256 <hex>`, the four bounds and `block_size`.
+- `trace.events` (`patchback-fit-trace 1`, `patchback_fit::trace`): the per-candidate log of
+  DESIGN.md § 9.1, written from the run's log after it completed: a `topology` line with the
+  parameter paths in index order, one `evaluation` line per evaluation (sequence, evaluation
+  count, restart, outcome, topology, the four components and total or `-` for a rejected
+  candidate, the best loss after it or `-`, the normalized values) and a closing
+  `completed <stop_reason>` line. `write_trace` writes it and `parse_trace` reads it back bit for
+  bit, refusing an unknown version, a malformed number, a line past `TRACE_MAX_LINE_BYTES`
+  (4 096, provisional) and a text without its closing line (`TraceError`). Lines no run writes
+  are refused by their own `TraceReason`: an evaluation count other than the sequence number
+  (`EvaluationCountNotSequence`), a best loss above the previous line's (`BestLossRose`), a
+  best loss of `-` after a numeric one (`BestLossLost`), a best loss of `-` on a
+  `first-retained`, `improved` or `not-improved` line (`RetainedWithoutBestLoss`) and a numeric
+  best loss on a `rejected` line before the first `first-retained` line
+  (`BestLossBeforeRetained`).
+- `patchback-dataset` (story dense-data-files): the model's `WriteDenseFile` and `FinishSplit`.
+  `DatasetStore::write_dense_file(WriteDenseFile, &[u8])` records a `DenseDataFile` (kind `X`,
+  `Y` or `Order`, `DenseFileKind`) only once it has read the file's bytes. It refuses, in the
+  model's order, a column count other than 32, 8 or 1 (`WrongColumnCount`), an unknown split
+  (`UnknownSplit`), rows other than the split's sample count (`SampleCountMismatch`), a byte count
+  that is not rows × columns × 4 or bytes that are not that many (`ByteCountMismatch`, which
+  carries the command's `byte_count`, `rows` and `columns` in both cases), and a NaN
+  or infinite `f32` in `x.f32` or `y.f32` (`NonFiniteValue`). `DatasetStore::finish_split` moves
+  a `DatasetSplit` from `SplitState::Open` to `SplitState::Written`. It refuses an unknown split,
+  a split without a verified x.f32 and y.f32 (`MissingDenseFile`), and a split already written
+  (`SplitAlreadyWritten`). `DatasetStore::dense_files_of` is the `DenseFiles` view.
+- `patchback_dataset::dense::write_split` (story dense-data-files) writes a split's `x.f32`,
+  `y.f32` and `order.u32` from its samples in draw order. The files are row-major little-endian,
+  and `f64` values become `f32` by Rust's `as`. Each file is read back and recorded through
+  `write_dense_file`, then the split is finished. `order.u32` holds the row indices 0 to N − 1,
+  and the writer checks that each entry is below N and appears once. A split that is not `Open`
+  is refused with `SplitAlreadyWritten` before anything is written or recorded; `write_dense_file`
+  itself still admits a file of a `Written` split. A file that fails
+  verification is removed and the refusal returned (`DenseError`). `dense::create_new` writes a
+  file that must not exist.
+- `patchback generate-dataset` (story dense-data-files) writes `x.f32`, `y.f32` and `order.u32`
+  into `train/`, `val/` and `test/`. Each split's files follow its `samples.meta`, and
+  `dataset.meta` comes last. A 48-sample generation writes 2,048, 512 and 64 bytes a split,
+  byte-identical for the same seed. An existing dense file is never overwritten, and a failed
+  write or verification removes everything the run wrote.
+
+### Changed
+
+- `patchback fit` (story fit-run-artifacts) writes all six files of the run instead of
+  `patch.patch` alone. Any of the six existing in `--out` (a symbolic link counting, dangling or
+  not) is refused before the search, naming the first in the order `patch.patch`,
+  `notes.events`, `reconstructed.wav`, `report.txt`, `run.meta`, `trace.events`; a write that
+  fails after the search removes everything the run wrote. `--input` and `--notes` are each read
+  once into memory, so `run.meta`'s digests are of the bytes the run used; an `--input` larger
+  than `MAX_INPUT_BYTES` (247 177 216 bytes, provisional) is refused `ClipNotFound`. The stdout
+  report and the flags are unchanged.
+- `patchback_fit::FitError` gains `FailedRunHasNoPatch` and `FitStillRunning`
+  (`spec/domains/fit.yaml` `WriteFitResults`).
+- `patchback_dataset::MAX_SAMPLES` is `u32::MAX` (story dense-data-files, Da7-10), down from
+  `i64::MAX`: a split admits at most `u32::MAX` rows, so that its row count is a `u32`.
+  `patchback generate-dataset --samples`, which bounds all splits together, admits 0 to
+  4294967295, and a larger value is a usage error (exit 2). Memory still grows with `--samples`.
+- `DatasetSplit` gains `state: SplitState` (story dense-data-files).
+
 ## [0.5.0] - 2026-10-25
 
 ### Added

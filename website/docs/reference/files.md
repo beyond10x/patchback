@@ -227,27 +227,143 @@ positions are exact up to the largest 64-bit value.
 
 ## A fit run
 
-`patchback fit --out results/` writes `patch.patch` today; the other four files are story
-fit-run-artifacts. The run's directory:
+`patchback fit --out results/` writes six files into the run's directory, each created new; none
+is ever overwritten, and a fit that finds any of them already there writes nothing:
 
 ```text
 results/
-├── patch.patch           canonical, human-readable, versioned patch data
-├── notes.events          versioned sample-timestamped events
-├── reconstructed.wav     rendered waveform
-├── report.txt            loss terms, versions, timings, warnings, confidence
-└── run.meta              seed, input digests, ModelSpec version, feature spec
+├── patch.patch           the best patch, canonical, human-readable, versioned
+├── notes.events          the note sequence the run was driven by, canonical
+├── reconstructed.wav     the clip the best patch was scored on
+├── report.txt            loss terms, counts, stop reason, wall time, warnings
+├── run.meta              versions, seed, input digests, ModelSpec pin, feature contract, bounds
+└── trace.events          one line per render evaluation
 ```
 
-`run.meta` holds what is needed to reproduce the run: the seed, digests of the inputs, the
-ModelSpec version and the feature contract.
+`report.txt` and `run.meta` are line-oriented, versioned UTF-8 text like
+[`dataset.meta`](#datasetmeta): a header line, then one record per line, a key and a value
+separated by one space. Each record appears once, in the order of its table. Reals are printed as
+Rust prints an `f64`: the shortest decimal that reads back to the same value, never in exponent
+form. The same seed, inputs, bounds and block size write the same six files, byte for byte, except
+the `wall_time_ms` record of `report.txt`, unless the wall-time bound stops the run.
+
+### patch.patch
+
+The best patch the run retained, in the canonical form of [`.patch`](#patch-patch). It loads and
+validates like any patch: `patchback patch validate results/patch.patch`.
+
+### notes.events
+
+The `--notes` sequence in the canonical form of [`.events`](#events-events): the notes in start
+order, one space between fields.
+
+### reconstructed.wav
+
+The render of the best patch, cut or padded with silence to the reference's length: the clip the
+search scored. Mono, 48 kHz, 32-bit float. So
+`patchback compare --reference reference.wav --candidate results/reconstructed.wav` prints the
+fit's `best_loss` as its `loss`.
+
+### report.txt
+
+```text
+patchback-fit-report 1
+patchback 0.6.0
+initial_loss 0.37590542047749115
+best_loss 0
+log_spectral 0
+envelope 0
+transient 0
+band_energy 0
+evaluations 12
+restarts 1
+stop_reason RenderBudgetExhausted
+wall_time_ms 2132
+```
+
+| Record | Value |
+| --- | --- |
+| `patchback-fit-report` | the format version, `1`; first line |
+| `patchback` | the Patchback version that wrote it |
+| `initial_loss` | the loss of the run's first valid candidate, the default patch's when it rendered |
+| `best_loss` | the loss of the best patch, the one written |
+| `log_spectral`, `envelope`, `transient`, `band_energy` | the best patch's four loss terms |
+| `evaluations` | the render evaluations counted, valid and rejected |
+| `restarts` | the restarts that began |
+| `stop_reason` | `RenderBudgetExhausted`, `TimeBudgetExhausted`, `RestartsExhausted` or `ImprovementBelowThreshold` |
+| `wall_time_ms` | the run's wall time in milliseconds, the reference analysis included; the one record that differs between two runs of the same inputs |
+| `warning` | zero or more, last, one per warning: `warning limiter engaged on <n> of <m> rendered samples` when the protective limiter changed `<n>` of the `<m>` samples of the best patch's whole render (`reconstructed.wav` is that render cut or padded to the reference's length, so it can hold fewer of them) |
+
+There is no `confidence` record: the design names one and does not define it yet.
+
+### run.meta
+
+```text
+patchback-fit-run-meta 1
+patchback 0.6.0
+init default
+seed 0
+topology subtractive-mono/1
+feature_contract features/1
+prng xoshiro256**
+modelspec 0.5.0
+reference sha256 45b93160d895363ef050bb4d4e1d35196a06a69892041677532d81e1a6161192
+notes sha256 8db54832289b7c7c00738b1f8a87bd19a7ad32ff97592307aa77d65c7bf68ed5
+max_renders 12
+max_wall_time_ms 60000
+max_restarts 1
+improvement_threshold 0.0001
+block_size 256
+```
+
+| Record | Value |
+| --- | --- |
+| `patchback-fit-run-meta` | the format version, `1`; first line |
+| `patchback` | the Patchback version that wrote it |
+| `init` | `default`: the run started from the default patch |
+| `seed` | the `--seed` |
+| `topology` | `subtractive-mono/1` |
+| `feature_contract` | `features/1` |
+| `prng` | the generator of the restart points, `xoshiro256**` |
+| `modelspec` | the version of the ModelSpec release the build is pinned to (`models/modelspec.pin`) |
+| `reference` | `sha256` and the 64 lower-case hexadecimal digits of the SHA-256 of the `--input` file's bytes |
+| `notes` | the same for the `--notes` file |
+| `max_renders`, `max_wall_time_ms`, `max_restarts`, `improvement_threshold` | the run's bounds, as given |
+| `block_size` | the `--block-size` |
+
+### trace.events
+
+```text
+patchback-fit-trace 1
+topology subtractive-mono/1 attack decay sustain release filter_cutoff resonance_q drive output_gain
+evaluation 1 1 0 first-retained subtractive-mono/1 0.48410502977419295 0.12391674674059834 0.5346748721716756 0.3125182637880222 0.37590542047749115 0.37590542047749115 0.5 0.5 0.5 0.5 0.5 0.5 0.5 0.5
+evaluation 2 2 0 not-improved subtractive-mono/1 0.5266998323119957 0.30277470621039193 0.5183991466580976 0.31215091418501223 0.4372911102194625 0.37590542047749115 0.75 0.5 0.5 0.5 0.5 0.5 0.5 0.5
+completed RenderBudgetExhausted
+```
+
+The per-candidate log of the run, written once the run has completed. After the header line,
+`patchback-fit-trace 1`:
+
+| Line | Fields |
+| --- | --- |
+| `topology` | the topology, then its [parameter paths](./parameters.md) in index order |
+| `evaluation` | one per render evaluation, in order: the sequence number from 1; the run's evaluation count after it, always equal to the sequence number; the restart, from 0; the outcome, `first-retained`, `improved`, `not-improved` or `rejected`; the topology; the `log_spectral`, `envelope`, `transient` and `band_energy` terms and the weighted loss, or a single `-` for a rejected candidate; the best loss after it, or `-` until a candidate is retained (a number on a `first-retained`, `improved` or `not-improved` line, `-` on a `rejected` line before the first `first-retained` one), never above the line before and never `-` again once a number; the candidate's normalized value for each path of the `topology` line |
+| `completed` | last: the stop reason |
+
+Reals are written in the shortest form that reads back to the same value, in exponent form when
+that is shorter. A reader refuses a version other than 1, a number that does not read, a line
+longer than 4 096 bytes, a line out of place, an evaluation count other than its line's sequence
+number, a best loss above the line before or `-` after a number, a `-` best loss on a
+`first-retained`, `improved` or `not-improved` line, a numeric best loss on a `rejected` line
+before the first `first-retained` line, and a file without its `completed` line. A fit that fails
+writes no trace; whether it should keep one is open.
 
 ## The dataset
 
 `patchback generate-dataset --out data/` writes `data/dataset.meta` and one directory per split,
-`data/train/`, `data/val/` and `data/test/`, each holding `samples.meta`. Both files are
-line-oriented, versioned UTF-8 text like `.patch`: a header line, then one record per line, with
-fields separated by one space.
+`data/train/`, `data/val/` and `data/test/`, each holding `samples.meta` and the split's
+[dense files](#dense-files). `dataset.meta` and `samples.meta` are line-oriented, versioned UTF-8
+text like `.patch`: a header line, then one record per line, with fields separated by one space.
 
 ### `dataset.meta`
 
@@ -293,20 +409,37 @@ unsigned decimal integers. Line `i + 1` describes row `i` of the split's dense f
 
 ### Dense files
 
-The dense files are not written yet (story dense-data-files). They will follow ModelSpec's
-dense-data layout, one directory per split:
+Each split directory also holds three binary files in ModelSpec's dense-data layout. Row `i` of
+each file is the `i`th sample of the split, in the order of `samples.meta`:
 
 ```text
 data/train/x.f32         N × 32 f32 feature matrix, one sample per row
 data/train/y.f32         N × 8  f32 normalized target matrix
-data/train/order.u32     optional, checked sequence of sample indices
+data/train/order.u32     N u32 sample indices
 data/val/x.f32
 data/val/y.f32
+data/val/order.u32
+data/test/x.f32
+data/test/y.f32
+data/test/order.u32
 ```
 
-Each matrix is row-major little-endian `f32`. `x.f32` holds the 32 values of
-[`features/1`](../concepts/listening.md#features1) per sample, `y.f32` the eight
-[normalized parameters](./parameters.md) in index order.
+| File | One row | Bytes for N samples | N = 16 | N = 4,992 |
+| --- | --- | --- | --- | --- |
+| `x.f32` | the 32 values of [`features/1`](../concepts/listening.md#features1) | N × 32 × 4 | 2,048 | 638,976 |
+| `y.f32` | the eight [normalized parameters](./parameters.md), in index order | N × 8 × 4 | 512 | 159,744 |
+| `order.u32` | the row's index | N × 4 | 64 | 19,968 |
+
+The matrices are row-major little-endian `f32`. Each value is the generator's `f64` rounded to
+the nearest `f32`. `order.u32` holds the row indices 0 to N − 1 in order, as little-endian `u32`.
+The check that `order.u32` gets is provisional until ModelSpec's expectation is known: N entries,
+each below N, each appearing once.
+
+`patchback generate-dataset` reads each file back after writing it. A file is refused, and
+nothing is left written, when its byte count is not rows × columns × 4, when a value of `x.f32`
+or `y.f32` is NaN or infinite, or when `order.u32` fails its check. A split admits at most
+`u32::MAX` (4,294,967,295) rows, so that its row count is a `u32`; `--samples`, which bounds all
+splits together, stops at the same number.
 
 ## Exported weights
 

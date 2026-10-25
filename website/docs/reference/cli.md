@@ -140,11 +140,26 @@ only when its loss is strictly lower. No render starts once the wall time has re
 `--max-wall-time-ms`, except the first, which always runs, so a time bound stops a fit instead of
 failing it. A render in progress is not interrupted, and the clock starts before the reference
 is analysed, so `wall_time_ms` may exceed `--max-wall-time-ms` by the reference analysis plus
-one evaluation. The same seed and inputs write the same `patch.patch`.
+one evaluation.
 
-It writes `patch.patch`, the best patch as canonical text, and prints one `key value` line per
-value to stdout, always these keys in this order; `out` is the directory quoted and escaped as a
-refusal quotes a path:
+It writes the run's six files into `--out` ([a fit run](./files.md#a-fit-run)):
+
+```text
+results/
+├── patch.patch           the best patch, canonical text
+├── notes.events          the --notes sequence, canonical
+├── reconstructed.wav     the clip the best patch was scored on, float32
+├── report.txt            losses, counts, stop reason, wall time, warnings
+├── run.meta              versions, seed, input digests, ModelSpec pin, bounds
+└── trace.events          one line per render evaluation
+```
+
+`patchback compare --reference reference.wav --candidate results/reconstructed.wav` prints the
+fit's `best_loss` as its `loss`. The same seed and inputs write the same files, byte for byte,
+except the `wall_time_ms` record of `report.txt`, unless the wall-time bound stops the run.
+
+It prints one `key value` line per value to stdout, always these keys in this order; `out` is the
+directory quoted and escaped as a refusal quotes a path:
 
 ```text
 out "results/"
@@ -167,7 +182,11 @@ the patch written. `stop_reason` is `RenderBudgetExhausted`, `TimeBudgetExhauste
 `RestartsExhausted` or `ImprovementBelowThreshold`. `wall_time_ms` is the run's wall time in
 milliseconds, the reference analysis included; it may exceed `--max-wall-time-ms` by the
 reference analysis plus one evaluation. `limited true` means the output limiter changed a sample
-of the best patch's render.
+of the best patch's render; `report.txt` then carries a
+`warning limiter engaged on <n> of <m> rendered samples` line, `<n>` the samples the limiter
+changed and `<m>` the frames of the best patch's whole render. `reconstructed.wav` is that render
+cut or padded to the reference's length, so it can hold fewer of the limited samples.
+
 A refused or failed fit writes nothing, not even the directory, and prints one line to stderr
 naming the error:
 
@@ -175,18 +194,23 @@ naming the error:
 patchback: fit refused: patchback.fit.InvalidSearchBound: the RenderEvaluations bound is 0; a fit runs only within positive bounds
 patchback: fit refused: patchback.fit.ClipNotFound: no clip at "missing.wav": No such file or directory (os error 2)
 patchback: fit refused: cannot write "results": is not a directory
-patchback: fit refused: cannot write "results/patch.patch": already exists; it is never overwritten
+patchback: fit refused: cannot write "results/run.meta": already exists; it is never overwritten
 ```
 
 They are answered in this order: the bounds, `--input`, `--notes`, `--out` (an `--out` that exists
 and is not a directory, a symlink that does not resolve to a directory included, or lies beneath
-such a file, then an existing `patch.patch`, the file unchanged in both cases), the reference's
-silence and pitch, the search.
+such a file; then any of the six files already in `--out`, a symlink counting whether it resolves
+or not, the first named in the order of the listing above; every file unchanged), the reference's
+silence and pitch, the search. A file that cannot be written after the search (permissions, a
+full disk) is refused the same way, `cannot write "<path>": <message>`, and every file and
+directory the run wrote is removed. The `--input` file is read once, at most 247 177 216 bytes
+(room for ten minutes of stereo float32 and its headers); a larger file is refused as
+`ClipNotFound`.
 
 | Exit status | Meaning |
 | --- | --- |
-| 0 | Fitted, and `patch.patch` written |
-| 1 | Refused: a bound of 0 (`InvalidSearchBound`), a reference that cannot be read or imported (`ClipNotFound`), a note sequence that cannot be read or parsed (`NoteSequenceNotFound`), a silent reference (`ReferenceSilent`), a reference whose pitch cannot be estimated (`PitchAmbiguous`), a run that found no valid candidate (`NoValidCandidate`), an `--out` that is not a directory, or a `patch.patch` that exists or cannot be written |
+| 0 | Fitted, and the six files written |
+| 1 | Refused: a bound of 0 (`InvalidSearchBound`), a reference that cannot be read or imported (`ClipNotFound`), a note sequence that cannot be read or parsed (`NoteSequenceNotFound`), a silent reference (`ReferenceSilent`), a reference whose pitch cannot be estimated (`PitchAmbiguous`), a run that found no valid candidate (`NoValidCandidate`), an `--out` that is not a directory, or one of the six files that exists or cannot be written |
 | 2 | Usage error: a missing `--input`, `--notes` or `--out`, a bound or seed that is not a non-negative integer, a threshold that is not a finite non-negative decimal, a `--block-size` below 1, or an unknown flag |
 
 See [the closed loop](../concepts/closed-loop.md).
@@ -249,7 +273,7 @@ patchback generate-dataset --seed 42 --samples 60000 --out data/
 | Argument | Meaning |
 | --- | --- |
 | `--seed` | The generator's seed; the same seed and build give byte-identical files |
-| `--samples` | The number of samples across all splits, from 0 to 9223372036854775807 |
+| `--samples` | The number of samples across all splits, from 0 to 4294967295 |
 | `--out` | The directory for the [dataset files](./files.md#the-dataset); created when absent |
 
 The samples are split by patch: validation and test each get
@@ -264,6 +288,14 @@ and described with [`features/1`](../concepts/listening.md#features1). A render 
 limiter changed, a silent render, and a render whose features cannot be computed (for example an
 ambiguous pitch) go to a separate diagnostic set, and the next seed is drawn. A patch is in one
 split only. The training distribution is provisional.
+
+For each split, in the order train, validation, test, the command writes `samples.meta` and then
+the split's [dense files](./files.md#dense-files) `x.f32`, `y.f32` and `order.u32`. It reads each
+dense file back and checks its byte count and that every value is finite before it writes the
+next one. `dataset.meta` is written last. `--samples` bounds all splits together, and a split
+admits at most `u32::MAX` rows, so that its row count is a `u32`; `--samples` stops at
+4294967295. Every sample stays in memory until its split's files are written, so memory grows
+with `--samples`.
 
 The command prints one `key value` line per value to stdout: `out`, the directory quoted as
 `patchback render` quotes its output, then the counts that `dataset.meta` records:
@@ -286,13 +318,14 @@ A refusal prints one line to stderr and leaves nothing written:
 ```text
 patchback: generate-dataset refused: patchback.dataset.SplitCountNotBatchMultiple: the Train split of 15 samples is not a positive multiple of the batch size 16
 patchback: generate-dataset refused: cannot write "data/dataset.meta": already exists; it is never overwritten
+patchback: generate-dataset refused: cannot write "data/train/x.f32": already exists; it is never overwritten
 ```
 
 | Exit status | Meaning |
 | --- | --- |
 | 0 | Generated and written |
-| 1 | Refused: a split count that is not a positive multiple of 16, an existing `dataset.meta` or `samples.meta`, an output that cannot be written, or a generation that ran out of draws (more than 4 per sample) before the splits were full |
-| 2 | Usage error: a missing `--seed`, `--samples` or `--out`, a `--seed` or `--samples` that is not an unsigned integer, a `--samples` above 9223372036854775807, or an unknown flag |
+| 1 | Refused: a split count that is not a positive multiple of 16, an existing `dataset.meta`, `samples.meta`, `x.f32`, `y.f32` or `order.u32`, an output that cannot be written, a dense file that does not read back with its byte count and finite values, or a generation that ran out of draws (more than 4 per sample) before the splits were full |
+| 2 | Usage error: a missing `--seed`, `--samples` or `--out`, a `--seed` or `--samples` that is not an unsigned integer, a `--samples` above 4294967295, or an unknown flag |
 
 See [train the regressor](../guides/train-the-regressor.md).
 

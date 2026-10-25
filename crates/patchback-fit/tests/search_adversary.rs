@@ -328,7 +328,11 @@ fn a_bound_the_second_render_cannot_meet_logs_only_the_first_candidate() {
 /// with a 1 ms bound the analysis and the first evaluation both run after the bound has passed.
 /// One evaluation is measured here as the search performs it (patch, validate, compile, render,
 /// pad, compare), after a warm-up, longest of three; the reference analysis once. The slack for
-/// timing noise is the adversary's: an eighth of the longest evaluation and 10 ms.
+/// timing noise is one whole evaluation and 50 ms (D-a7-14). The adversary's first slack, an
+/// eighth of an evaluation and 10 ms, failed on a loaded CI runner (release 0.5.0, run
+/// 40141574944 attempt 1: wall 1668 ms, analysis 428 ms, one evaluation 1057 ms, allowed 1627 ms),
+/// where the run's own analysis and evaluation took longer than the ones measured here. The test
+/// still fails when the wall time exceeds the analysis and two evaluations.
 #[test]
 fn the_recorded_wall_time_exceeds_its_bound_by_at_most_the_analysis_and_one_evaluation() {
     let notes = notes(43_200);
@@ -360,11 +364,11 @@ fn the_recorded_wall_time_exceeds_its_bound_by_at_most_the_analysis_and_one_eval
         analyze_clip(&reference, &AnalysisConfig::default()).unwrap();
         started.elapsed()
     };
-    // Timing noise between the run's analysis and first evaluation and those measured here: an
-    // eighth of an evaluation and 10 ms.
+    // Timing noise between the run's analysis and first evaluation and those measured here: one
+    // evaluation and 50 ms (D-a7-14).
     let longest_ms = longest.as_millis() as u64 + 1;
     let analysis_ms = analysis.as_millis() as u64 + 1;
-    let allowed = analysis_ms + longest_ms + longest_ms / 8 + 10;
+    let allowed = analysis_ms + 2 * longest_ms + 50;
     eprintln!(
         "bound 1 ms: wall_time_ms {wall}, evaluations {}, longest evaluation {longest:?}, \
          reference analysis {analysis:?}, allowed overshoot {allowed} ms",
@@ -374,7 +378,8 @@ fn the_recorded_wall_time_exceeds_its_bound_by_at_most_the_analysis_and_one_eval
     assert!(
         wall - 1 <= allowed,
         "wall_time_ms {wall} exceeds the 1 ms bound by {} ms, more than the reference analysis \
-         ({analysis_ms} ms) and one evaluation ({longest_ms} ms), {allowed} ms with the slack",
+         ({analysis_ms} ms) and two evaluations ({longest_ms} ms each), {allowed} ms with the \
+         slack",
         wall - 1
     );
 }

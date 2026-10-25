@@ -21,7 +21,7 @@ pub const FILE: &str = "status.json";
 pub const PAGE: &str = "status.mdx";
 
 /// The date [`CAPABILITIES`] was last checked against `main` and the planning store.
-pub const AS_OF: &str = "2026-10-24";
+pub const AS_OF: &str = "2026-10-25";
 
 /// A milestone of DESIGN.md § 13 and the epic that carries it.
 #[derive(Clone, Copy)]
@@ -187,7 +187,7 @@ pub const CAPABILITIES: &[Capability] = &[
     Capability {
         area: "Fit",
         label: "Bounded derivative-free search",
-        detail: "patchback fit --input --notes --out: from the default patch, then from seeded restart points, coordinate search over the eight normalized parameters (step 0.25, halving) renders and scores each candidate against the reference and keeps only a strictly lower valid loss. It stops at the render budget (--max-renders), the wall-time bound (--max-wall-time-ms), the restart count (--max-restarts) or when a restart improves less than --improvement-threshold, and writes the best patch as patch.patch. The same seed and inputs give the same patch. Invalid bounds, a missing reference or note sequence, a silent or unpitched reference and a run without a valid candidate are refused and nothing is written. The defaults and the smallest step are provisional.",
+        detail: "patchback fit --input --notes --out: from the default patch, then from seeded restart points, coordinate search over the eight normalized parameters (step 0.25, halving) renders and scores each candidate against the reference and keeps only a strictly lower valid loss. It stops at the render budget (--max-renders), the wall-time bound (--max-wall-time-ms), the restart count (--max-restarts) or when a restart improves less than --improvement-threshold, and writes the best patch as patch.patch with the run's other files. The same seed and inputs give the same patch. Invalid bounds, a missing reference or note sequence, a silent or unpitched reference and a run without a valid candidate are refused and nothing is written. The defaults and the smallest step are provisional.",
         status: "shipped",
         evidence: Some(
             "crates/patchback-cli/tests/fit.rs::fit_writes_the_best_patch_and_reports_the_run",
@@ -195,13 +195,17 @@ pub const CAPABILITIES: &[Capability] = &[
         milestone: None,
         href: "/docs/reference/cli#patchback-fit",
     },
-    planned(
-        A,
-        "Fit",
-        "The fit run's five files",
-        "patch.patch, notes.events, reconstructed.wav, report.txt and run.meta in the output directory.",
-        "/docs/reference/files#a-fit-run",
-    ),
+    Capability {
+        area: "Fit",
+        label: "The fit run's six files",
+        detail: "patchback fit writes patch.patch, notes.events, reconstructed.wav, report.txt, run.meta and trace.events into the output directory. reconstructed.wav is the clip the best patch was scored on, so patchback compare of the reference and it prints the best loss again; report.txt holds the losses, counts, stop reason, wall time and warnings; run.meta the seed, the input digests, the ModelSpec pin, the feature contract and the bounds; trace.events one line per evaluation. Any of the six already present is refused before the search, and a failed write removes everything the run wrote. The same seed and inputs write the same files, report.txt's wall time aside, unless the wall-time bound stops the run.",
+        status: "shipped",
+        evidence: Some(
+            "crates/patchback-cli/tests/fit.rs::the_same_seed_and_inputs_write_the_same_patch_in_two_processes",
+        ),
+        milestone: None,
+        href: "/docs/reference/files#a-fit-run",
+    },
     planned(
         A,
         "Fit",
@@ -261,7 +265,7 @@ pub const CAPABILITIES: &[Capability] = &[
     Capability {
         area: "Dataset",
         label: "A deterministic paired dataset",
-        detail: "patchback generate-dataset draws patch seeds from SplitMix64 of --seed. From each seed's own xoshiro256** stream it draws eight normalized parameters, a MIDI note from 36 to 84 and a gate from 0.25 to 1.5 s, log-uniform. It renders each draw with the same DSP engine and extracts features/1, then fills train, validation and test to exact multiples of the batch size 16. Splits are isolated by patch seed. Clipped, silent and noisy renders go to a separate diagnostic set and never into a split. The same seed writes byte-identical dataset.meta and samples.meta files. The x.f32 and y.f32 dense files come with the next story.",
+        detail: "patchback generate-dataset draws patch seeds from SplitMix64 of --seed. From each seed's own xoshiro256** stream it draws eight normalized parameters, a MIDI note from 36 to 84 and a gate from 0.25 to 1.5 s, log-uniform. It renders each draw with the same DSP engine and extracts features/1, then fills train, validation and test to exact multiples of the batch size 16. Splits are isolated by patch seed. Clipped, silent and noisy renders go to a separate diagnostic set and never into a split. Each split is written as ModelSpec dense data: x.f32 (N × 32) and y.f32 (N × 8), row-major little-endian f32, and order.u32 (the row indices). Each file is read back and checked: its byte count, finite values in x.f32 and y.f32, and each row index once in order.u32. The same seed writes byte-identical dataset.meta, samples.meta and dense files.",
         status: "shipped",
         evidence: Some(
             "crates/patchback-dataset/tests/generate.rs::a_real_generation_fills_each_split_with_valid_isolated_samples",
