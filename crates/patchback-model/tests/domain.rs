@@ -1,8 +1,10 @@
-//! Every refusal of a training run names an error `spec/domains/model.yaml` declares, and every
-//! error the four training-run commands declare (`PlanTrainingRun`, `BindModelSource`,
-//! `StartTrainingRun`, `FinishTrainingRun`) is emitted by driving that command through
-//! [`TrainingRun`], or is listed in [`NOT_EMITTED_BY_THE_CRATE`] with the reason no path of this
-//! crate reaches it.
+//! Every refusal of a training run and of a weight export names an error
+//! `spec/domains/model.yaml` declares, and every error the four training-run commands
+//! (`PlanTrainingRun`, `BindModelSource`, `StartTrainingRun`, `FinishTrainingRun`) and
+//! `ExportWeights` declare is emitted by driving that command through [`TrainingRun`] or
+//! [`WeightArtifact::export`], or is listed in [`NOT_EMITTED_BY_THE_CRATE`] with the reason no
+//! path of this crate reaches it. `CorruptWeightArtifact`, which `Predict` declares, is emitted
+//! by [`WeightArtifact::read`], the reader the predictor will call (Da9-10, Da9-18).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -15,8 +17,9 @@ use patchback_dataset::{
     SplitRole, WriteDenseFile,
 };
 use patchback_model::{
-    Backend, DEFAULT_TRAINING_TIMEOUT, ModelSource, ModelSpec, ModelSpecError, ModelSpecPin,
-    TrainingError, TrainingRun,
+    Backend, DEFAULT_TRAINING_TIMEOUT, ExportError, ModelSource, ModelSpec, ModelSpecError,
+    ModelSpecPin, ReadError, TrainingError, TrainingRun, TrainingRunState, W1_NAME, W1_SHAPE,
+    W2_NAME, W2_SHAPE, WeightArtifact,
 };
 
 fn spec() -> String {
@@ -33,8 +36,21 @@ fn section<'a>(text: &'a str, start: &str, end: &str) -> &'a str {
         .0
 }
 
-/// The training-run commands, each with what follows it in the domain.
-const COMMANDS: [(&str, &str); 4] = [
+/// The errors a command declares (`error:` lines between its name and `next`).
+fn declared_by(spec: &str, command: &str, next: &str) -> BTreeSet<String> {
+    section(
+        spec,
+        &format!("  - name: patchback.model.{command}\n"),
+        next,
+    )
+    .lines()
+    .filter_map(|line| line.trim().strip_prefix("error: "))
+    .map(str::to_owned)
+    .collect()
+}
+
+/// The training-run commands and `ExportWeights`, each with what follows it in the domain.
+const COMMANDS: [(&str, &str); 5] = [
     (
         "PlanTrainingRun",
         "\n  - name: patchback.model.BindModelSource\n",
@@ -51,9 +67,10 @@ const COMMANDS: [(&str, &str); 4] = [
         "FinishTrainingRun",
         "\n  - name: patchback.model.ExportWeights\n",
     ),
+    ("ExportWeights", "\n  - name: patchback.model.Predict\n"),
 ];
 
-/// The errors the four commands declare that no path of this crate emits, each with its reason.
+/// The errors the five commands declare that no path of this crate emits, each with its reason.
 const NOT_EMITTED_BY_THE_CRATE: [(&str, &str); 4] = [
     (
         "patchback.model.UnknownPin",
@@ -65,7 +82,7 @@ const NOT_EMITTED_BY_THE_CRATE: [(&str, &str); 4] = [
     ),
     (
         "patchback.model.UnknownTrainingRun",
-        "a TrainingRun is a value its methods are called on; there is no identity to miss (Da8-21)",
+        "a TrainingRun is a value its methods are called on, and WeightArtifact::export takes the run itself; there is no identity to miss (Da8-21, Da9-7)",
     ),
     (
         "patchback.model.UnknownModelSource",
@@ -87,21 +104,62 @@ fn other_pin() -> ModelSpecPin {
     .unwrap()
 }
 
-/// Stand-ins accepting every source: one reporting the repository's version, one 0.4.0.
+/// A `param` line of `count` copies of `token`.
+fn param(name: &str, shape: [usize; 2], count: usize, token: &str) -> String {
+    format!(
+        "param {name}: Tensor<f32, [{}, {}]> = [{}]",
+        shape[0],
+        shape[1],
+        vec![token; count].join(", ")
+    )
+}
+
+/// The stdout of each export stand-in: the two documented `param` lines with one defect, each
+/// leading `ExportWeights` to one refusal.
+fn export_outputs() -> [(&'static str, Vec<String>); 5] {
+    let w1 = || param(W1_NAME, W1_SHAPE, 2048, "0.5");
+    let w2 = || param(W2_NAME, W2_SHAPE, 512, "0.5");
+    [
+        ("extra-line", vec!["noise".to_owned(), w1(), w2()]),
+        (
+            "bias",
+            vec![param("@PatchRegressor.b1", W1_SHAPE, 2048, "0.5"), w2()],
+        ),
+        (
+            "transposed",
+            vec![param(W1_NAME, [64, 32], 2048, "0.5"), w2()],
+        ),
+        ("short", vec![w1(), param(W2_NAME, W2_SHAPE, 511, "0.5")]),
+        ("nan", vec![w1(), param(W2_NAME, W2_SHAPE, 512, "NaN")]),
+    ]
+}
+
+/// Stand-ins accepting every source: one reporting the repository's version, one 0.4.0, and one
+/// an export defect printing its stdout on `train` and exiting 0. Every script is written before
+/// anything is spawned (ETXTBSY).
 fn standins() -> &'static Path {
     static DIR: OnceLock<PathBuf> = OnceLock::new();
     DIR.get_or_init(|| {
         let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("patchback-model-domain-standins");
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        for (name, version) in [("checks", pin().version().to_owned()), ("other", "0.4.0".to_owned())] {
+        let script = |name: &str, version: &str, train: &str| {
             let path = dir.join(name);
             fs::write(
                 &path,
-                format!("#!/bin/sh\nif [ \"$1\" = --version ]; then echo \"modelspec {version}\"; fi\nexit 0\n"),
+                format!("#!/bin/sh\nif [ \"$1\" = --version ]; then echo \"modelspec {version}\"; exit 0; fi\nif [ \"$1\" = train ]; then {train}; fi\nexit 0\n"),
             )
             .unwrap();
             fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        };
+        let version = pin().version().to_owned();
+        script("checks", &version, ":");
+        script("other", "0.4.0", ":");
+        for (name, lines) in export_outputs() {
+            let stdout = dir.join(format!("{name}.stdout"));
+            let text: String = lines.iter().map(|line| format!("{line}\n")).collect();
+            fs::write(&stdout, text).unwrap();
+            script(name, &version, &format!("cat {}", stdout.display()));
         }
         dir
     })
@@ -156,13 +214,17 @@ fn split(store: &mut DatasetStore, batch_size: u64, count: i64, written: bool) -
     split
 }
 
-/// Each command driven to each refusal this crate can return for it: the command's name and the
-/// refusal. A call that was not refused contributes nothing, so the test below finds it missing.
-fn driven() -> Vec<(&'static str, TrainingError)> {
-    let mut refusals = Vec::new();
+/// One refusal: the command, the declared error it names (`None` for one that is not the
+/// model's) and its debug text.
+type Refusal = (&'static str, Option<&'static str>, String);
+
+/// Each command driven to each refusal this crate can return for it. A call that was not refused
+/// contributes nothing, so the test below finds it missing.
+fn driven() -> Vec<Refusal> {
+    let mut refusals: Vec<Refusal> = Vec::new();
     let mut refused = |command: &'static str, result: Result<(), TrainingError>| {
         if let Err(error) = result {
-            refusals.push((command, error));
+            refusals.push((command, error.domain_error(), format!("{error:?}")));
         }
     };
     let pin = pin();
@@ -200,6 +262,27 @@ fn driven() -> Vec<(&'static str, TrainingError)> {
 
     refused("BindModelSource", run.bind(&source.trainable().unwrap()));
     refused("FinishTrainingRun", run.finish().map(drop));
+
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("patchback-model-domain-export");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("regressor.weights");
+    let mut exported = |run: &TrainingRun| {
+        if let Err(error) = WeightArtifact::export(run, "features/1", &path) {
+            refusals.push(("ExportWeights", error.domain_error(), format!("{error:?}")));
+        }
+        assert!(!path.exists());
+    };
+    exported(&TrainingRun::plan(Backend::Cpu, &pin).unwrap());
+    for (standin, _) in export_outputs() {
+        let mut run = TrainingRun::plan(Backend::Cpu, &pin).unwrap();
+        run.bind(&source.trainable().unwrap()).unwrap();
+        let binary = ModelSpec::open(&standins().join(standin), &pin).unwrap();
+        run.start(&store, written, None, &binary, 1, DEFAULT_TRAINING_TIMEOUT)
+            .unwrap();
+        assert_eq!(run.finish().unwrap(), TrainingRunState::Completed);
+        exported(&run);
+    }
     refusals
 }
 
@@ -210,26 +293,56 @@ fn every_refusal_names_a_declared_error() {
         .lines()
         .filter_map(|line| line.strip_prefix("  - name: "))
         .collect();
-    for name in TrainingError::DOMAIN_ERRORS {
+    let lists = [
+        TrainingError::DOMAIN_ERRORS,
+        ExportError::DOMAIN_ERRORS,
+        ReadError::DOMAIN_ERRORS,
+    ];
+    for name in lists.iter().copied().flatten() {
         assert!(declared.contains(name), "{name} is not declared in spec/");
     }
-    let examples = TrainingError::examples();
-    let named: Vec<&str> = examples
-        .iter()
-        .map(|example| {
-            example
-                .domain_error()
-                .unwrap_or_else(|| panic!("{example:?} names no domain error"))
-        })
-        .collect();
-    assert_eq!(named, TrainingError::DOMAIN_ERRORS, "one example an error");
-    for example in examples {
-        let message = example.to_string();
-        assert!(
-            !message.is_empty() && !message.contains('\n'),
-            "{message:?}"
-        );
-    }
+    let named = |examples: Vec<(Option<&'static str>, String)>| -> Vec<&'static str> {
+        examples
+            .into_iter()
+            .map(|(error, message)| {
+                assert!(
+                    !message.is_empty() && !message.contains('\n'),
+                    "{message:?}"
+                );
+                error.unwrap_or_else(|| panic!("{message} names no domain error"))
+            })
+            .collect()
+    };
+    assert_eq!(
+        named(
+            TrainingError::examples()
+                .iter()
+                .map(|e| (e.domain_error(), e.to_string()))
+                .collect()
+        ),
+        TrainingError::DOMAIN_ERRORS,
+        "one example an error"
+    );
+    assert_eq!(
+        named(
+            ExportError::examples()
+                .iter()
+                .map(|e| (e.domain_error(), e.to_string()))
+                .collect()
+        ),
+        ExportError::DOMAIN_ERRORS,
+        "one example an error"
+    );
+    assert_eq!(
+        named(
+            ReadError::examples()
+                .iter()
+                .map(|e| (e.domain_error(), e.to_string()))
+                .collect()
+        ),
+        ReadError::DOMAIN_ERRORS,
+        "one example an error"
+    );
     let not_a_verdict = TrainingError::ModelSpec(ModelSpecError::NotFound {
         searched: Vec::new(),
     });
@@ -238,34 +351,22 @@ fn every_refusal_names_a_declared_error() {
 
 /// Each command's refusals, observed by driving it, and the errors listed as not emitted, are
 /// together exactly the errors the domain declares for that command; the observed ones are
-/// [`TrainingError::DOMAIN_ERRORS`].
+/// [`TrainingError::DOMAIN_ERRORS`] and [`ExportError::DOMAIN_ERRORS`].
 #[test]
-fn every_error_of_the_four_commands_is_emitted_or_accounted_for() {
+fn every_error_of_the_five_commands_is_emitted_or_accounted_for() {
     let spec = spec();
     let mut declared: BTreeMap<&str, BTreeSet<String>> = BTreeMap::new();
     for (command, next) in COMMANDS {
-        let body = section(
-            &spec,
-            &format!("  - name: patchback.model.{command}\n"),
-            next,
-        );
-        declared.insert(
-            command,
-            body.lines()
-                .filter_map(|line| line.trim().strip_prefix("error: "))
-                .map(str::to_owned)
-                .collect(),
-        );
+        declared.insert(command, declared_by(&spec, command, next));
     }
     let not_emitted: BTreeSet<&str> = NOT_EMITTED_BY_THE_CRATE.iter().map(|(n, _)| *n).collect();
     let mut observed: BTreeMap<&str, BTreeSet<String>> = COMMANDS
         .iter()
         .map(|(command, _)| (*command, BTreeSet::new()))
         .collect();
-    for (command, error) in driven() {
-        let name = error.domain_error().unwrap_or_else(|| {
-            panic!("{command} refused with {error:?}, which is no domain error")
-        });
+    for (command, name, error) in driven() {
+        let name = name
+            .unwrap_or_else(|| panic!("{command} refused with {error}, which is no domain error"));
         observed.get_mut(command).unwrap().insert(name.to_owned());
     }
     for (command, errors) in &declared {
@@ -282,10 +383,62 @@ fn every_error_of_the_four_commands_is_emitted_or_accounted_for() {
     }
 
     let all_declared: BTreeSet<&str> = declared.values().flatten().map(String::as_str).collect();
-    assert_eq!(all_declared.len(), 14, "{all_declared:?}");
+    assert_eq!(all_declared.len(), 20, "{all_declared:?}");
     let all_observed: BTreeSet<&str> = observed.values().flatten().map(String::as_str).collect();
-    let listed: BTreeSet<&str> = TrainingError::DOMAIN_ERRORS.iter().copied().collect();
+    let listed: BTreeSet<&str> = TrainingError::DOMAIN_ERRORS
+        .iter()
+        .chain(ExportError::DOMAIN_ERRORS)
+        .copied()
+        .collect();
     assert_eq!(all_observed, listed);
-    assert_eq!(all_observed.len(), 10);
+    assert_eq!(all_observed.len(), 16);
     assert!(all_observed.is_disjoint(&not_emitted));
+    let export: BTreeSet<&str> = ExportError::DOMAIN_ERRORS.iter().copied().collect();
+    assert_eq!(
+        observed["ExportWeights"]
+            .iter()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>(),
+        export
+    );
+}
+
+/// `Predict` declares `CorruptWeightArtifact`; [`WeightArtifact::read`], the reader `Predict`
+/// will call, emits it for every artifact it refuses, and it is the reader's only domain error.
+/// `Predict`'s other errors are the native predictor's (story:native-predictor).
+#[test]
+fn corrupt_weight_artifact_is_emitted_by_the_reader_for_predict() {
+    let spec = spec();
+    let predict = declared_by(&spec, "Predict", "\nevents:\n");
+    assert!(
+        predict.contains("patchback.model.CorruptWeightArtifact"),
+        "{predict:?}"
+    );
+    assert_eq!(
+        ReadError::DOMAIN_ERRORS,
+        ["patchback.model.CorruptWeightArtifact"]
+    );
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("patchback-model-domain-read");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    for (name, bytes) in [
+        ("empty", b"".as_slice()),
+        ("weights-2", b"weights/2\n\n".as_slice()),
+        ("text", b"param @PatchRegressor.w1\n".as_slice()),
+    ] {
+        let path = dir.join(name);
+        fs::write(&path, bytes).unwrap();
+        match WeightArtifact::read(&path) {
+            Err(error) => assert_eq!(
+                error.domain_error(),
+                Some("patchback.model.CorruptWeightArtifact"),
+                "{name}: {error:?}"
+            ),
+            Ok(artifact) => panic!("{name}: {artifact:?}"),
+        }
+    }
+    match WeightArtifact::read(&dir.join("missing")) {
+        Err(error @ ReadError::Io { .. }) => assert_eq!(error.domain_error(), None),
+        other => panic!("{other:?}"),
+    }
 }

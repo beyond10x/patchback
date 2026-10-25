@@ -23,16 +23,26 @@
 //!    (`PlanTrainingRun`, `BindModelSource`, `StartTrainingRun`, `FinishTrainingRun`), refusing
 //!    the Vulkan backend before anything is spawned, and records the loss curve it printed
 //!    ([`LossCurve`]) and whether it completed or failed (module `training`).
+//! 7. [`WeightArtifact::export`] reads the `param @PatchRegressor.w1` and `.w2` lines of a
+//!    `Completed` run's stdout, refuses anything outside the documented output of the pinned
+//!    version, and writes the checksummed `weights/1` file; [`WeightArtifact::read`] reads one
+//!    back and verifies it (`ExportWeights`, module `weights`).
 //!
 //! Every run of the binary is bounded by a timeout ([`DEFAULT_TIMEOUT`] unless the caller gives
 //! one to [`ModelSpec::open_with_timeout`], [`DEFAULT_TRAINING_TIMEOUT`] for a training run unless
 //! the caller gives another); past it the process is killed and waited for.
 
 mod training;
+mod weights;
 
 pub use training::{
     Backend, DEFAULT_TRAINING_TIMEOUT, LossCurve, OutputError, TrainingError, TrainingFailure,
     TrainingRun, TrainingRunState,
+};
+pub use weights::{
+    ExportError, FORMAT_VERSION, MAX_HEADER_BYTES, MODEL_NAME, PAYLOAD_BYTES,
+    RECOMMENDED_FILE_NAME, ReadError, W1_ELEMENTS, W1_NAME, W1_SHAPE, W2_ELEMENTS, W2_NAME,
+    W2_SHAPE, WeightArtifact,
 };
 
 use std::ffi::OsStr;
