@@ -17,7 +17,7 @@
 //!
 //! `samples.meta` (`patchback-dataset-samples 1`) holds one line a sample, in the order the
 //! samples were drawn, `<patch_seed> <midi_note> <gate_samples>`, unsigned decimal integers. Row
-//! `i` is the `i`th row of the split's dense files (story:dense-data-files).
+//! `i` is the `i`th row of the split's dense files ([`crate::dense`]).
 
 use patchback_analysis::FEATURES_1_VERSION;
 
