@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-25T06:03:28Z",
+  "actor": "human:timo",
+  "artifact": "story:native-predictor",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "coordinator verification of the unit tree before the commit bc8ec86 (a10/coordinator/verify-unit1.sh): 144 of 144 cases in the plain and the pinned ModelSpec 0.5.0 lane, 21 suites, 0 SKIPPED pinned, clippy -D warnings and fmt exit 0; eval-loss relative difference 6.9254e-8 under the 1e-5 limit"
+  }
+}

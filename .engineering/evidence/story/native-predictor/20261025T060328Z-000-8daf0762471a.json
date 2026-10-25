@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-25T06:03:28Z",
+  "actor": "human:timo",
+  "artifact": "story:native-predictor",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check on wave/a10 after the merge ff7e854 and the integration edits: exit 0, 1151 tests passed and 0 failed in 124 suites, 403 of 403 conformance scenarios (130 authored) against ESS 0.68.0 interpreted, 92 synthesize refusals unchanged, generate --check current (a10/coordinator/gate-1.txt)"
+  }
+}

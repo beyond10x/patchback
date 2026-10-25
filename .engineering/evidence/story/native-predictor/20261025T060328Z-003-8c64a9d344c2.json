@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-25T06:03:28Z",
+  "actor": "human:timo",
+  "artifact": "story:native-predictor",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "the stale limit in the pass-1 comment (adversary_predictor.rs:218) changed to 1e-5 by the coordinator (Da10-19); 144 of 144 both lanes in the coordinator verification",
+    "review": "review-result:native-predictor-adversary-2",
+    "outcome": "fixed"
+  }
+}

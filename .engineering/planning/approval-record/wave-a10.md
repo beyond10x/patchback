@@ -6,7 +6,7 @@ status: approved
 title: 'Wave a10 approved: the native predictor'
 relations:
 - decides: story:native-predictor
-revision: 2
+revision: 4
 transitions:
 - {from: "draft", to: "approved", at: "2026-10-25T05:03:05Z", actor: "human:timo", revision: 2}
 ---
@@ -134,9 +134,26 @@ its report; the story body carries the 2026-10-24 section):
   (microseconds, debug and release are both fine, say which) for `story:regressor-seeded-fit`'s
   search budget.
 
+- Da10-16 (adversary pass 1, F2) The pinned equivalence limit `EQUIVALENCE` in
+  `tests/pinned_predict.rs` is relative `1e-5`, not `1e-3`: measured 6.9e-8 (a margin of
+  145×); the wrong layouts the adversary measured miss it by 587× (transposed `w1`, 5.87e-3),
+  5,990× (transposed `w2`), 3,970× (`x` read one value late) and 785× (misaligned rows); the
+  sum-order variants (at most 9.5e-8) pass it, and the order is pinned by the adversary's
+  cancellation cases instead.
+- Da10-17 (adversary pass 1, F3) The `NonFinitePrediction` doc comment names `inf · 0` beside
+  `inf − inf` as a NaN source and states that the whole prediction is refused then, outputs
+  that are `±inf` included. Behaviour unchanged.
+- Da10-18 (adversary pass 1, F1) The adversary's `tests/adversary_predictor.rs` stays in the
+  unit as written: its two cancellation cases are the only ones that pin the `f32` sequential
+  summation order of Da10-5. The pass-2 file `tests/adversary_predictor_2.rs` stays likewise.
+
+- Da10-19 (adversary pass 2, F1) The coordinator edited one comment in the frozen pass-1 file
+  `tests/adversary_predictor.rs:218`, "(1e-3)" to "(1e-5, Da10-16)", before its own
+  verification; no case changed. Da10-18 still freezes the cases.
+
 ## Provisional values
 
 | Name | Value | Where | Why provisional |
 | --- | --- | --- | --- |
 | reference tolerance (Da10-9) | `1e-4 · max(1, abs(ref))` | predictor tests | DESIGN.md § 8.2 names none |
-| equivalence tolerance (Da10-9) | relative `1e-3` against `eval loss` | `tests/pinned_predict.rs` | DESIGN.md § 12.2 names none |
+| equivalence tolerance (Da10-9, Da10-16) | relative `1e-5` against `eval loss` (measured 6.9e-8; a transposed `w1` 5.87e-3) | `tests/pinned_predict.rs` | DESIGN.md § 12.2 names none |

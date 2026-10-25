@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:native-predictor
 kind: story
-status: active
+status: implemented
 title: Native matmul/relu predictor
 relations:
 - decomposes: epic:modelspec-regressor
@@ -33,10 +33,11 @@ scope:
   path: website/docs/concepts/regressor.md
 - confidence: inferred
   path: website/docs/guides/train-the-regressor.md
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-25T05:03:05Z", actor: "human:timo", revision: 8}
 - {from: "proposed", to: "active", at: "2026-10-25T05:03:05Z", actor: "human:timo", revision: 9}
+- {from: "active", to: "implemented", at: "2026-10-25T06:03:28Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":1}}}
 ---
 # Native matmul/relu predictor
 

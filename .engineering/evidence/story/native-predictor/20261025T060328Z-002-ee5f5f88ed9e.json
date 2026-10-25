@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-25T06:03:28Z",
+  "actor": "human:timo",
+  "artifact": "story:native-predictor",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "correction round 1: EQUIVALENCE 1e-3 -> 1e-5 (Da10-16), the NonFinitePrediction doc names inf*0 (Da10-17); the adversary file stays (Da10-18); 142 of 142 both lanes after the correction",
+    "review": "review-result:native-predictor-adversary-1",
+    "outcome": "fixed"
+  }
+}
