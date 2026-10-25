@@ -92,6 +92,7 @@
 //! [`ENVELOPE_FFT_LENGTH`], [`TRANSIENT_FFT_LENGTH`] and [`BAND_ENERGY_FFT_LENGTH`]. The weights
 //! are the § 9.1 values; no caller supplies its own yet.
 
+mod benchmark;
 mod error;
 mod loss;
 mod results;
@@ -99,6 +100,11 @@ mod run;
 mod search;
 pub mod trace;
 
+pub use benchmark::{
+    BaselineResult, Benchmark, BenchmarkKind, BenchmarkRow, BenchmarkState, DefaultArm,
+    DefaultArmError, LISTENING_EXAMPLE_COUNT, TARGET_REDUCTION_PERCENT, TargetVerdict, default_arm,
+    median, median_count, reduction_percent,
+};
 pub use error::{CompareError, FitError};
 pub use loss::{Comparison, LossComponents, Signal, compare, compare_signals, loss_components};
 pub use results::{

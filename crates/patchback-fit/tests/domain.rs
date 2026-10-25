@@ -144,6 +144,10 @@ const NOT_EMITTED_BY_THE_CRATE: &[(&str, &str)] = &[
         "patchback.fit.FeatureContractMismatch",
         "regressor-seeded fits are Milestone B; a6 names no weight artifact",
     ),
+    (
+        "patchback.fit.BenchmarkNotFound",
+        "a benchmark is a value; no command can name a benchmark that does not exist (Da8-10)",
+    ),
 ];
 
 #[test]
@@ -211,4 +215,62 @@ fn every_error_of_write_fit_results_is_emitted_or_accounted_for() {
         FitError::FitStillRunning.domain_error(),
         "patchback.fit.FitStillRunning"
     );
+}
+
+/// story:engine-baseline: `StartBenchmark` declares `InvalidHoldoutSize`,
+/// `WeightArtifactRequired` and `TopologyNotFound`, and `RecordBaselineResult` declares
+/// `BenchmarkNotFound`, `BenchmarkKindMismatch` and `BenchmarkStateConflict`, each in that order.
+/// `patchback_fit::Benchmark` emits every one but `BenchmarkNotFound`, which has no counterpart
+/// (Da8-10) and is in [`NOT_EMITTED_BY_THE_CRATE`].
+#[test]
+fn every_error_of_the_engine_baseline_commands_is_emitted_or_accounted_for() {
+    let fit = read("fit");
+    for (start, end, expected) in [
+        (
+            "  - name: patchback.fit.StartBenchmark\n",
+            "\n  - name: patchback.fit.RecordBaselineResult\n",
+            &[
+                "patchback.fit.InvalidHoldoutSize",
+                "patchback.fit.WeightArtifactRequired",
+                "patchback.fit.TopologyNotFound",
+            ][..],
+        ),
+        (
+            "  - name: patchback.fit.RecordBaselineResult\n",
+            "\n  - name: patchback.fit.RecordMlInitResult\n",
+            &[
+                "patchback.fit.BenchmarkNotFound",
+                "patchback.fit.BenchmarkKindMismatch",
+                "patchback.fit.BenchmarkStateConflict",
+            ][..],
+        ),
+    ] {
+        let command = section(&fit, start, end);
+        let errors: Vec<&str> = command
+            .lines()
+            .filter_map(|line| line.trim().strip_prefix("error: "))
+            .collect();
+        assert_eq!(errors, expected);
+        for name in errors {
+            let emitted = FitError::DOMAIN_ERRORS.contains(&name);
+            let accounted = NOT_EMITTED_BY_THE_CRATE.iter().any(|(n, _)| *n == name);
+            assert!(
+                emitted != accounted,
+                "{name}: emitted {emitted}, listed as not emitted {accounted}"
+            );
+        }
+    }
+    for name in [
+        "patchback.fit.InvalidHoldoutSize",
+        "patchback.fit.WeightArtifactRequired",
+        "patchback.fit.BenchmarkKindMismatch",
+        "patchback.fit.BenchmarkStateConflict",
+    ] {
+        assert!(
+            FitError::examples()
+                .iter()
+                .any(|example| example.domain_error() == name),
+            "{name} has an example"
+        );
+    }
 }

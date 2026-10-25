@@ -24,6 +24,7 @@
 //! flag after such an argument, is a usage error (2).
 
 mod analyze;
+mod benchmark;
 mod compare;
 mod fit;
 mod generate_dataset;
@@ -96,6 +97,8 @@ enum Command {
     Fit(fit::FitArgs),
     /// Generate the deterministic training, validation and test splits
     GenerateDataset(generate_dataset::GenerateDatasetArgs),
+    /// Benchmark the fit against the default patch over a synthesized holdout
+    Benchmark(benchmark::BenchmarkArgs),
 }
 
 #[derive(Subcommand)]
@@ -153,5 +156,6 @@ fn main() -> ExitCode {
         },
         Command::Fit(args) => fit::run(args),
         Command::GenerateDataset(args) => generate_dataset::run(args),
+        Command::Benchmark(args) => benchmark::run(args),
     }
 }
