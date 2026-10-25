@@ -292,7 +292,7 @@ wall_time_ms 2132
 | `restarts` | the restarts that began |
 | `stop_reason` | `RenderBudgetExhausted`, `TimeBudgetExhausted`, `RestartsExhausted` or `ImprovementBelowThreshold` |
 | `wall_time_ms` | the run's wall time in milliseconds, the reference analysis included; the one record that differs between two runs of the same inputs |
-| `warning` | zero or more, last, one per warning: `warning limiter engaged on <n> of <m> rendered samples` when the protective limiter changed `<n>` of the `<m>` samples of the best patch's whole render (`reconstructed.wav` is that render cut or padded to the reference's length, so it can hold fewer of them) |
+| `warning` | zero or more, last, one per warning: `warning limiter engaged on <n> of <m> rendered samples` when the protective limiter changed `<n>` of the `<m>` samples of the best patch's whole render (`reconstructed.wav` is that render cut or padded to the reference's length, so it can hold fewer of them); `warning clamped <n> of 8 predictions` when a `--weights` run's prediction had `<n>` of its eight values outside [0, 1], clamped into range before the search |
 
 There is no `confidence` record: the design names one and does not define it yet.
 
@@ -320,7 +320,10 @@ block_size 256
 | --- | --- |
 | `patchback-fit-run-meta` | the format version, `1`; first line |
 | `patchback` | the Patchback version that wrote it |
-| `init` | `default`: the run started from the default patch |
+| `init` | `default`: the run started from the default patch; `regressor-prediction`: its first restart started from the regressor's prediction (`patchback fit --weights --normalization`) |
+| `weights` | on a `regressor-prediction` run only, right after `init`: `sha256` and the 64 lower-case hexadecimal digits of the artifact's checksum, the SHA-256 of its 10,240-byte payload (the `sha256` line of the `weights/1` header) |
+| `weights_modelspec` | on a `regressor-prediction` run only: the ModelSpec version and commit from the artifact's `modelspec` header line (`weights_modelspec 0.5.0 7c45c1ad…`); named so because `modelspec` below is the binary's pin |
+| `normalization` | on a `regressor-prediction` run only: `sha256` and the 64 lower-case hexadecimal digits of the SHA-256 of the `--normalization` file's bytes as read |
 | `seed` | the `--seed` |
 | `topology` | `subtractive-mono/1` |
 | `feature_contract` | `features/1` |

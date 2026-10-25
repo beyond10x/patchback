@@ -42,6 +42,24 @@ default patch when no weights are present. It then runs seeded restarts and a
 improvement stalls. `--max-renders` is the budget per note; a smaller budget finishes sooner,
 a larger one searches longer.
 
+```bash
+patchback fit --input reference.wav --notes notes.events --out seeded/ \
+  --weights regressor.weights --normalization normalization.stats
+```
+
+To start the search from the regressor's guess instead of the default patch, give `patchback fit`
+both `--weights` and `--normalization`. The weights are the `weights/1` file exported from a
+trained regressor ([train the regressor](./train-the-regressor.md)); the statistics are the
+`normalization.stats` that `patchback generate-dataset` wrote for the dataset the regressor was
+trained on, so the reference's features are scaled as the training rows were. Each flag needs
+the other. The fit predicts a patch from the reference's first note and starts its first
+restart there; later restarts are as without the flags, so the run is still deterministic for a
+given seed. stdout and `run.meta` then say `init regressor-prediction`, and `run.meta` records
+both files' digests. If the prediction put some of its eight values outside [0, 1], they are
+clamped into range before the search starts, and stdout and `report.txt` end with
+`warning clamped <n> of 8 predictions`: the regressor is unsure about this sound, and the start
+is less informed than its other predictions.
+
 ## Read the results
 
 | File | Read it for |

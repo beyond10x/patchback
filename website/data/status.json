@@ -151,9 +151,16 @@
     },
     {
       "area": "Fit",
-      "detail": "The search starts from the regressor's prediction instead of the default patch, benchmarked against the default patch and the raw prediction. Milestone B.",
-      "href": "/docs/concepts/closed-loop#the-search",
+      "detail": "patchback fit --weights <weights/1> --normalization <normalization.stats> starts the search's first restart from the regressor's prediction for the reference's first note instead of the default patch, its features/1 vector taken from the note's start to the end of its release window; later restarts are unchanged. It refuses a missing or corrupt artifact, missing or malformed statistics, an artifact or statistics of another feature contract than features/1, and a first note that reaches the reference's end or whose clip is silent or pitch-ambiguous. run.meta records init regressor-prediction and both files' digests; a prediction with values outside [0, 1] is clamped and warned about. Held by test regressor_seeded_fit_seeded in crates/patchback-fit/tests/regressor_seeded_fit_scenarios.rs.",
+      "href": "/docs/guides/fit-a-recording#fit",
       "label": "A regressor-seeded fit",
+      "status": "shipped"
+    },
+    {
+      "area": "Fit",
+      "detail": "patchback benchmark compares the default patch, the default patch plus search, the raw prediction and the prediction refined by search over one seeded holdout. Milestone B.",
+      "href": "/docs/reference/cli#patchback-benchmark",
+      "label": "Default vs ML-init benchmark",
       "status": "planned"
     },
     {

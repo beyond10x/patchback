@@ -316,12 +316,23 @@ pub const CAPABILITIES: &[Capability] = &[
         milestone: None,
         href: "/docs/guides/train-the-regressor#predict-with-the-weights",
     },
+    Capability {
+        area: "Fit",
+        label: "A regressor-seeded fit",
+        detail: "patchback fit --weights <weights/1> --normalization <normalization.stats> starts the search's first restart from the regressor's prediction for the reference's first note instead of the default patch, its features/1 vector taken from the note's start to the end of its release window; later restarts are unchanged. It refuses a missing or corrupt artifact, missing or malformed statistics, an artifact or statistics of another feature contract than features/1, and a first note that reaches the reference's end or whose clip is silent or pitch-ambiguous. run.meta records init regressor-prediction and both files' digests; a prediction with values outside [0, 1] is clamped and warned about.",
+        status: "shipped",
+        evidence: Some(
+            "crates/patchback-fit/tests/regressor_seeded_fit_scenarios.rs::regressor_seeded_fit_seeded",
+        ),
+        milestone: None,
+        href: "/docs/guides/fit-a-recording#fit",
+    },
     planned(
         B,
         "Fit",
-        "A regressor-seeded fit",
-        "The search starts from the regressor's prediction instead of the default patch, benchmarked against the default patch and the raw prediction.",
-        "/docs/concepts/closed-loop#the-search",
+        "Default vs ML-init benchmark",
+        "patchback benchmark compares the default patch, the default patch plus search, the raw prediction and the prediction refined by search over one seeded holdout.",
+        "/docs/reference/cli#patchback-benchmark",
     ),
     planned(
         C,

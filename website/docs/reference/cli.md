@@ -134,14 +134,30 @@ patchback fit --input reference.wav --notes notes.events --out results/ --max-re
 | `--improvement-threshold` | A restart that lowers the best loss by less than this ends the search; a finite, non-negative loss, 0.0001 by default |
 | `--seed` | The seed of the restarts' starting points, 0 to 2^64 - 1; 0 by default |
 | `--block-size` | Frames per render block, a positive integer; 256 by default |
+| `--weights` | The regressor's `weights/1` artifact ([exported weights](./files.md#exported-weights)); requires `--normalization`. Without it the run starts from the default patch |
+| `--normalization` | The `normalization.stats` the artifact was trained with ([the dataset](./files.md#normalizationstats)), read up to 1 MiB; requires `--weights` |
 
 The fit starts from the default patch, then restarts from seeded points; each restart moves one
 normalized parameter at a time by a step that starts at 0.25 and halves, and keeps a candidate
 only when its loss is strictly lower. No render starts once the wall time has reached
 `--max-wall-time-ms`, except the first, which always runs, so a time bound stops a fit instead of
 failing it. A render in progress is not interrupted, and the clock starts before the reference
-is analysed, so `wall_time_ms` may exceed `--max-wall-time-ms` by the reference analysis plus
-one evaluation.
+is analysed, so `wall_time_ms` may exceed `--max-wall-time-ms` by the reference analysis (on a
+seeded run the first note's analysis and the prediction) plus one evaluation.
+
+With `--weights` and `--normalization`, the first restart starts from the
+[regressor](../concepts/regressor.md)'s prediction for the reference's first note instead of
+the default patch: the fit extracts the `features/1` vector of the first note from the
+reference's samples from the note's start to the end of its release window (the clip the
+regressor was trained on, one note and its release, with `generate-dataset`'s own extraction),
+normalizes it with the statistics, and runs the predictor; the eight predicted values, clamped
+to [0, 1], are the start. Anything before the first note and later notes of a phrase do not
+reach the vector. A first note that reaches the recording's end has no release window, so the
+vector cannot be computed and the seeded fit is refused (`NoValidCandidate`, naming the
+window); a first-note clip that is silent or whose pitch is ambiguous is refused the same way;
+the fit without the two flags runs. Restarts 1 and later start where they always did, so the
+run is still deterministic for a given seed. Each flag requires the other; neither given is the
+default fit, byte for byte.
 
 It writes the run's six files into `--out` ([a fit run](./files.md#a-fit-run)):
 
@@ -178,15 +194,23 @@ wall_time_ms 6856
 limited false
 ```
 
-`initial_loss` is the loss of the default patch, `best_loss` and the four components those of
+`initial_loss` is the loss of the run's start (the default patch), `best_loss` and the four components those of
 the patch written. `stop_reason` is `RenderBudgetExhausted`, `TimeBudgetExhausted`,
 `RestartsExhausted` or `ImprovementBelowThreshold`. `wall_time_ms` is the run's wall time in
-milliseconds, the reference analysis included; it may exceed `--max-wall-time-ms` by the
-reference analysis plus one evaluation. `limited true` means the output limiter changed a sample
+milliseconds, the reference analysis included (on a seeded run the first note's analysis and the
+prediction; the CLI's reference analysis is outside the clock); it may exceed `--max-wall-time-ms` by
+that plus one evaluation. `limited true` means the output limiter changed a sample
 of the best patch's render; `report.txt` then carries a
 `warning limiter engaged on <n> of <m> rendered samples` line, `<n>` the samples the limiter
 changed and `<m>` the frames of the best patch's whole render. `reconstructed.wav` is that render
 cut or padded to the reference's length, so it can hold fewer of the limited samples.
+
+`init` is `default`, or `regressor-prediction` with `--weights` and `--normalization`. A seeded
+run whose prediction had `<n>` of its eight values outside [0, 1] prints a last line
+`warning clamped <n> of 8 predictions`, and `report.txt` carries the same warning; the start
+was clamped into range, and the regressor was less sure about this sound. On a seeded run
+`initial_loss` is the prediction's loss, and `wall_time_ms` counts the first note's analysis
+and the prediction; the reference analysis the CLI makes before the fit is outside the clock.
 
 A refused or failed fit writes nothing, not even the directory, and prints one line to stderr
 naming the error:
@@ -198,10 +222,12 @@ patchback: fit refused: cannot write "results": is not a directory
 patchback: fit refused: cannot write "results/run.meta": already exists; it is never overwritten
 ```
 
-They are answered in this order: the bounds, `--input`, `--notes`, `--out` (an `--out` that exists
+They are answered in this order: the bounds, `--input`, `--notes`, with the flags `--weights`
+and `--normalization` (a missing or corrupt artifact, missing or malformed statistics), `--out` (an `--out` that exists
 and is not a directory, a symlink that does not resolve to a directory included, or lies beneath
 such a file; then any of the six files already in `--out`, a symlink counting whether it resolves
-or not, the first named in the order of the listing above; every file unchanged), the reference's
+or not, the first named in the order of the listing above; every file unchanged), with the flags
+the feature contract of the artifact and then of the statistics (`FeatureContractMismatch`), the reference's
 silence and pitch, the search. A file that cannot be written after the search (permissions, a
 full disk) is refused the same way, `cannot write "<path>": <message>`, and every file and
 directory the run wrote is removed. The `--input` file is read once, at most 247 177 216 bytes
@@ -211,8 +237,8 @@ directory the run wrote is removed. The `--input` file is read once, at most 247
 | Exit status | Meaning |
 | --- | --- |
 | 0 | Fitted, and the six files written |
-| 1 | Refused: a bound of 0 (`InvalidSearchBound`), a reference that cannot be read or imported (`ClipNotFound`), a note sequence that cannot be read or parsed (`NoteSequenceNotFound`), a silent reference (`ReferenceSilent`), a reference whose pitch cannot be estimated (`PitchAmbiguous`), a run that found no valid candidate (`NoValidCandidate`), an `--out` that is not a directory, or one of the six files that exists or cannot be written |
-| 2 | Usage error: a missing `--input`, `--notes` or `--out`, a bound or seed that is not a non-negative integer, a threshold that is not a finite non-negative decimal, a `--block-size` below 1, or an unknown flag |
+| 1 | Refused: a bound of 0 (`InvalidSearchBound`), a reference that cannot be read or imported (`ClipNotFound`), a note sequence that cannot be read or parsed (`NoteSequenceNotFound`), a silent reference (`ReferenceSilent`), a reference whose pitch cannot be estimated (`PitchAmbiguous`), a run that found no valid candidate or, with the flags, a prediction that gave no start (`NoValidCandidate`), with the flags a missing or unreadable artifact (`patchback.model.UnknownWeightArtifact`), a refused one (`patchback.model.CorruptWeightArtifact`), absent, oversize or malformed statistics (`patchback.analysis.NormalizationStatsNotFound`) or an artifact or statistics of another feature contract than `features/1` (`FeatureContractMismatch`), an `--out` that is not a directory, or one of the six files that exists or cannot be written |
+| 2 | Usage error: a missing `--input`, `--notes` or `--out`, a bound or seed that is not a non-negative integer, a threshold that is not a finite non-negative decimal, a `--block-size` below 1, `--weights` without `--normalization` or `--normalization` without `--weights`, or an unknown flag |
 
 See [the closed loop](../concepts/closed-loop.md).
 

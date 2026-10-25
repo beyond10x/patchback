@@ -6,6 +6,46 @@ All notable changes to Patchback are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `patchback fit --weights <path> --normalization <path>` (story regressor-seeded-fit): the
+  `StartFit` of `spec/domains/fit.yaml` seeded by the regressor. Each flag requires the other
+  (one alone is a usage error, exit 2); neither given is the 0.9.0 fit byte for byte. The CLI
+  loads the `weights/1` artifact with `patchback_model::Predictor::load` (a missing file is
+  `patchback.model.UnknownWeightArtifact`, one the reader refuses
+  `patchback.model.CorruptWeightArtifact`) and reads the `normalization.stats` file with
+  `patchback_analysis::read_stats` (a missing, unreadable, non-UTF-8 or malformed file, or one
+  over 1 MiB, is `patchback.analysis.NormalizationStatsNotFound`), then refuses an artifact or
+  statistics of another feature contract than `features/1` as
+  `patchback.fit.FeatureContractMismatch`, before the reference's silence and pitch. The run's
+  first restart starts from the prediction for the reference's first note, its features
+  computed as the dataset computes a training example's (`analyze_and_extract` over the
+  reference from the note's start to the end of its release window; a first note reaching the
+  recording's end, or whose clip is silent or pitch-ambiguous, is refused
+  `patchback.fit.NoValidCandidate`), normalized and checked finite as `f64` and `f32`; the
+  other restarts start where they did. stdout and `run.meta` say
+  `init regressor-prediction`; `run.meta` adds `weights sha256 <payload sha256>`,
+  `weights_modelspec <version> <commit>` and `normalization sha256 <sha256 of the file's bytes>`
+  after `init` (format version still 1); stdout and `report.txt` end with
+  `warning clamped <n> of 8 predictions` when the prediction had outputs outside [0, 1].
+- `patchback_fit::fit_request` and `patchback_fit::FitRequest` (story regressor-seeded-fit):
+  the fit's entry with an optional `patchback_analysis::Analysis` and optional
+  `patchback_fit::SeedInputs` (a `Predictor`, a `NormalizationTable` and the statistics file's
+  SHA-256); a given analysis must hold the reference's frame count and sample rate, else
+  `FitError::PredictionFailed`; `patchback_fit::fit` is `fit_request` with neither, unchanged.
+  `patchback_fit::FitOutcome` gains `init` (`patchback_fit::InitSource`: `DefaultPatch` or
+  `RegressorPrediction`) and `seeded` (`Option<patchback_fit::SeededStart>`: the raw features,
+  the `Prediction`, the artifact's checksum and ModelSpec version and commit, the statistics'
+  SHA-256). `patchback_fit::check_seed_inputs` and `patchback_fit::reference_refusal` are the
+  feature-contract check and the reference-analysis refusal mapping, public for the CLI.
+  `patchback_fit::INIT_REGRESSOR_PREDICTION` is the new `init` record.
+- `patchback_fit::FitError::AnalysisRequired` and `FitError::FeatureContractMismatch`
+  (`patchback.fit.AnalysisRequired`, `patchback.fit.FeatureContractMismatch`), and
+  `FitError::PredictionFailed`, named `patchback.fit.NoValidCandidate` like `RendererFault`: a
+  seeded start that could not be predicted (a feature extraction refusal, a normalized feature
+  that is not finite, or a `PredictError` such as `NonFinitePrediction`), the predictor's
+  message in its text.
+
 ## [0.9.0] - 2026-10-25
 
 ### Added
