@@ -14,6 +14,7 @@ const TOP_LEVEL: &[&str] = &[
     "compare",
     "fit",
     "generate-dataset",
+    "benchmark",
 ];
 
 fn run(args: &[&str]) -> Output {
@@ -335,6 +336,36 @@ fn help_after_fit_prints_its_help_and_exits_0() {
 #[test]
 fn help_after_generate_dataset_prints_its_help_and_exits_0() {
     assert_help_after(&["generate-dataset"]);
+}
+
+#[test]
+fn help_after_benchmark_prints_its_help_and_exits_0() {
+    assert_help_after(&["benchmark"]);
+}
+
+#[test]
+fn benchmark_without_its_arguments_is_a_usage_error_and_exits_2() {
+    assert_required_flags(&["benchmark"], &["--out <OUT>", "--examples <EXAMPLES>"]);
+    assert_required_flags(&["benchmark", "--out", "bench"], &["--examples <EXAMPLES>"]);
+}
+
+#[test]
+fn benchmark_with_a_negative_or_non_integer_count_is_a_usage_error_and_exits_2() {
+    for value in ["-1", "two", "1.5"] {
+        assert_usage_error(&["benchmark", "--out", "bench", "--examples", value], value);
+    }
+    assert_usage_error(
+        &[
+            "benchmark",
+            "--out",
+            "bench",
+            "--examples",
+            "1",
+            "--block-size",
+            "0",
+        ],
+        "0",
+    );
 }
 
 #[test]

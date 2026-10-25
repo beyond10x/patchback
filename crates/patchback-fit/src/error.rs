@@ -8,6 +8,7 @@ use std::fmt;
 use patchback_analysis::AnalysisError;
 
 use crate::ALIGNMENT_TOLERANCE_FRAMES;
+use crate::benchmark::{BenchmarkKind, BenchmarkState};
 use crate::run::{FitState, SearchBound};
 
 /// Why nothing was compared. A refusal produces no partial result.
@@ -120,8 +121,8 @@ impl fmt::Display for CompareError {
 impl std::error::Error for CompareError {}
 
 /// Why a fit refused to start, why a command of a [`crate::FitRun`] was refused, why a run
-/// ended without a patch, or why a run's results were not written. A refusal produces no partial
-/// result.
+/// ended without a patch, why a run's results were not written, or why a command of a
+/// [`crate::Benchmark`] was refused. A refusal produces no partial result.
 #[derive(Clone, Debug, PartialEq)]
 pub enum FitError {
     /// `patchback.fit.InvalidSearchBound`: a render, wall-time or restart bound is not positive.
@@ -160,6 +161,18 @@ pub enum FitError {
     /// `patchback.fit.FitStillRunning`: the run has not ended, so it has no final patch to write
     /// ([`crate::write_results`]).
     FitStillRunning,
+    /// `patchback.fit.InvalidHoldoutSize`: a benchmark's holdout holds no example
+    /// (`example_count <= 0`; [`crate::Benchmark::start`]).
+    InvalidHoldoutSize { example_count: i64 },
+    /// `patchback.fit.WeightArtifactRequired`: an ML-init benchmark names no weight artifact to
+    /// predict from ([`crate::Benchmark::start`]); carries the benchmark's topology.
+    WeightArtifactRequired { topology: String },
+    /// `patchback.fit.BenchmarkKindMismatch`: the result recorded is for the other kind of
+    /// benchmark ([`crate::Benchmark::record_baseline_result`]); carries the benchmark's kind.
+    BenchmarkKindMismatch { kind: BenchmarkKind },
+    /// `patchback.fit.BenchmarkStateConflict`: the benchmark already holds its result
+    /// ([`crate::Benchmark::record_baseline_result`]); carries its state.
+    BenchmarkStateConflict { state: BenchmarkState },
 }
 
 impl FitError {
@@ -175,6 +188,10 @@ impl FitError {
         "patchback.fit.NoValidCandidate",
         "patchback.fit.FailedRunHasNoPatch",
         "patchback.fit.FitStillRunning",
+        "patchback.fit.InvalidHoldoutSize",
+        "patchback.fit.WeightArtifactRequired",
+        "patchback.fit.BenchmarkKindMismatch",
+        "patchback.fit.BenchmarkStateConflict",
         "patchback.fit.SampleRateMismatch",
         "patchback.fit.LengthOutsideAlignment",
         "patchback.analysis.EmptyAudio",
@@ -203,6 +220,10 @@ impl FitError {
             Self::NoValidCandidate | Self::RendererFault { .. } => "patchback.fit.NoValidCandidate",
             Self::FailedRunHasNoPatch => "patchback.fit.FailedRunHasNoPatch",
             Self::FitStillRunning => "patchback.fit.FitStillRunning",
+            Self::InvalidHoldoutSize { .. } => "patchback.fit.InvalidHoldoutSize",
+            Self::WeightArtifactRequired { .. } => "patchback.fit.WeightArtifactRequired",
+            Self::BenchmarkKindMismatch { .. } => "patchback.fit.BenchmarkKindMismatch",
+            Self::BenchmarkStateConflict { .. } => "patchback.fit.BenchmarkStateConflict",
             Self::Compare(error) => error.domain_error(),
         }
     }
@@ -246,6 +267,16 @@ impl FitError {
             },
             Self::FailedRunHasNoPatch,
             Self::FitStillRunning,
+            Self::InvalidHoldoutSize { example_count: 0 },
+            Self::WeightArtifactRequired {
+                topology: "subtractive-mono/1".to_owned(),
+            },
+            Self::BenchmarkKindMismatch {
+                kind: BenchmarkKind::MlInit,
+            },
+            Self::BenchmarkStateConflict {
+                state: BenchmarkState::Completed,
+            },
         ];
         examples.extend(CompareError::examples().into_iter().map(Self::Compare));
         for example in &examples {
@@ -260,7 +291,11 @@ impl FitError {
                 | Self::RendererFault { .. }
                 | Self::Compare(_)
                 | Self::FailedRunHasNoPatch
-                | Self::FitStillRunning => {}
+                | Self::FitStillRunning
+                | Self::InvalidHoldoutSize { .. }
+                | Self::WeightArtifactRequired { .. }
+                | Self::BenchmarkKindMismatch { .. }
+                | Self::BenchmarkStateConflict { .. } => {}
             }
         }
         examples
@@ -317,6 +352,23 @@ impl fmt::Display for FitError {
                 "the fit run has not ended, so it has no final patch to write; no results are \
                  written",
             ),
+            Self::InvalidHoldoutSize { example_count } => write!(
+                f,
+                "the holdout of {example_count} examples holds no example; a benchmark needs at \
+                 least one; no benchmark starts"
+            ),
+            Self::WeightArtifactRequired { topology } => write!(
+                f,
+                "an ML-init benchmark in {topology:?} names no weight artifact to predict from; \
+                 no benchmark starts"
+            ),
+            Self::BenchmarkKindMismatch { kind } => write!(
+                f,
+                "the benchmark is {kind}; the result recorded is for the other kind of benchmark"
+            ),
+            Self::BenchmarkStateConflict { state } => {
+                write!(f, "the benchmark is {state}; it already holds its result")
+            }
         }
     }
 }
