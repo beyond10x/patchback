@@ -19,9 +19,21 @@
 //!    `Unchecked`.
 //! 5. [`ModelSource::trainable`] is the guard a training run takes: only a `Checked` source yields
 //!    a [`CheckedModel`], which nothing else can construct.
+//! 6. [`TrainingRun`] runs `modelspec train` on a checked model and written dense data
+//!    (`PlanTrainingRun`, `BindModelSource`, `StartTrainingRun`, `FinishTrainingRun`), refusing
+//!    the Vulkan backend before anything is spawned, and records the loss curve it printed
+//!    ([`LossCurve`]) and whether it completed or failed (module `training`).
 //!
 //! Every run of the binary is bounded by a timeout ([`DEFAULT_TIMEOUT`] unless the caller gives
-//! one to [`ModelSpec::open_with_timeout`]); past it the process is killed and waited for.
+//! one to [`ModelSpec::open_with_timeout`], [`DEFAULT_TRAINING_TIMEOUT`] for a training run unless
+//! the caller gives another); past it the process is killed and waited for.
+
+mod training;
+
+pub use training::{
+    Backend, DEFAULT_TRAINING_TIMEOUT, LossCurve, OutputError, TrainingError, TrainingFailure,
+    TrainingRun, TrainingRunState,
+};
 
 use std::ffi::OsStr;
 use std::fmt;
@@ -357,7 +369,8 @@ fn drain(pipe: Option<impl Read + Send + 'static>) -> mpsc::Receiver<io::Result<
 const POLL: Duration = Duration::from_millis(10);
 
 /// Run `binary` with `arguments` and wait at most `timeout` for it to exit and close its output.
-/// Past the deadline the child is killed and waited for.
+/// Past the deadline the child is killed and waited for. A `timeout` too long to add to the
+/// current instant (such as `Duration::MAX`) sets no deadline: the child is waited for.
 fn run(binary: &Path, arguments: &[&OsStr], timeout: Duration) -> Result<Run, ModelSpecError> {
     let failed = |error| ModelSpecError::Io {
         binary: binary.to_path_buf(),
@@ -367,7 +380,7 @@ fn run(binary: &Path, arguments: &[&OsStr], timeout: Duration) -> Result<Run, Mo
         binary: binary.to_path_buf(),
         timeout,
     };
-    let deadline = Instant::now() + timeout;
+    let deadline = Instant::now().checked_add(timeout);
     let mut child = Command::new(program(binary))
         .args(arguments)
         .stdin(Stdio::null())
@@ -385,7 +398,9 @@ fn run(binary: &Path, arguments: &[&OsStr], timeout: Duration) -> Result<Run, Mo
         let now = Instant::now();
         match polled {
             Ok(Some(status)) => break status,
-            Ok(None) if now < deadline => thread::sleep(POLL.min(deadline - now)),
+            Ok(None) if deadline.is_none_or(|deadline| now < deadline) => {
+                thread::sleep(deadline.map_or(POLL, |deadline| POLL.min(deadline - now)))
+            }
             outcome => {
                 let _ = child.kill();
                 let _ = child.wait();
@@ -399,11 +414,15 @@ fn run(binary: &Path, arguments: &[&OsStr], timeout: Duration) -> Result<Run, Mo
     // A process the child left behind can hold the pipes open after the child exits; the
     // deadline bounds that wait too.
     let collect = |receiver: mpsc::Receiver<io::Result<Vec<u8>>>| {
-        let left = deadline.saturating_duration_since(Instant::now());
-        match receiver.recv_timeout(left) {
-            Ok(result) => result.map_err(failed),
-            Err(_) => Err(timed_out()),
-        }
+        let received = match deadline {
+            Some(deadline) => receiver
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                .map_err(|_| timed_out())?,
+            None => receiver.recv().unwrap_or_else(|_| {
+                Err(io::Error::other("the output reader ended without a result"))
+            }),
+        };
+        received.map_err(failed)
     };
     let stdout = collect(stdout)?;
     let stderr = collect(stderr)?;
@@ -641,6 +660,19 @@ impl CheckedModel<'_> {
     /// The version of that pin.
     pub fn model_spec_version(&self) -> &str {
         self.source.model_spec_pin.version()
+    }
+}
+
+/// The source a [`CheckedModel`] was made from, so [`TrainingRun::bind`] takes either.
+impl AsRef<ModelSource> for CheckedModel<'_> {
+    fn as_ref(&self) -> &ModelSource {
+        self.source
+    }
+}
+
+impl AsRef<ModelSource> for ModelSource {
+    fn as_ref(&self) -> &ModelSource {
+        self
     }
 }
 
