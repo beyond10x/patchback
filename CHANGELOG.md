@@ -6,6 +6,8 @@ All notable changes to Patchback are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-25
+
 ### Added
 
 - `patchback_model::WeightArtifact::export` (story weight-export): the `ExportWeights` of
