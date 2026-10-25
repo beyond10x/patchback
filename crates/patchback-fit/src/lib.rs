@@ -7,7 +7,13 @@
 //! seeded restarts of coordinate search over the normalized parameters, each candidate rendered
 //! by `patchback-dsp` and scored by [`compare`], stopped at a render, wall-time or restart bound
 //! or when a restart improves less than a threshold. Its module documentation states the exact
-//! rule. [`FitRun`] is the run of `spec/domains/fit.yaml` with its commands; [`FitError`] names
+//! rule. [`fit`] starts from the default patch; [`fit_request`] mirrors `StartFit` and, given
+//! [`SeedInputs`] (a loaded weight artifact and the training split's normalization statistics)
+//! and the reference's analysis, starts restart 0 from the native regressor's prediction
+//! instead ([`InitSource::RegressorPrediction`], [`SeededStart`]; DESIGN.md § 9.2 step 1),
+//! refusing a missing analysis ([`FitError::AnalysisRequired`]) and an input of another feature
+//! contract than `features/1` ([`FitError::FeatureContractMismatch`]).
+//! [`FitRun`] is the run of `spec/domains/fit.yaml` with its commands; [`FitError`] names
 //! the errors they refuse with. The provisional values of the search are [`INITIAL_STEP`] (the
 //! D-a6-2 value), [`MIN_STEP`], [`DEFAULT_MAX_RENDERS`], [`DEFAULT_MAX_WALL_TIME_MS`],
 //! [`DEFAULT_MAX_RESTARTS`] and [`DEFAULT_IMPROVEMENT_THRESHOLD`].
@@ -108,10 +114,10 @@ pub use benchmark::{
 pub use error::{CompareError, FitError};
 pub use loss::{Comparison, LossComponents, Signal, compare, compare_signals, loss_components};
 pub use results::{
-    FitResults, INIT_DEFAULT, NOTES_FILE, PATCH_FILE, PATCHBACK_VERSION, RECONSTRUCTED_WAV_FILE,
-    REPORT_FILE, REPORT_FORMAT_VERSION, REPORT_HEADER, RESULT_FILES, RUN_META_FILE,
-    RUN_META_FORMAT_VERSION, RUN_META_HEADER, ResultsError, RunMeta, TRACE_FILE, admit_results,
-    report_text, run_meta_text, warnings, write_results,
+    FitResults, INIT_DEFAULT, INIT_REGRESSOR_PREDICTION, NOTES_FILE, PATCH_FILE, PATCHBACK_VERSION,
+    RECONSTRUCTED_WAV_FILE, REPORT_FILE, REPORT_FORMAT_VERSION, REPORT_HEADER, RESULT_FILES,
+    RUN_META_FILE, RUN_META_FORMAT_VERSION, RUN_META_HEADER, ResultsError, RunMeta, TRACE_FILE,
+    admit_results, report_text, run_meta_text, warnings, write_results,
 };
 pub use run::{
     DEFAULT_IMPROVEMENT_THRESHOLD, DEFAULT_MAX_RENDERS, DEFAULT_MAX_RESTARTS,
@@ -119,8 +125,9 @@ pub use run::{
     SearchBound, StopReason,
 };
 pub use search::{
-    Evaluation, FitConfig, FitOutcome, INITIAL_STEP, MIN_STEP, Rejection, default_point, fit,
-    patch_at, restart_point,
+    Evaluation, FitConfig, FitOutcome, FitRequest, INITIAL_STEP, InitSource, MIN_STEP, Rejection,
+    SeedInputs, SeededStart, check_seed_inputs, default_point, fit, fit_request, patch_at,
+    reference_refusal, restart_point,
 };
 pub use trace::{
     TRACE_FORMAT_VERSION, TRACE_HEADER, TRACE_MAX_LINE_BYTES, Trace, TraceError, TraceReason,

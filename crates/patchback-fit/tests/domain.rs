@@ -133,16 +133,9 @@ const NOT_EMITTED_BY_THE_CRATE: &[(&str, &str)] = &[
         "estimated note sequences are Milestone C; a6 fits known notes only (D-a6-1)",
     ),
     (
-        "patchback.fit.AnalysisRequired",
-        "regressor-seeded fits are Milestone B; a6 starts from the default patch",
-    ),
-    (
         "patchback.fit.AnalysisNotFound",
-        "regressor-seeded fits are Milestone B; a6 names no analysis",
-    ),
-    (
-        "patchback.fit.FeatureContractMismatch",
-        "regressor-seeded fits are Milestone B; a6 names no weight artifact",
+        "an analysis is a value (patchback_fit::FitRequest::analysis); no request can name an \
+         analysis that does not exist (Da11-5)",
     ),
     (
         "patchback.fit.BenchmarkNotFound",
@@ -273,4 +266,38 @@ fn every_error_of_the_engine_baseline_commands_is_emitted_or_accounted_for() {
             "{name} has an example"
         );
     }
+}
+
+/// story:regressor-seeded-fit: `StartFit` declares `AnalysisRequired` and
+/// `FeatureContractMismatch` for a regressor-seeded fit, and `patchback_fit::fit_request` emits
+/// both, each with an example; a prediction that cannot be made is the fit's `NoValidCandidate`
+/// (Da11-12), as a renderer fault is.
+#[test]
+fn the_regressor_seeded_refusals_are_emitted() {
+    for name in [
+        "patchback.fit.AnalysisRequired",
+        "patchback.fit.FeatureContractMismatch",
+    ] {
+        assert!(FitError::DOMAIN_ERRORS.contains(&name), "{name} is emitted");
+        assert!(
+            !NOT_EMITTED_BY_THE_CRATE.iter().any(|(n, _)| *n == name),
+            "{name} is not listed as not emitted"
+        );
+        assert!(
+            FitError::examples()
+                .iter()
+                .any(|example| example.domain_error() == name),
+            "{name} has an example"
+        );
+    }
+    let failed = FitError::PredictionFailed {
+        message: "patchback.model.NonFinitePrediction: output 3 is NaN".to_owned(),
+    };
+    assert_eq!(failed.domain_error(), "patchback.fit.NoValidCandidate");
+    assert!(
+        FitError::examples()
+            .iter()
+            .any(|example| matches!(example, FitError::PredictionFailed { .. })),
+        "PredictionFailed has an example"
+    );
 }

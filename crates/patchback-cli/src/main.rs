@@ -6,7 +6,8 @@
 //! <wav> [--block-size <frames>]` ([`render`]), `analyze --input <wav> --out <dir>`
 //! ([`analyze`]), `compare --reference <wav> --candidate <wav>` ([`compare`]), `fit --input
 //! <wav> --notes <file> --out <dir> [--max-renders <n>] [--max-wall-time-ms <ms>]
-//! [--max-restarts <n>] [--improvement-threshold <loss>] [--seed <n>] [--block-size <frames>]`
+//! [--max-restarts <n>] [--improvement-threshold <loss>] [--seed <n>] [--block-size <frames>]
+//! [--weights <path> --normalization <path>]`
 //! ([`fit`]), `benchmark --out <dir> --examples <n> [--seed <n>] [--topology <name>]
 //! [--max-renders <n>] [--max-wall-time-ms <ms>] [--max-restarts <n>] [--improvement-threshold
 //! <loss>] [--block-size <frames>]` ([`benchmark`]) and `generate-dataset --seed <n> --samples

@@ -192,6 +192,7 @@ dependencies = [
  "patchback-audio",
  "patchback-core",
  "patchback-dsp",
+ "patchback-model",
 ]
 
 [[package]]
