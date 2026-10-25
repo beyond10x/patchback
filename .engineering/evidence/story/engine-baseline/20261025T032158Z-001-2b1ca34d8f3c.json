@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-25T03:21:58Z",
+  "actor": "human:timo",
+  "artifact": "story:engine-baseline",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "patchback benchmark --examples 3 --seed 7 (the implementor's scratch example, regenerated after Da8-46): clip 0 patch seed 13524456677075056560, fit seed 836295751125946591, median_loss_reduction_percent 35.07730932849679, verdict Met; two runs of the same flags byte-identical in every file but wall_time_ms (cli/tests/benchmark.rs); compare of examples/k/reference.wav with fit.wav and default.wav reproduces clip k's losses bit for bit for k = 0..2 (benchmark_adversary.rs)"
+  }
+}

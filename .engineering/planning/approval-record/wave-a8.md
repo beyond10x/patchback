@@ -8,7 +8,7 @@ relations:
 - decides: story:engine-baseline
 - decides: story:normalization-stats
 - decides: story:training-run
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "approved", at: "2026-10-25T01:21:55Z", actor: "human:timo", revision: 2, correlation: "wave-a8"}
 ---
@@ -294,3 +294,11 @@ Taken after unit 3's adversary pass 2 (2026-10-25):
   the default 5,000 steps), and says which output errors leave the loss curve empty (a missing
   or malformed `step` line) and which keep it (a missing `eval` line). DESIGN.md:324, which
   gives the command without `--steps`, is the owner's.
+
+Taken after unit 1's correction round 2 (2026-10-25):
+
+- Da8-50 The adversary's fit-seed case moves to `--seed 83`, the first seed at which restart 1 of
+  the recorded fit seed runs and wins, and asserts that fits seeded with either wrong seed (83
+  and 0) record a different best loss, evaluation count or render: with Da8-46 clip 0's patch is
+  no longer the stream's first output, and at most seeds restart 1 loses to restart 0, so the
+  old tail could not fail. `HOLDOUT_DOMAIN` is `0x686f_6c64_6f75_7431` (ASCII `holdout1`).

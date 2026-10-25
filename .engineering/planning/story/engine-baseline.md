@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:engine-baseline
 kind: story
-status: active
+status: implemented
 title: Engine baseline against the default patch
 relations:
 - decomposes: epic:sound-engine
@@ -35,10 +35,11 @@ scope:
   path: crates/patchback-fit/tests/engine_baseline.rs
 - confidence: inferred
   path: website/docs/reference/cli.md
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-25T01:22:04Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":2}}, correlation: "wave-a8"}
 - {from: "proposed", to: "active", at: "2026-10-25T01:22:04Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":2}}, correlation: "wave-a8"}
+- {from: "active", to: "implemented", at: "2026-10-25T03:21:58Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"test_result":1,"review_outcome":4,"verification":1}}}
 ---
 # Engine baseline against the default patch
 
