@@ -5,11 +5,22 @@
 //! driven by its known notes (D-a6-1), with `patchback_fit::fit` (its module documentation
 //! states the search and its stopping rule exactly). The run starts from the default patch.
 //!
-//! On success the best patch is written as `<out>/patch.patch`, the canonical text of
-//! `patchback_core::patch::write_patch`; `<out>` is created when absent. Nothing else is
-//! written yet (`notes.events`, `reconstructed.wav`, `report.txt`, `run.meta` and
-//! `trace.events` are story:fit-run-artifacts). A refused or failed fit writes nothing, not even
-//! the directory.
+//! On success the run's six files (DESIGN.md § 11) are written into `<out>` by
+//! `patchback_fit::write_results`, whose module documentation states each file's records;
+//! `<out>` and its missing parents are created when absent:
+//!
+//! | File | Contents |
+//! |---|---|
+//! | `patch.patch` | the best patch, the canonical text of `patchback_core::patch::write_patch` |
+//! | `notes.events` | the `--notes` sequence in its canonical form |
+//! | `reconstructed.wav` | the clip the best patch was scored on, mono float32 48 kHz: `patchback compare --reference <input> --candidate <out>/reconstructed.wav` prints the `best_loss` below as its `loss` |
+//! | `report.txt` | `patchback-fit-report 1`: the version, the values printed below but `out`, `init` and `limited`, and one `warning` line per warning (`limiter engaged on <n> of <m> rendered samples` when the limiter changed `<n>` of the `<m>` samples of the best patch's uncut render) |
+//! | `run.meta` | `patchback-fit-run-meta 1`: the version, `init`, the seed, topology, feature contract, generator, the ModelSpec pin's version, the SHA-256 of the `--input` and `--notes` bytes as read, the bounds and the block size |
+//! | `trace.events` | `patchback-fit-trace 1`: one line per evaluation, in order (`patchback_fit::trace`) |
+//!
+//! The `--input` and `--notes` files are each read once, into memory: the digest is of the bytes
+//! the run used. `--input` is read up to [`MAX_INPUT_BYTES`]. A refused or failed fit writes
+//! nothing, not even the directory.
 //!
 //! # Flags
 //!
@@ -49,7 +60,7 @@
 //! | `band_energy` | its band-energy distribution component |
 //! | `stop_reason` | `RenderBudgetExhausted`, `TimeBudgetExhausted`, `RestartsExhausted` or `ImprovementBelowThreshold` |
 //! | `wall_time_ms` | the run's wall time in milliseconds, from the fit's start (the reference analysis included) to its end; it may exceed `--max-wall-time-ms` by the reference analysis and one evaluation |
-//! | `limited` | `true` when the protective output limiter changed a sample of the best patch's render, else `false` |
+//! | `limited` | `true` when the protective output limiter changed a sample of the best patch's uncut render, else `false`; `reconstructed.wav` is that render cut or padded to the reference's length, so it can hold fewer of the limited samples, or none |
 //!
 //! # Refusals
 //!
@@ -59,8 +70,9 @@
 //!
 //! 1. `patchback.fit.InvalidSearchBound`: `--max-renders`, `--max-wall-time-ms` or
 //!    `--max-restarts` of 0, named `RenderEvaluations`, `WallTime` or `Restarts`.
-//! 2. `patchback.fit.ClipNotFound`: an `--input` that cannot be read or that the WAV importer
-//!    refuses (its `patchback.audio` error follows): no clip was imported.
+//! 2. `patchback.fit.ClipNotFound`: an `--input` that cannot be read, that is larger than
+//!    [`MAX_INPUT_BYTES`], or that the WAV importer refuses (its `patchback.audio` error
+//!    follows): no clip was imported.
 //! 3. `patchback.fit.NoteSequenceNotFound`: a `--notes` file that cannot be read or that the
 //!    parser refuses (its `patchback.score` error follows).
 //! 4. `patchback.fit.ReferenceSilent`, `patchback.fit.PitchAmbiguous`: the reference's analysis
@@ -71,41 +83,65 @@
 //!    comparison refused, for example a note sequence at a rate other than 48 kHz) and failed.
 //!
 //! The topology is always `subtractive-mono/1`, so `TopologyNotFound` cannot be reached here.
+//! `WriteFitResults` is answered by `patchback_fit::write_results` after a completed run only, so
+//! its `FailedRunHasNoPatch` and `FitStillRunning` cannot be reached here either (a failed run is
+//! refused with its reason above, before anything is written), nor its `FitRunNotFound` (the
+//! run is a value).
+//!
 //! The output is not part of the model. Its refusals read `patchback: fit refused: cannot write
 //! "<path>": <message>`. Before the search, after `--notes` and before silence and pitch (the
-//! order bounds, `--input`, `--notes`, `<out>`, silence and pitch, the search):
+//! order bounds, `--input`, `--notes`, `<out>`, the ModelSpec pin, silence and pitch, the
+//! search):
 //!
 //! - an `--out` that exists and is not a directory, or the nearest existing ancestor of an
 //!   absent `--out` that is not one, a symbolic link counting as a directory only when it
 //!   resolves to one (a dangling link is not): `cannot write "<that path>": is not a
 //!   directory`, the file unchanged;
-//! - an existing `<out>/patch.patch`: `cannot write "<out>/patch.patch": already exists; it is
-//!   never overwritten`, the file unchanged.
+//! - any of the six files existing in `<out>`, a symbolic link there counting whether it resolves
+//!   or not, the first in the order `patch.patch`, `notes.events`, `reconstructed.wav`,
+//!   `report.txt`, `run.meta`, `trace.events`: `cannot write "<out>/<file>": already exists; it
+//!   is never overwritten`, every file unchanged (Da7-6).
 //!
-//! After the search, a directory or file that still cannot be created or written (permissions,
-//! a full disk) is refused the same way; a partial `patch.patch` is removed.
+//! Then the compiled-in ModelSpec pin (`models/modelspec.pin`, `patchback_model::ModelSpecPin`)
+//! is read for `run.meta`; a pin that does not parse is refused `patchback: fit refused: the
+//! ModelSpec pin is refused: <PinError>`. The repository's pin parses
+//! (`crates/patchback-model/tests/pinned_binary.rs` and `tests/fit_results.rs` unwrap it), so
+//! this refusal is not reachable from a binary built from the repository.
+//!
+//! After the search, a file the writers refuse, or a directory or file that cannot be created or
+//! written (permissions, a full disk, a file created in `<out>` during the search), is refused
+//! `cannot write "<path>": <message>`, and every file and directory the run created is removed.
 
 use std::fs;
-use std::io::{self, Write as _};
+use std::io::{self, Read as _};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::Args;
-use patchback_audio::{AudioClip, ReadError, read_wav};
+use patchback_audio::{AudioClip, MAX_FRAMES, decode};
+use patchback_core::digest::sha256;
 use patchback_core::parameter::Topology;
-use patchback_core::patch::write_patch;
-use patchback_core::score::{NoteSequence, ReadEventsError, read_events_file};
+use patchback_core::score::{
+    MAX_FILE_BYTES as MAX_EVENTS_FILE_BYTES, NoteSequence, ReadEventsError, read_events,
+};
 use patchback_dsp::RenderConfig;
 use patchback_fit::{
     DEFAULT_IMPROVEMENT_THRESHOLD, DEFAULT_MAX_RENDERS, DEFAULT_MAX_RESTARTS,
-    DEFAULT_MAX_WALL_TIME_MS, FitBounds, FitConfig, FitError, FitOutcome, fit,
+    DEFAULT_MAX_WALL_TIME_MS, FitBounds, FitConfig, FitError, FitOutcome, RESULT_FILES,
+    ResultsError, RunMeta, fit, write_results,
 };
+use patchback_model::ModelSpecPin;
 
 /// The command ran and refused; it wrote nothing.
 const REFUSED: u8 = 1;
 
-/// The name of the patch file in the results directory (DESIGN.md § 11).
-const PATCH_FILE: &str = "patch.patch";
+/// The most bytes of `--input` a fit reads: room for the samples of the longest clip the WAV
+/// importer admits (`patchback_audio::MAX_FRAMES`, ten minutes at 48 kHz) as stereo float32,
+/// 8 bytes a frame, and 16 MiB for its headers and other chunks. The file is held in memory once,
+/// so its digest is of the bytes the clip was decoded from. Provisional: a larger file is refused
+/// `ClipNotFound` although its audio might be within the import bound; any reference a fit
+/// analyses (at most 60 s) is far below it.
+pub const MAX_INPUT_BYTES: u64 = MAX_FRAMES as u64 * 8 + (1 << 24);
 
 /// The arguments of `patchback fit`.
 #[derive(Args, Debug)]
@@ -208,7 +244,7 @@ fn saturating(value: u64) -> i64 {
     i64::try_from(value).unwrap_or(i64::MAX)
 }
 
-/// Fits and writes `patch.patch`; on success returns the completed fit.
+/// Fits and writes the six files of the run; on success returns the completed fit.
 pub fn fit_and_write(args: &FitArgs) -> Result<FitOutcome, Refusal> {
     let config = FitConfig {
         bounds: FitBounds {
@@ -224,30 +260,40 @@ pub fn fit_and_write(args: &FitArgs) -> Result<FitOutcome, Refusal> {
     };
     // 1. The bounds, before any input is read.
     config.bounds.check()?;
-    // 2. The reference, 3. the note sequence.
-    let reference = read_reference(&args.input)?;
-    let notes = read_notes(&args.notes)?;
-    // `<out>`: a directory the patch can be created in, as far as can be known without writing.
+    // 2. The reference, 3. the note sequence, each with the digest of its bytes.
+    let (reference, reference_sha256) = read_reference(&args.input)?;
+    let (notes, notes_sha256) = read_notes(&args.notes)?;
+    // `<out>`: a directory the files can be created in, as far as can be known without writing.
     if let Some(blocking) = non_directory_on_the_way(&args.out) {
         return Err(Refusal::io(blocking, "is not a directory"));
     }
-    let patch_path = args.out.join(PATCH_FILE);
-    if patch_path.exists() {
-        return Err(Refusal::io(
-            &patch_path,
-            "already exists; it is never overwritten",
-        ));
+    for name in RESULT_FILES {
+        let path = args.out.join(name);
+        if fs::symlink_metadata(&path).is_ok() {
+            return Err(Refusal::io(
+                &path,
+                "already exists; it is never overwritten",
+            ));
+        }
     }
+    let pin = ModelSpecPin::repository().map_err(|error| {
+        Refusal::one_line(format!(
+            "patchback: fit refused: the ModelSpec pin is refused: {error}"
+        ))
+    })?;
     // 4. Silence and pitch, then the search; 5. a failed run.
     let outcome = fit(&reference, &notes, &Topology::subtractive_mono(), &config)?;
-    let text = write_patch(&outcome.patch).map_err(|error| {
-        Refusal::io(
-            &patch_path,
-            format_args!("{}: {error}", error.reason.spec_error()),
-        )
+    let meta = RunMeta {
+        seed: args.seed,
+        block_size_frames: args.block_size,
+        modelspec_version: pin.version().to_owned(),
+        reference_sha256,
+        notes_sha256,
+    };
+    write_results(&args.out, &outcome, &notes, &meta).map_err(|error| match error {
+        ResultsError::Run(error) => Refusal::from(error),
+        error => Refusal::one_line(format!("patchback: fit refused: {error}")),
     })?;
-    fs::create_dir_all(&args.out).map_err(|error| Refusal::io(&args.out, error))?;
-    write_new(&patch_path, text.as_bytes()).map_err(|error| Refusal::io(&patch_path, error))?;
     Ok(outcome)
 }
 
@@ -263,43 +309,45 @@ fn non_directory_on_the_way(out: &Path) -> Option<&Path> {
         .filter(|path| !path.is_dir())
 }
 
-fn read_reference(path: &Path) -> Result<AudioClip, Refusal> {
-    read_wav(path).map_err(|error| {
-        Refusal::domain(
-            "patchback.fit.ClipNotFound",
-            match &error {
-                ReadError::Io(io) => format!("no clip at {path:?}: {io}"),
-                ReadError::Wav(wav) => format!("{path:?}: {}: {wav}", wav.domain_error()),
-            },
-        )
-    })
+/// Reads the file at `path`, at most `limit + 1` bytes of it, so a longer file is seen to be
+/// longer without being read whole.
+fn read_bounded(path: &Path, limit: u64) -> io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    fs::File::open(path)?
+        .take(limit.saturating_add(1))
+        .read_to_end(&mut bytes)?;
+    Ok(bytes)
 }
 
-fn read_notes(path: &Path) -> Result<NoteSequence, Refusal> {
-    read_events_file(path).map_err(|error| {
-        Refusal::domain(
-            "patchback.fit.NoteSequenceNotFound",
-            match &error {
-                ReadEventsError::Io(io) => format!("no note sequence at {path:?}: {io}"),
-                ReadEventsError::Format(format) => {
-                    format!("{path:?}: {}: {format}", format.reason.spec_error())
-                }
-            },
-        )
-    })
-}
-
-/// Writes `bytes` to a file that must not exist yet; a failed write removes the partial file.
-fn write_new(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)?;
-    let written = file.write_all(bytes).and_then(|()| file.sync_all());
-    if written.is_err() {
-        let _ = fs::remove_file(path);
+/// The reference clip and the SHA-256 of the bytes it was decoded from.
+fn read_reference(path: &Path) -> Result<(AudioClip, [u8; 32]), Refusal> {
+    let refused = |message: String| Refusal::domain("patchback.fit.ClipNotFound", message);
+    let bytes = read_bounded(path, MAX_INPUT_BYTES)
+        .map_err(|io| refused(format!("no clip at {path:?}: {io}")))?;
+    if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > MAX_INPUT_BYTES {
+        return Err(refused(format!(
+            "{path:?}: the file is larger than the {MAX_INPUT_BYTES} bytes a fit reads"
+        )));
     }
-    written
+    let clip = decode(&bytes)
+        .map_err(|wav| refused(format!("{path:?}: {}: {wav}", wav.domain_error())))?;
+    Ok((clip, sha256(&bytes)))
+}
+
+/// The note sequence and the SHA-256 of the bytes it was parsed from.
+fn read_notes(path: &Path) -> Result<(NoteSequence, [u8; 32]), Refusal> {
+    let refused = |message: String| Refusal::domain("patchback.fit.NoteSequenceNotFound", message);
+    let bytes = read_bounded(path, MAX_EVENTS_FILE_BYTES as u64)
+        .map_err(|io| refused(format!("no note sequence at {path:?}: {io}")))?;
+    let notes = read_events(bytes.as_slice()).map_err(|error| {
+        refused(match &error {
+            ReadEventsError::Io(io) => format!("no note sequence at {path:?}: {io}"),
+            ReadEventsError::Format(format) => {
+                format!("{path:?}: {}: {format}", format.reason.spec_error())
+            }
+        })
+    })?;
+    Ok((notes, sha256(&bytes)))
 }
 
 /// The stdout lines of a completed fit (module documentation).

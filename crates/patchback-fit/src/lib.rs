@@ -12,6 +12,15 @@
 //! D-a6-2 value), [`MIN_STEP`], [`DEFAULT_MAX_RENDERS`], [`DEFAULT_MAX_WALL_TIME_MS`],
 //! [`DEFAULT_MAX_RESTARTS`] and [`DEFAULT_IMPROVEMENT_THRESHOLD`].
 //!
+//! # The results
+//!
+//! [`write_results`] writes the six files of a completed run (DESIGN.md § 11): `patch.patch`,
+//! `notes.events`, `reconstructed.wav`, `report.txt`, `run.meta` and `trace.events`, refusing a
+//! failed run ([`FitError::FailedRunHasNoPatch`]) and a running one
+//! ([`FitError::FitStillRunning`]) in the order of `WriteFitResults`; its module documentation
+//! states each file's records. [`write_trace`] and [`parse_trace`] are the writer and parser of
+//! `trace.events` ([`trace`]).
+//!
 //! # The comparison
 //!
 //! [`compare`] (and [`compare_signals`] on bare samples) compares a candidate rendering with a
@@ -85,11 +94,19 @@
 
 mod error;
 mod loss;
+mod results;
 mod run;
 mod search;
+pub mod trace;
 
 pub use error::{CompareError, FitError};
 pub use loss::{Comparison, LossComponents, Signal, compare, compare_signals, loss_components};
+pub use results::{
+    FitResults, INIT_DEFAULT, NOTES_FILE, PATCH_FILE, PATCHBACK_VERSION, RECONSTRUCTED_WAV_FILE,
+    REPORT_FILE, REPORT_FORMAT_VERSION, REPORT_HEADER, RESULT_FILES, RUN_META_FILE,
+    RUN_META_FORMAT_VERSION, RUN_META_HEADER, ResultsError, RunMeta, TRACE_FILE, admit_results,
+    report_text, run_meta_text, warnings, write_results,
+};
 pub use run::{
     DEFAULT_IMPROVEMENT_THRESHOLD, DEFAULT_MAX_RENDERS, DEFAULT_MAX_RESTARTS,
     DEFAULT_MAX_WALL_TIME_MS, EvaluationOutcome, FailureReason, FitBounds, FitRun, FitState,
@@ -98,6 +115,10 @@ pub use run::{
 pub use search::{
     Evaluation, FitConfig, FitOutcome, INITIAL_STEP, MIN_STEP, Rejection, default_point, fit,
     patch_at, restart_point,
+};
+pub use trace::{
+    TRACE_FORMAT_VERSION, TRACE_HEADER, TRACE_MAX_LINE_BYTES, Trace, TraceError, TraceReason,
+    TraceRecord, parse_trace, write_trace,
 };
 
 /// The weight of the log-spectral component (DESIGN.md § 9.1).

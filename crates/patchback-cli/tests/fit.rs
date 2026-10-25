@@ -1,8 +1,10 @@
 //! `patchback fit --input <wav> --notes <events> --out <dir> …` on files the tests write: the
 //! acceptance scenarios of story:bounded-search-fit (`spec/scenarios/bounded-search-fit-*.yaml`)
 //! that need clips and note sequences named by path, through the binary, with exit 0 (fitted,
-//! `patch.patch` written), 1 (refused, one stderr line naming an error of `spec/`, nothing
-//! written) and 2 (usage error). The search itself is held by `crates/patchback-fit/tests/`.
+//! the six files of a fit run written), 1 (refused, one stderr line naming an error of `spec/`,
+//! nothing written) and 2 (usage error). The search itself is held by
+//! `crates/patchback-fit/tests/`; the files of story:fit-run-artifacts by
+//! `crates/patchback-fit/tests/results.rs` and `tests/fit_results.rs`.
 //!
 //! References are rendered by `patchback render` from a known patch, 0.25 s notes, small budgets.
 
@@ -229,12 +231,37 @@ fn fit_writes_the_best_patch_and_reports_the_run() {
         patchback_core::patch::write_patch(&patchback_core::patch::parse_patch(&written).unwrap())
             .unwrap();
     assert_eq!(written, canonical, "patch.patch is the canonical text");
-    let entries: Vec<_> = fs::read_dir(&out).unwrap().collect();
-    assert_eq!(entries.len(), 1, "a6 writes patch.patch only");
+    let mut entries: Vec<String> = fs::read_dir(&out)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .collect();
+    entries.sort_unstable();
+    assert_eq!(
+        entries,
+        [
+            "notes.events",
+            "patch.patch",
+            "reconstructed.wav",
+            "report.txt",
+            "run.meta",
+            "trace.events",
+        ],
+        "story:fit-run-artifacts: the six files of DESIGN.md § 11, nothing else"
+    );
 }
 
-/// § 2 invariant 5: two processes with the same seed and inputs write the same `patch.patch`,
-/// byte for byte, and report the same run.
+/// The six files of a fit run (DESIGN.md § 11).
+const RESULT_FILES: [&str; 6] = [
+    "patch.patch",
+    "notes.events",
+    "reconstructed.wav",
+    "report.txt",
+    "run.meta",
+    "trace.events",
+];
+
+/// § 2 invariant 5: two processes with the same seed and inputs write the same six files, byte
+/// for byte, except the `wall_time_ms` record of `report.txt`, and report the same run.
 #[test]
 fn the_same_seed_and_inputs_write_the_same_patch_in_two_processes() {
     let dir = scratch("repeatable");
@@ -255,10 +282,29 @@ fn the_same_seed_and_inputs_write_the_same_patch_in_two_processes() {
     let second = fit(&input, &notes, &b, &args);
     assert_eq!(first.status.code(), Some(0), "{}", text(&first.stderr));
     assert_eq!(second.status.code(), Some(0), "{}", text(&second.stderr));
-    assert_eq!(
-        fs::read(a.join("patch.patch")).unwrap(),
-        fs::read(b.join("patch.patch")).unwrap()
-    );
+    for name in RESULT_FILES {
+        let (x, y) = (
+            fs::read(a.join(name)).unwrap(),
+            fs::read(b.join(name)).unwrap(),
+        );
+        if name == "report.txt" {
+            let wall = |bytes: &[u8]| -> Vec<String> {
+                text(bytes)
+                    .lines()
+                    .filter(|line| !line.starts_with("wall_time_ms "))
+                    .map(str::to_owned)
+                    .collect()
+            };
+            assert_eq!(wall(&x), wall(&y), "{name}");
+            assert_eq!(
+                text(&x).lines().count(),
+                wall(&x).len() + 1,
+                "one wall_time_ms record"
+            );
+        } else {
+            assert_eq!(x, y, "{name}");
+        }
+    }
     let without = |records: Vec<(String, String)>| -> Vec<(String, String)> {
         records
             .into_iter()
