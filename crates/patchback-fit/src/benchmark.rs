@@ -1,17 +1,22 @@
 //! The benchmark of `spec/domains/fit.yaml` (`Benchmark`, lifecycle Running → Completed) and its
-//! engine-baseline commands as methods, each answering its outcomes in the model's order
-//! (story:engine-baseline, DESIGN.md § 12.2, § 13 Milestone A):
+//! commands as methods, each answering its outcomes in the model's order (story:engine-baseline,
+//! DESIGN.md § 12.2, § 13 Milestone A; story:ml-init-benchmark, § 9.2, § 13 Milestone B):
 //!
 //! | Method | Command | Outcomes, in order |
 //! |---|---|---|
 //! | [`Benchmark::start`] | `StartBenchmark` | `invalid-holdout-size`, `weight-artifact-required`, `unknown-topology`, `started` |
 //! | [`Benchmark::record_baseline_result`] | `RecordBaselineResult` | `kind-mismatch`, `target-met`, `target-not-met`, `wrong-state` |
+//! | [`Benchmark::record_ml_init_result`] | `RecordMlInitResult` | `kind-mismatch`, `recorded`, `wrong-state` |
 //!
 //! A benchmark is a value, as a [`crate::FitRun`] is (Da8-10): `no-such-benchmark`
 //! (`BenchmarkNotFound`) has no counterpart, since no call can name a benchmark that does not
-//! exist, and the `Benchmarks` view is [`Benchmark::summary`]. `RecordMlInitResult` is
-//! story:ml-init-benchmark's; its fields (`raw_regressor_median_loss`,
-//! `regressor_search_median_loss`, `regressor_search_median_evaluations`) stay absent here.
+//! exist, and the `Benchmarks` view is [`Benchmark::summary`]. The crate models no events: what
+//! `BenchmarkCompleted` and `MlInitCompared` carry is read from the completed value.
+//!
+//! An ML-init benchmark (§ 13 B) records four arms over one holdout: the default patch, the
+//! default plus search, the raw regressor prediction and the regressor plus search, with both
+//! searches' median evaluations ([`MlInitResult`]). No reduction and no verdict are recorded for
+//! it: § 13 B's exit sets no numeric target (`fit.yaml`, `RecordMlInitResult`; Da12-9).
 //!
 //! The topology is named, not identified by Uuid: the code knows topologies by name
 //! (`patchback_core::patch::known_topology`), and [`FitError::TopologyNotFound`] carries the name,
@@ -41,6 +46,10 @@
 //! the default point), so when that evaluation is valid its total is this loss; it is computed
 //! here, apart from the fit's log, because the run's `initial_loss` is the first *valid*
 //! candidate's and differs from the default's when the default render is rejected.
+//!
+//! [`predicted_arm`] is the same pattern at any point (Da12-4): the ML-init benchmark's raw
+//! regressor arm renders the regressor's prediction for a clip once through it. At the default
+//! point it is [`default_arm`], bit for bit.
 
 use std::fmt;
 
@@ -158,6 +167,29 @@ pub struct BaselineResult {
     pub median_loss_reduction_percent: f64,
     /// The median of the fits' render evaluations.
     pub default_search_median_evaluations: i64,
+    /// The wall time of the whole benchmark, in milliseconds.
+    pub wall_time_ms: u64,
+    /// The listening examples' paths.
+    pub listening_examples: Vec<String>,
+}
+
+/// The input of `RecordMlInitResult` besides the benchmark: the four arms' median losses over
+/// the holdout, the two searches' median render evaluations, the wall time and the listening
+/// examples (`fit.yaml`, `RecordMlInitResult`). Every arm is required, so none can be left out.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MlInitResult {
+    /// The median of the default patch's loss over the holdout (arm 1).
+    pub default_median_loss: f64,
+    /// The median of the default-started fit's best loss over the holdout (arm 2).
+    pub default_search_median_loss: f64,
+    /// The median of the raw regressor prediction's loss over the holdout (arm 3).
+    pub raw_regressor_median_loss: f64,
+    /// The median of the regressor-seeded fit's best loss over the holdout (arm 4).
+    pub regressor_search_median_loss: f64,
+    /// The median of the default-started fits' render evaluations.
+    pub default_search_median_evaluations: i64,
+    /// The median of the regressor-seeded fits' render evaluations.
+    pub regressor_search_median_evaluations: i64,
     /// The wall time of the whole benchmark, in milliseconds.
     pub wall_time_ms: u64,
     /// The listening examples' paths.
@@ -283,6 +315,37 @@ impl Benchmark {
         Ok(verdict)
     }
 
+    /// Records the ML-init comparison and completes the benchmark (`RecordMlInitResult`):
+    /// refused for a benchmark of another kind ([`FitError::BenchmarkKindMismatch`]), then for
+    /// one already Completed ([`FitError::BenchmarkStateConflict`]), in the model's order;
+    /// otherwise every field of `result` is set (the four median losses, both searches' median
+    /// evaluations, the wall time and the listening examples) and the benchmark is Completed. No
+    /// reduction and no verdict are recorded (`fit.yaml`: "no verdict is recorded for an
+    /// ML-init benchmark"; Da12-9), so [`Self::median_loss_reduction_percent`] and
+    /// [`Self::target_verdict`] stay absent. A refusal changes nothing.
+    ///
+    /// `MlInitCompared`'s payload is the four medians the completed benchmark holds. The method
+    /// checks no value: the model declares no refusal of a median, and `patchback benchmark`
+    /// records the medians of finite losses.
+    pub fn record_ml_init_result(&mut self, result: MlInitResult) -> Result<(), FitError> {
+        if self.kind != BenchmarkKind::MlInit {
+            return Err(FitError::BenchmarkKindMismatch { kind: self.kind });
+        }
+        if self.state != BenchmarkState::Running {
+            return Err(FitError::BenchmarkStateConflict { state: self.state });
+        }
+        self.default_median_loss = Some(result.default_median_loss);
+        self.default_search_median_loss = Some(result.default_search_median_loss);
+        self.raw_regressor_median_loss = Some(result.raw_regressor_median_loss);
+        self.regressor_search_median_loss = Some(result.regressor_search_median_loss);
+        self.default_search_median_evaluations = Some(result.default_search_median_evaluations);
+        self.regressor_search_median_evaluations = Some(result.regressor_search_median_evaluations);
+        self.wall_time_ms = Some(result.wall_time_ms);
+        self.listening_examples = Some(result.listening_examples);
+        self.state = BenchmarkState::Completed;
+        Ok(())
+    }
+
     /// The benchmark's row of the `Benchmarks` view.
     pub fn summary(&self) -> BenchmarkRow {
         BenchmarkRow {
@@ -332,12 +395,12 @@ impl Benchmark {
         self.default_search_median_loss
     }
 
-    /// Recorded by `RecordMlInitResult` (story:ml-init-benchmark); absent here.
+    /// Recorded by `RecordMlInitResult` ([`Self::record_ml_init_result`]); absent otherwise.
     pub fn raw_regressor_median_loss(&self) -> Option<f64> {
         self.raw_regressor_median_loss
     }
 
-    /// Recorded by `RecordMlInitResult` (story:ml-init-benchmark); absent here.
+    /// Recorded by `RecordMlInitResult` ([`Self::record_ml_init_result`]); absent otherwise.
     pub fn regressor_search_median_loss(&self) -> Option<f64> {
         self.regressor_search_median_loss
     }
@@ -354,7 +417,7 @@ impl Benchmark {
         self.default_search_median_evaluations
     }
 
-    /// Recorded by `RecordMlInitResult` (story:ml-init-benchmark); absent here.
+    /// Recorded by `RecordMlInitResult` ([`Self::record_ml_init_result`]); absent otherwise.
     pub fn regressor_search_median_evaluations(&self) -> Option<i64> {
         self.regressor_search_median_evaluations
     }
@@ -458,8 +521,79 @@ pub fn default_arm(
     topology: &Topology,
     render_config: &RenderConfig,
 ) -> Result<DefaultArm, DefaultArmError> {
-    let patch = patch_at(topology, &default_point(topology))
-        .map_err(|error| DefaultArmError::Patch(error.to_string()))?;
+    arm_at(
+        reference,
+        notes,
+        topology,
+        &default_point(topology),
+        render_config,
+    )
+}
+
+/// Why the raw regressor arm of a clip has no loss: the reasons of [`DefaultArmError`], for the
+/// predicted point's patch instead of the default one.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PredictedArmError(pub DefaultArmError);
+
+impl PredictedArmError {
+    /// The error of `spec/` this refusal names, where it names one.
+    pub fn domain_error(&self) -> Option<&'static str> {
+        self.0.domain_error()
+    }
+}
+
+impl fmt::Display for PredictedArmError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.0 {
+            DefaultArmError::Patch(message) => {
+                write!(f, "the predicted patch is refused: {message}")
+            }
+            DefaultArmError::Render(error) => {
+                write!(f, "the predicted patch's render is refused: {error}")
+            }
+            DefaultArmError::Audio(error) => {
+                write!(f, "the predicted patch's render is no clip: {error}")
+            }
+            DefaultArmError::Compare(error) => {
+                write!(
+                    f,
+                    "the predicted patch's render cannot be compared: {error}"
+                )
+            }
+            DefaultArmError::NonFiniteLoss => {
+                f.write_str("the predicted patch's loss is not finite and non-negative")
+            }
+        }
+    }
+}
+
+impl std::error::Error for PredictedArmError {}
+
+/// The raw regressor arm of one clip (module documentation, Da12-4): the patch at `point`, the
+/// regressor's prediction as normalized values at their contracts' indices
+/// ([`crate::SeededStart::point`]), rendered once against the clip's notes, cut or padded to the
+/// reference's length and compared with it, exactly as [`default_arm`] scores the default point.
+/// A value outside `[0, 1]` is clamped by [`patch_at`]; a NaN or infinite one is refused.
+pub fn predicted_arm(
+    reference: &AudioClip,
+    notes: &NoteSequence,
+    topology: &Topology,
+    point: &[f64],
+    render_config: &RenderConfig,
+) -> Result<DefaultArm, PredictedArmError> {
+    arm_at(reference, notes, topology, point, render_config).map_err(PredictedArmError)
+}
+
+/// The patch at `point` scored against `reference` (module documentation, "The default arm").
+fn arm_at(
+    reference: &AudioClip,
+    notes: &NoteSequence,
+    topology: &Topology,
+    point: &[f64],
+    render_config: &RenderConfig,
+) -> Result<DefaultArm, DefaultArmError> {
+    let patch =
+        patch_at(topology, point).map_err(|error| DefaultArmError::Patch(error.to_string()))?;
     let validated = validate(&patch)
         .map_err(|error| DefaultArmError::Patch(format!("{}: {error}", error.spec_error())))?;
     let rendered =

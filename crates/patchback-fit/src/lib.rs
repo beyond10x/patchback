@@ -108,8 +108,9 @@ pub mod trace;
 
 pub use benchmark::{
     BaselineResult, Benchmark, BenchmarkKind, BenchmarkRow, BenchmarkState, DefaultArm,
-    DefaultArmError, LISTENING_EXAMPLE_COUNT, TARGET_REDUCTION_PERCENT, TargetVerdict, default_arm,
-    median, median_count, reduction_percent,
+    DefaultArmError, LISTENING_EXAMPLE_COUNT, MlInitResult, PredictedArmError,
+    TARGET_REDUCTION_PERCENT, TargetVerdict, default_arm, median, median_count, predicted_arm,
+    reduction_percent,
 };
 pub use error::{CompareError, FitError};
 pub use loss::{Comparison, LossComponents, Signal, compare, compare_signals, loss_components};

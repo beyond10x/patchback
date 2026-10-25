@@ -187,10 +187,12 @@ pub enum FitError {
     /// predict from ([`crate::Benchmark::start`]); carries the benchmark's topology.
     WeightArtifactRequired { topology: String },
     /// `patchback.fit.BenchmarkKindMismatch`: the result recorded is for the other kind of
-    /// benchmark ([`crate::Benchmark::record_baseline_result`]); carries the benchmark's kind.
+    /// benchmark ([`crate::Benchmark::record_baseline_result`],
+    /// [`crate::Benchmark::record_ml_init_result`]); carries the benchmark's kind.
     BenchmarkKindMismatch { kind: BenchmarkKind },
     /// `patchback.fit.BenchmarkStateConflict`: the benchmark already holds its result
-    /// ([`crate::Benchmark::record_baseline_result`]); carries its state.
+    /// ([`crate::Benchmark::record_baseline_result`],
+    /// [`crate::Benchmark::record_ml_init_result`]); carries its state.
     BenchmarkStateConflict { state: BenchmarkState },
 }
 

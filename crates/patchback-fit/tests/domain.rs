@@ -268,6 +268,64 @@ fn every_error_of_the_engine_baseline_commands_is_emitted_or_accounted_for() {
     }
 }
 
+/// story:ml-init-benchmark: `RecordMlInitResult` declares `BenchmarkNotFound`,
+/// `BenchmarkKindMismatch` and `BenchmarkStateConflict`, in that order, its outcomes
+/// `no-such-benchmark`, `kind-mismatch`, `recorded` and `wrong-state` in that order.
+/// `patchback_fit::Benchmark::record_ml_init_result` emits the last two (kind before state,
+/// `tests/ml_init_benchmark.rs`); `BenchmarkNotFound` has no counterpart (Da8-10) and is in
+/// [`NOT_EMITTED_BY_THE_CRATE`].
+#[test]
+fn every_error_of_record_ml_init_result_is_emitted_or_accounted_for() {
+    let fit = read("fit");
+    let command = section(
+        &fit,
+        "  - name: patchback.fit.RecordMlInitResult\n",
+        "\nevents:\n",
+    );
+    let outcomes: Vec<&str> = command
+        .split_once("\n    outcomes:\n")
+        .expect("the command declares its outcomes")
+        .1
+        .lines()
+        .filter_map(|line| line.strip_prefix("      - name: "))
+        .collect();
+    assert_eq!(
+        outcomes,
+        [
+            "no-such-benchmark",
+            "kind-mismatch",
+            "recorded",
+            "wrong-state"
+        ]
+    );
+    let errors: Vec<&str> = command
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("error: "))
+        .collect();
+    assert_eq!(
+        errors,
+        [
+            "patchback.fit.BenchmarkNotFound",
+            "patchback.fit.BenchmarkKindMismatch",
+            "patchback.fit.BenchmarkStateConflict",
+        ]
+    );
+    for name in errors {
+        let emitted = FitError::DOMAIN_ERRORS.contains(&name);
+        let accounted = NOT_EMITTED_BY_THE_CRATE.iter().any(|(n, _)| *n == name);
+        assert!(
+            emitted != accounted,
+            "{name}: emitted {emitted}, listed as not emitted {accounted}"
+        );
+    }
+    assert!(
+        NOT_EMITTED_BY_THE_CRATE
+            .iter()
+            .any(|(n, _)| *n == "patchback.fit.BenchmarkNotFound"),
+        "BenchmarkNotFound is accounted for"
+    );
+}
+
 /// story:regressor-seeded-fit: `StartFit` declares `AnalysisRequired` and
 /// `FeatureContractMismatch` for a regressor-seeded fit, and `patchback_fit::fit_request` emits
 /// both, each with an example; a prediction that cannot be made is the fit's `NoValidCandidate`
