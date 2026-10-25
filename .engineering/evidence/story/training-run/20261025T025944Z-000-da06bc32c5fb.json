@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-25T02:59:44Z",
+  "actor": "human:timo",
+  "artifact": "story:training-run",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "correction rounds 1 and 1b: Da8-39 to Da8-43; 60 cases green without the binary",
+    "review": "review-result:training-run-adversary-1",
+    "outcome": "fixed"
+  }
+}

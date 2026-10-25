@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-25T03:13:46Z",
+  "actor": "human:timo",
+  "artifact": "story:training-run",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "end to end through the binaries (adversary pass 2, scratch a8/training-run/scratch/adv-e2e/): patchback generate-dataset --seed 42 --samples 96 exit 0 (64/16/16 rows, normalization.stats written); modelspec check exit 0; modelspec train models/patch_regressor.mspec --backend cpu --data train --eval validation --steps 4 exit 0: step 0 loss 1.0717294, step 4 loss 0.8882302, eval loss=0.9350907802581787; without --steps exit 1 E-DATA-008 (indices 64, needed 80000)"
+  }
+}

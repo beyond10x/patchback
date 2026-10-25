@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-25T03:13:46Z",
+  "actor": "human:timo",
+  "artifact": "story:training-run",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "pass 2 green in both lanes; G1 and G3 routed to the guide at integration (Da8-49); G2 cases kept",
+    "review": "review-result:training-run-adversary-2",
+    "outcome": "fixed"
+  }
+}

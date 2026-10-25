@@ -8,7 +8,7 @@ relations:
 - decides: story:engine-baseline
 - decides: story:normalization-stats
 - decides: story:training-run
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "approved", at: "2026-10-25T01:21:55Z", actor: "human:timo", revision: 2, correlation: "wave-a8"}
 ---
@@ -285,3 +285,12 @@ Taken after unit 1's adversary pass 2 (2026-10-25):
 - Da8-48 Unit 2's pass-2 finding (the module doc of `patchback-analysis::normalization` said every
   overflowing sum is refused; since Da8-44 a constant column at `f64::MAX` is admitted) is a
   one-sentence doc reword, made by the coordinator during verification; the gate ran after it.
+
+Taken after unit 3's adversary pass 2 (2026-10-25):
+
+- Da8-49 The guide `train-the-regressor.md` written at integration gives the `modelspec train`
+  command with `--steps` such that steps × 16 does not exceed the training split's rows (the
+  pinned binary refuses otherwise with `E-DATA-008`, observed at 64 and at 50,016 rows against
+  the default 5,000 steps), and says which output errors leave the loss curve empty (a missing
+  or malformed `step` line) and which keep it (a missing `eval` line). DESIGN.md:324, which
+  gives the command without `--steps`, is the owner's.
