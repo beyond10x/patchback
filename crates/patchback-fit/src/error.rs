@@ -130,6 +130,19 @@ pub enum FitError {
     /// `patchback.fit.TopologyNotFound`: the renderer knows no topology of this name, so no
     /// patch of it can be generated.
     TopologyNotFound { topology: String },
+    /// `patchback.fit.AnalysisRequired`: a regressor-seeded fit names a weight artifact but no
+    /// analysis of the reference to predict from ([`crate::fit_request`]); carries the artifact's
+    /// checksum, the SHA-256 of its payload in hexadecimal.
+    AnalysisRequired { weights_sha256: String },
+    /// `patchback.fit.FeatureContractMismatch`: an input of a regressor-seeded fit is of another
+    /// feature contract than the analysis, `features/1` ([`crate::fit_request`]); `input` names
+    /// it (`weight artifact` or `normalization statistics`), `expected` is the analysis's
+    /// contract and `found` the input's.
+    FeatureContractMismatch {
+        input: &'static str,
+        expected: String,
+        found: String,
+    },
     /// `patchback.fit.ReferenceSilent`: the reference's analysis found it silent
     /// (`patchback.analysis.SilentInput`).
     ReferenceSilent { cause: AnalysisError },
@@ -151,6 +164,12 @@ pub enum FitError {
     /// contracts' ranges). The run has no valid patch to write, so it is named
     /// `patchback.fit.NoValidCandidate`; the message names the validation error.
     RendererFault { message: String },
+    /// A regressor-seeded fit whose start could not be predicted: the reference's features
+    /// could not be extracted, a normalized feature is not finite as `f64` or `f32`, or the
+    /// predictor refused (`patchback_model::PredictError`, Da11-12). No run starts, so there is
+    /// no valid candidate: it is named `patchback.fit.NoValidCandidate`, as a renderer fault is;
+    /// the message names the refusal.
+    PredictionFailed { message: String },
     /// The reference's analysis refused it for a reason the comparison shares (an empty clip, a
     /// rate other than 48 kHz, a clip past the analysis duration bound, a non-finite sample):
     /// every comparison against it would be refused, so the fit is.
@@ -181,6 +200,8 @@ impl FitError {
     pub const DOMAIN_ERRORS: &'static [&'static str] = &[
         "patchback.fit.InvalidSearchBound",
         "patchback.fit.TopologyNotFound",
+        "patchback.fit.AnalysisRequired",
+        "patchback.fit.FeatureContractMismatch",
         "patchback.fit.ReferenceSilent",
         "patchback.fit.PitchAmbiguous",
         "patchback.fit.FitNotRunning",
@@ -213,11 +234,15 @@ impl FitError {
         match self {
             Self::InvalidSearchBound { .. } => "patchback.fit.InvalidSearchBound",
             Self::TopologyNotFound { .. } => "patchback.fit.TopologyNotFound",
+            Self::AnalysisRequired { .. } => "patchback.fit.AnalysisRequired",
+            Self::FeatureContractMismatch { .. } => "patchback.fit.FeatureContractMismatch",
             Self::ReferenceSilent { .. } => "patchback.fit.ReferenceSilent",
             Self::PitchAmbiguous { .. } => "patchback.fit.PitchAmbiguous",
             Self::FitNotRunning { .. } => "patchback.fit.FitNotRunning",
             Self::RenderBudgetExhausted => "patchback.fit.RenderBudgetExhausted",
-            Self::NoValidCandidate | Self::RendererFault { .. } => "patchback.fit.NoValidCandidate",
+            Self::NoValidCandidate | Self::RendererFault { .. } | Self::PredictionFailed { .. } => {
+                "patchback.fit.NoValidCandidate"
+            }
             Self::FailedRunHasNoPatch => "patchback.fit.FailedRunHasNoPatch",
             Self::FitStillRunning => "patchback.fit.FitStillRunning",
             Self::InvalidHoldoutSize { .. } => "patchback.fit.InvalidHoldoutSize",
@@ -248,6 +273,19 @@ impl FitError {
             Self::TopologyNotFound {
                 topology: "subtractive-mono/9".to_owned(),
             },
+            Self::AnalysisRequired {
+                weights_sha256: "0".repeat(64),
+            },
+            Self::FeatureContractMismatch {
+                input: "weight artifact",
+                expected: "features/1".to_owned(),
+                found: "features/2".to_owned(),
+            },
+            Self::FeatureContractMismatch {
+                input: "normalization statistics",
+                expected: "features/1".to_owned(),
+                found: "features/2".to_owned(),
+            },
             Self::ReferenceSilent {
                 cause: AnalysisError::SilentInput { rms_dbfs: -120.0 },
             },
@@ -264,6 +302,9 @@ impl FitError {
             Self::NoValidCandidate,
             Self::RendererFault {
                 message: "a parameter outside its contract".to_owned(),
+            },
+            Self::PredictionFailed {
+                message: "patchback.model.NonFinitePrediction: output 3 is NaN".to_owned(),
             },
             Self::FailedRunHasNoPatch,
             Self::FitStillRunning,
@@ -283,12 +324,15 @@ impl FitError {
             match example {
                 Self::InvalidSearchBound { .. }
                 | Self::TopologyNotFound { .. }
+                | Self::AnalysisRequired { .. }
+                | Self::FeatureContractMismatch { .. }
                 | Self::ReferenceSilent { .. }
                 | Self::PitchAmbiguous { .. }
                 | Self::FitNotRunning { .. }
                 | Self::RenderBudgetExhausted
                 | Self::NoValidCandidate
                 | Self::RendererFault { .. }
+                | Self::PredictionFailed { .. }
                 | Self::Compare(_)
                 | Self::FailedRunHasNoPatch
                 | Self::FitStillRunning
@@ -319,6 +363,20 @@ impl fmt::Display for FitError {
                 f,
                 "no topology named {topology:?} is known to the renderer; no run starts"
             ),
+            Self::AnalysisRequired { weights_sha256 } => write!(
+                f,
+                "the fit names the weight artifact sha256 {weights_sha256} but no analysis of the \
+                 reference to predict from; no run starts"
+            ),
+            Self::FeatureContractMismatch {
+                input,
+                expected,
+                found,
+            } => write!(
+                f,
+                "the {input} is of feature contract {found:?}; the analysis is of {expected:?}; \
+                 no run starts"
+            ),
             Self::ReferenceSilent { cause } => write!(
                 f,
                 "the reference holds no note above the silence threshold ({cause}); no run starts"
@@ -343,6 +401,11 @@ impl fmt::Display for FitError {
                 f,
                 "a generated patch was refused by validation ({message}); the run failed with \
                  RendererFault and nothing is written"
+            ),
+            Self::PredictionFailed { message } => write!(
+                f,
+                "the regressor gave no start to fit from ({message}); no run starts and nothing \
+                 is written"
             ),
             Self::Compare(error) => write!(f, "the reference is refused: {error}"),
             Self::FailedRunHasNoPatch => f.write_str(

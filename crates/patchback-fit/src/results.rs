@@ -50,10 +50,12 @@
 //! | `restarts` | the restarts that began |
 //! | `stop_reason` | why the run stopped |
 //! | `wall_time_ms` | the run's wall time in milliseconds |
-//! | `warning` | zero or more, last, one per warning ([`warnings`]): `limiter engaged on <n> of <m> rendered samples` when the protective limiter changed `<n>` of the `<m>` samples of the best patch's uncut render |
+//! | `warning` | zero or more, last, one per warning ([`warnings`]), in this order: `limiter engaged on <n> of <m> rendered samples` when the protective limiter changed `<n>` of the `<m>` samples of the best patch's uncut render; `clamped <n> of 8 predictions` when `<n>` of the eight outputs of a seeded run's prediction were outside [0, 1] and clamped into it (Da11-11) |
 //!
-//! `wall_time_ms` is the one record that differs between two runs of the same inputs. There is no
-//! `confidence` record: DESIGN.md § 11 names one and defines it nowhere (Da7-4, for the owner).
+//! `initial_loss` is the loss of the run's start, the default patch or the prediction, when it
+//! rendered. `wall_time_ms` is the one record that differs between two runs of the same inputs.
+//! There is no `confidence` record: DESIGN.md § 11 names one and defines it nowhere (Da7-4, for
+//! the owner).
 //!
 //! `run.meta` (Da7-3):
 //!
@@ -61,7 +63,10 @@
 //! |---|---|
 //! | `patchback-fit-run-meta` | the format version, `1` |
 //! | `patchback` | the Patchback version, [`PATCHBACK_VERSION`] |
-//! | `init` | `default`: the run started from the default patch |
+//! | `init` | [`INIT_DEFAULT`], `default`: the run started from the default patch; or [`INIT_REGRESSOR_PREDICTION`], `regressor-prediction`: from the regressor's prediction ([`crate::FitOutcome::init`]) |
+//! | `weights` | seeded runs only: `sha256 <64 hex digits>`, the weight artifact's checksum (the SHA-256 of its payload, [`crate::SeededStart::weights_sha256`]) |
+//! | `weights_modelspec` | seeded runs only: `<version> <commit>`, the ModelSpec version and commit the artifact names |
+//! | `normalization` | seeded runs only: `sha256 <64 hex digits>`, the digest of the statistics' bytes the caller gave ([`crate::SeedInputs::normalization_sha256`]) |
 //! | `seed` | the seed of the restarts' starting points |
 //! | `topology` | the topology of the best patch, `subtractive-mono/1` |
 //! | `feature_contract` | `patchback_analysis::FEATURES_1_VERSION`, `features/1` |
@@ -71,6 +76,11 @@
 //! | `notes` | `sha256 <64 hex digits>`: the digest of the notes file's bytes |
 //! | `max_renders`, `max_wall_time_ms`, `max_restarts`, `improvement_threshold` | the run's bounds |
 //! | `block_size` | the frames per render block |
+//!
+//! The three seeded records follow `init` and are written only for a seeded run, so a default
+//! run's `run.meta` is the format-1 file it was before them; the format version stays 1
+//! (Da11-10). The artifact's ModelSpec record is `weights_modelspec`, not a second `modelspec`:
+//! `modelspec` is the caller's pin, and every key appears once (DESIGN.md § 11).
 //!
 //! Every file but `report.txt` is the same, byte for byte, for the same inputs, seed, bounds and
 //! block size (§ 2 invariant 5), unless the wall-time bound stopped the run.
@@ -124,8 +134,13 @@ pub const RUN_META_FORMAT_VERSION: u32 = 1;
 /// the workspace inherits.
 pub const PATCHBACK_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// How a run [`crate::fit`] makes starts: from the default patch.
+/// The `init` of a run that started from the default patch ([`crate::fit`], or
+/// [`crate::fit_request`] without seed inputs).
 pub const INIT_DEFAULT: &str = "default";
+
+/// The `init` of a run that started from the regressor's prediction ([`crate::fit_request`]
+/// with seed inputs; `InitSource::RegressorPrediction`).
+pub const INIT_REGRESSOR_PREDICTION: &str = "regressor-prediction";
 
 /// What `run.meta` records that the outcome does not hold; the caller fills it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -211,13 +226,24 @@ pub fn admit_results<C>(run: &FitRun<C>) -> Result<(), FitError> {
 /// the frames of that render ([`FitOutcome::render_report`]: `limited_samples`, `frame_count`).
 /// Both count the whole render the best patch was scored from, before it is cut or padded to the
 /// reference's length; [`RECONSTRUCTED_WAV_FILE`] holds the cut clip, so it may hold fewer of the
-/// limited samples (Da7-15).
+/// limited samples (Da7-15). Then, for a seeded run whose prediction had outputs outside
+/// [0, 1], `clamped <n> of 8 predictions`, `<n>` the outputs clamped (`Prediction::clamped`,
+/// DESIGN.md § 5.2, Da11-11).
 pub fn warnings(outcome: &FitOutcome) -> Vec<String> {
     let mut warnings = Vec::new();
     if outcome.render_report.limited {
         warnings.push(format!(
             "limiter engaged on {} of {} rendered samples",
             outcome.render_report.limited_samples, outcome.render_report.frame_count
+        ));
+    }
+    if let Some(seeded) = &outcome.seeded
+        && seeded.prediction.clamped > 0
+    {
+        warnings.push(format!(
+            "clamped {} of {} predictions",
+            seeded.prediction.clamped,
+            seeded.prediction.values.len()
         ));
     }
     warnings
@@ -262,10 +288,25 @@ pub fn report_text(outcome: &FitOutcome) -> String {
 pub fn run_meta_text(outcome: &FitOutcome, meta: &RunMeta) -> String {
     let bounds = outcome.run.bounds();
     let digest = |bytes: &[u8; digest::DIGEST_BYTES]| format!("{} {}", digest::NAME, hex(bytes));
-    lines(&[
+    let mut records = vec![
         (RUN_META_HEADER, RUN_META_FORMAT_VERSION.to_string()),
         ("patchback", PATCHBACK_VERSION.to_owned()),
-        ("init", INIT_DEFAULT.to_owned()),
+        ("init", outcome.init.record().to_owned()),
+    ];
+    if let Some(seeded) = &outcome.seeded {
+        records.extend([
+            (
+                "weights",
+                format!("{} {}", digest::NAME, seeded.weights_sha256),
+            ),
+            (
+                "weights_modelspec",
+                format!("{} {}", seeded.modelspec_version, seeded.modelspec_commit),
+            ),
+            ("normalization", digest(&seeded.normalization_sha256)),
+        ]);
+    }
+    records.extend([
         ("seed", meta.seed.to_string()),
         ("topology", outcome.patch.topology_id.clone()),
         (
@@ -284,7 +325,8 @@ pub fn run_meta_text(outcome: &FitOutcome, meta: &RunMeta) -> String {
             bounds.improvement_threshold.to_string(),
         ),
         ("block_size", meta.block_size_frames.to_string()),
-    ])
+    ]);
+    lines(&records)
 }
 
 fn lines(records: &[(&str, String)]) -> String {

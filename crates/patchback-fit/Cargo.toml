@@ -11,3 +11,4 @@ patchback-analysis = { path = "../patchback-analysis" }
 patchback-audio = { path = "../patchback-audio" }
 patchback-core = { path = "../patchback-core" }
 patchback-dsp = { path = "../patchback-dsp" }
+patchback-model = { path = "../patchback-model" }
