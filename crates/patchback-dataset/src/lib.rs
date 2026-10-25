@@ -43,6 +43,7 @@ pub mod dense;
 mod generate;
 pub mod meta;
 mod model;
+mod normalization;
 
 pub use generate::{
     BATCH_SIZE, GATE_LONGEST_SECONDS, GATE_SHORTEST_SECONDS, GenerateError, Generated, Generator,
@@ -56,3 +57,4 @@ pub use model::{
     PrngAlgorithm, Sample, SampleId, SampledPatch, SampledPatchId, SplitRole, SplitState,
     WriteDenseFile, is_batch_multiple,
 };
+pub use normalization::{compute_split_stats, training_stats};

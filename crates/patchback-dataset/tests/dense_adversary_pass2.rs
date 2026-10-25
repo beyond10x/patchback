@@ -2,13 +2,17 @@
 //! Da7-18, Da7-19): `ByteCountMismatch` carries the command's values whatever the content's
 //! length (longer, equal but inconsistent, empty), shapes the model refuses earlier (negative,
 //! past `u32::MAX`, a product that wraps an `i64`), the non-finite rule that is x.f32 and y.f32
-//! only, and `write_split` of a split that is not `Open` or was left half-written.
+//! only, and `write_split` of a split that is not `Open` or was left half-written. Every
+//! `write_split` passes the training statistics of `train_stats` (Da8-30).
 
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use patchback_analysis::FeatureContractId;
+use patchback_analysis::{
+    FeatureContractDefinition, FeatureContractId, FeatureRegistry, NormalizationStats, SplitInput,
+    compute_normalization_stats,
+};
 use patchback_core::prng::NAME;
 use patchback_dataset::dense::{self, DenseError};
 use patchback_dataset::{
@@ -83,6 +87,24 @@ fn names(dir: &Path) -> Vec<String> {
         .collect();
     names.sort();
     names
+}
+
+/// The training statistics every `write_split` here passes (Da8-30): those of 16 training rows,
+/// row `i` feature `j` equal to `i + j / 64` as in [`filled`], under a published `features/1`.
+fn train_stats() -> NormalizationStats {
+    let definition = FeatureContractDefinition::features_1();
+    let version = definition.version.clone();
+    let mut registry = FeatureRegistry::new();
+    let id = registry.define(definition).unwrap();
+    registry.publish(id).unwrap();
+    let rows: Vec<[f64; 32]> = (0..16)
+        .map(|i| std::array::from_fn(|j| i as f64 + j as f64 / 64.0))
+        .collect();
+    let input = SplitInput {
+        role: SplitRole::Train,
+        rows: &rows,
+    };
+    compute_normalization_stats(&registry, id, &version, 0, Some(input)).unwrap()
 }
 
 /// A validation split of 16 samples holding all 16.
@@ -273,7 +295,7 @@ fn adversary2_write_split_of_a_written_split_names_the_split_and_writes_nothing(
     let dir = scratch("written");
     let mut store = DatasetStore::new();
     let split = filled(&mut store);
-    dense::write_split(&mut store, split, &dir, dense::create_new).unwrap();
+    dense::write_split(&mut store, split, &dir, &train_stats(), dense::create_new).unwrap();
     let before: Vec<(String, Vec<u8>)> = names(&dir)
         .into_iter()
         .map(|name| {
@@ -284,10 +306,16 @@ fn adversary2_write_split_of_a_written_split_names_the_split_and_writes_nothing(
     let records_before = store.dense_files_of(split).len();
 
     let mut calls = 0;
-    let refused = dense::write_split(&mut store, split, &dir, |_: &Path, _: &[u8]| {
-        calls += 1;
-        Ok(())
-    });
+    let refused = dense::write_split(
+        &mut store,
+        split,
+        &dir,
+        &train_stats(),
+        |_: &Path, _: &[u8]| {
+            calls += 1;
+            Ok(())
+        },
+    );
     match &refused {
         Err(DenseError::Dataset(error)) => assert_eq!(
             error,
@@ -317,10 +345,16 @@ fn adversary2_write_split_of_a_written_split_names_the_split_and_writes_nothing(
     assert_eq!(store.split(split).unwrap().state, SplitState::Written);
 
     let unknown = DatasetSplitId(split.0 + 1);
-    let refused = dense::write_split(&mut store, unknown, &dir, |_: &Path, _: &[u8]| {
-        calls += 1;
-        Ok(())
-    });
+    let refused = dense::write_split(
+        &mut store,
+        unknown,
+        &dir,
+        &train_stats(),
+        |_: &Path, _: &[u8]| {
+            calls += 1;
+            Ok(())
+        },
+    );
     assert!(
         matches!(
             refused,
@@ -342,18 +376,24 @@ fn adversary2_characterise_a_second_create_new_write_split_after_a_partial_failu
     let dir = scratch("partial-then-create-new");
     let mut store = DatasetStore::new();
     let split = filled(&mut store);
-    let refused = dense::write_split(&mut store, split, &dir, |path: &Path, bytes: &[u8]| {
-        if path.ends_with("y.f32") {
-            Err(io::Error::other("refused by the test"))
-        } else {
-            dense::create_new(path, bytes)
-        }
-    });
+    let refused = dense::write_split(
+        &mut store,
+        split,
+        &dir,
+        &train_stats(),
+        |path: &Path, bytes: &[u8]| {
+            if path.ends_with("y.f32") {
+                Err(io::Error::other("refused by the test"))
+            } else {
+                dense::create_new(path, bytes)
+            }
+        },
+    );
     assert!(matches!(refused, Err(DenseError::Io { .. })), "{refused:?}");
     let x_before = fs::read(dir.join("x.f32")).unwrap();
     assert_eq!(x_before.len(), 2_048);
 
-    let again = dense::write_split(&mut store, split, &dir, dense::create_new);
+    let again = dense::write_split(&mut store, split, &dir, &train_stats(), dense::create_new);
     match &again {
         Err(DenseError::Io { path, error }) => {
             assert_eq!(path, &dir.join("x.f32"));
