@@ -54,6 +54,8 @@ jobs:
         run: |
           cargo test --locked -p patchback-docs
           cargo run --locked -p patchback-docs -- generate --check
+      - name: Render the demo audio
+        run: cargo run --locked -p patchback-docs -- demos render --out website/demo-audio
       - name: Build the Docusaurus site
         run: npm --prefix website ci --ignore-scripts && npm --prefix website run build
       - name: Bind the built site to its source commit

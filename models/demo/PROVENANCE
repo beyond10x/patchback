@@ -1,0 +1,22 @@
+patchback-demo-provenance 1
+artifact regressor.weights
+artifact_format weights/1
+artifact_bytes 10438
+checksum a17d810459ccfa9ce41c171661a25d5313d1f9e575125062a17b4e51bf9be926
+statistics normalization.stats
+statistics_sha256 6a1772acb04b1a4b992e29fe7804185072677fa82f1534f1e04c6e110a0810c7
+feature_contract features/1
+model models/patch_regressor.mspec PatchRegressor
+modelspec 0.5.0
+modelspec_commit 7c45c1adaf6e0cc0ba05f18878b31bfdc57cc529
+backend cpu
+dataset_seed 42
+dataset_train 50016
+dataset_validation 4992
+dataset_test 4992
+dataset_generation_s 1310
+training_steps 3126
+batch_size 16
+eval_loss 0.0600
+trained 2026-10-25
+retrain_reproduces_checksum not-verified

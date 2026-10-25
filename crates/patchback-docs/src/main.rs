@@ -5,8 +5,17 @@
 //! Everything generated comes from the repository: the domain reference pages from
 //! `ess generate --kind docs`, the contract explorer's document from `ess generate --kind docs-ir`,
 //! one `b10x-domain-graph/1` document per domain and one for the whole model from
-//! `ess specify compile`, and the status data and page from [`status::CAPABILITIES`].
+//! `ess specify compile`, the status data and page from [`status::CAPABILITIES`], the progress
+//! page from the planning store and `CHANGELOG.md` ([`progress`]), and the listen page from
+//! `website/data/demos.json` ([`demos`]).
+//!
+//! `demos fit` (release mode, `task docs-demos`) writes `website/data/demos.json` from the
+//! committed demo voices and model; `demos render` renders their audio into the git-ignored
+//! `website/demo-audio/` when the site is built; `demos train` retrains the demo model with a
+//! ModelSpec binary the caller supplies.
+mod demos;
 mod graph;
+mod progress;
 mod reference;
 mod status;
 
@@ -79,6 +88,50 @@ enum Action {
         /// The full Git revision the site was built from.
         #[arg(long)]
         commit: String,
+    },
+    /// The listening demos: their numbers, their audio and their model.
+    Demos {
+        #[command(subcommand)]
+        action: DemosAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum DemosAction {
+    /// Fit every demo voice from its default start and from the demo model's prediction, and
+    /// write the numbers (run in release mode: `task docs-demos`).
+    Fit {
+        /// Repository root.
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+        /// Where the numbers go.
+        #[arg(long, default_value = demos::DATA)]
+        out: PathBuf,
+    },
+    /// Render the four takes of every demo voice as 16-bit PCM WAV files, `<out>/<voice>/<take>.wav`.
+    Render {
+        /// Repository root.
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+        /// The audio directory, `website/demo-audio`.
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Retrain the demo model as `models/demo/PROVENANCE` records it, with the given ModelSpec
+    /// binary, and say whether the artifact's checksum equals the committed one.
+    Train {
+        /// Repository root.
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+        /// The ModelSpec binary of the provenance's version; it is never downloaded.
+        #[arg(long)]
+        modelspec: PathBuf,
+        /// The dataset directory: generated when empty or missing, else checked byte for byte.
+        #[arg(long)]
+        dataset: PathBuf,
+        /// Where the new `regressor.weights` goes.
+        #[arg(long)]
+        out: PathBuf,
     },
 }
 
@@ -441,11 +494,19 @@ fn write(root: &Path, output: &Output) -> Result<()> {
     Ok(())
 }
 
-fn generate(root: &Path, ess: &Path, check: bool) -> Result<()> {
-    let mut outputs = ess_outputs(root, ess)?;
-    let (status, warnings) = status_outputs(root)?;
-    outputs.extend(status);
-    for output in &outputs {
+/// The files that come from the repository without `ess`: the status data and page, the
+/// progress page and the listen page, and any warnings. The listen page is refused while
+/// `website/data/demos.json` was made from other demo inputs than the committed ones.
+fn local_outputs(root: &Path) -> Result<(Vec<Output>, Vec<String>)> {
+    let (mut outputs, warnings) = status_outputs(root)?;
+    outputs.push(progress::output(root)?);
+    outputs.push(demos::output(root)?);
+    Ok((outputs, warnings))
+}
+
+/// Writes `outputs` under `root`, or with `check` fails at the first that has drifted.
+fn apply(root: &Path, outputs: &[Output], check: bool) -> Result<()> {
+    for output in outputs {
         if check {
             let problems = drift(&output.files, &root.join(output.dir), output.exclusive)?;
             if !problems.is_empty() {
@@ -465,6 +526,14 @@ fn generate(root: &Path, ess: &Path, check: bool) -> Result<()> {
             println!("{}: wrote {} files", output.dir, output.files.len());
         }
     }
+    Ok(())
+}
+
+fn generate(root: &Path, ess: &Path, check: bool) -> Result<()> {
+    let mut outputs = ess_outputs(root, ess)?;
+    let (local, warnings) = local_outputs(root)?;
+    outputs.extend(local);
+    apply(root, &outputs, check)?;
     for warning in warnings {
         eprintln!("patchback-docs: warning: {warning}");
     }
@@ -490,11 +559,31 @@ fn generate(root: &Path, ess: &Path, check: bool) -> Result<()> {
     Ok(())
 }
 
+/// The `--out` of `demos fit` and `demos render`: as given when absolute, else under `root`, as
+/// the demos' inputs are read.
+fn under_root(root: &Path, out: &Path) -> PathBuf {
+    if out.is_absolute() {
+        out.to_owned()
+    } else {
+        root.join(out)
+    }
+}
+
 fn main() -> ExitCode {
     let result = match Cli::parse().command {
         Action::Generate { check, root, ess } => generate(&root, &ess, check),
         Action::Provenance { site, commit } => write_provenance(&site, &commit)
             .map(|()| println!("{}: bound to {commit}", site.display())),
+        Action::Demos { action } => match action {
+            DemosAction::Fit { root, out } => demos::run_fit(&root, &under_root(&root, &out)),
+            DemosAction::Render { root, out } => demos::run_render(&root, &under_root(&root, &out)),
+            DemosAction::Train {
+                root,
+                modelspec,
+                dataset,
+                out,
+            } => demos::run_train(&root, &modelspec, &dataset, &out),
+        },
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -622,6 +711,115 @@ mod tests {
             fs::read_to_string(root.join("website/docs/status.mdx")).unwrap(),
             "# Status\n"
         );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_relative_demos_out_resolves_against_the_root() {
+        let parse = |args: &[&str]| match Cli::try_parse_from(args).unwrap().command {
+            Action::Demos {
+                action: DemosAction::Fit { root, out } | DemosAction::Render { root, out },
+            } => under_root(&root, &out),
+            _ => unreachable!(),
+        };
+        assert_eq!(
+            parse(&["patchback-docs", "demos", "fit", "--root", "/repo"]),
+            Path::new("/repo/website/data/demos.json")
+        );
+        assert_eq!(
+            parse(&[
+                "patchback-docs",
+                "demos",
+                "fit",
+                "--root",
+                "/repo",
+                "--out",
+                "a/b.json"
+            ]),
+            Path::new("/repo/a/b.json")
+        );
+        assert_eq!(
+            parse(&[
+                "patchback-docs",
+                "demos",
+                "fit",
+                "--root",
+                "/repo",
+                "--out",
+                "/elsewhere/b.json"
+            ]),
+            Path::new("/elsewhere/b.json")
+        );
+        assert_eq!(
+            parse(&[
+                "patchback-docs",
+                "demos",
+                "render",
+                "--root",
+                "/repo",
+                "--out",
+                "website/demo-audio"
+            ]),
+            Path::new("/repo/website/demo-audio")
+        );
+        assert_eq!(
+            parse(&[
+                "patchback-docs",
+                "demos",
+                "render",
+                "--out",
+                "website/demo-audio"
+            ]),
+            Path::new("./website/demo-audio")
+        );
+    }
+
+    #[test]
+    fn new_outputs_leave_status_and_reference_outputs_untouched() {
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let (status, _) = status_outputs(&repository).unwrap();
+        let (local, _) = local_outputs(&repository).unwrap();
+        assert_eq!(local.len(), status.len() + 2);
+        for (a, b) in status.iter().zip(&local) {
+            assert_eq!(
+                (a.dir, &a.files, a.exclusive),
+                (b.dir, &b.files, b.exclusive)
+            );
+        }
+        let new = &local[status.len()..];
+        let mut names = Vec::new();
+        for output in new {
+            assert_eq!(output.dir, DOCS);
+            assert!(!output.exclusive, "{}", output.dir);
+            names.extend(output.files.keys().cloned());
+        }
+        assert_eq!(names, [progress::PAGE, demos::PAGE]);
+        for output in &status {
+            for name in output.files.keys() {
+                assert!(!names.contains(name), "{name}");
+            }
+        }
+
+        let root = scratch("untouched");
+        let kept = [
+            ("website/docs/status.mdx", "# Status\n"),
+            ("website/docs/reference/ess/index.mdx", "# ESS\n"),
+            ("website/data/status.json", "{}\n"),
+            ("website/data/ess/patchback.domain-graph.json", "{}\n"),
+            ("website/docs/guides/fit-a-recording.md", "# Fit\n"),
+        ];
+        for (path, text) in kept {
+            fs::create_dir_all(root.join(path).parent().unwrap()).unwrap();
+            fs::write(root.join(path), text).unwrap();
+        }
+        apply(&root, new, false).unwrap();
+        for (path, text) in kept {
+            assert_eq!(fs::read_to_string(root.join(path)).unwrap(), text, "{path}");
+        }
+        for name in &names {
+            assert!(root.join(DOCS).join(name).is_file(), "{name}");
+        }
+        apply(&root, new, true).unwrap();
         let _ = fs::remove_dir_all(&root);
     }
 }

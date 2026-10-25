@@ -1,0 +1,25 @@
+patchback-patch 1
+sample_rate_hz 48000
+topology_id subtractive-mono/1
+node 1 NoteInput
+node 2 SawOscillator
+node 3 Drive
+param 3 drive 8
+node 4 LowpassFilter
+param 4 filter_cutoff 2400
+param 4 resonance_q 4.5
+node 5 AdsrEnvelope
+param 5 attack 0.02
+param 5 decay 0.25
+param 5 sustain 0.7
+param 5 release 0.25
+node 6 Vca
+node 7 Output
+param 7 output_gain -9
+edge 1 pitch Control 2 pitch Control
+edge 1 gate Event 5 gate Event
+edge 2 out Audio 3 in Audio
+edge 3 out Audio 4 in Audio
+edge 4 out Audio 6 in Audio
+edge 5 env Control 6 gain Control
+edge 6 out Audio 7 in Audio
