@@ -1,7 +1,9 @@
 //! Adversary cases for `patchback generate-dataset` (story:dataset-generation, wave a6, pass 2):
-//! the exact edge of the `--samples` range (Da6-26), a refused count in the range where
-//! `samples · 4992` passes `i64::MAX`, and the exact set of paths and stdout keys of a 48-sample
-//! generation after the `val/` directory change (Da6-19, Da6-27).
+//! the exact edge of the `--samples` range, a count in the range where `samples · 4992` passes
+//! `i64::MAX`, and the exact set of paths and stdout keys of a 48-sample generation after the
+//! `val/` directory change (Da6-19, Da6-27). Re-pinned to Da7-10 and the dense files of
+//! story:dense-data-files: `--samples` admits `0..=u32::MAX` (replacing Da6-26's `i64::MAX`), and
+//! each split directory holds `x.f32`, `y.f32` and `order.u32` beside `samples.meta`.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -66,54 +68,53 @@ fn names(dir: &Path) -> BTreeSet<String> {
         .collect()
 }
 
-/// Da6-26 at its edge: `i64::MAX + 1` is the first value clap refuses, with its range message,
-/// exit 2, nothing on stdout and nothing created.
+/// Da7-10 at its edge: `u32::MAX + 1` is the first value clap refuses, with its range message,
+/// exit 2, nothing on stdout and nothing created; so is Da6-26's first refused value.
 #[test]
 fn adversary_one_past_max_samples_is_a_usage_error() {
-    let samples = (i64::MAX as u64 + 1).to_string();
-    assert_eq!(samples, "9223372036854775808");
-    let dir = scratch("one-past-max");
-    let out = dir.join("data");
-    let output = generate_refused(&samples, &out);
-    assert_eq!(output.status.code(), Some(2), "{output:?}");
-    assert!(output.stdout.is_empty(), "{}", text(&output.stdout));
-    let stderr = text(&output.stderr);
-    assert!(
-        stderr.contains("9223372036854775808 is not in 0..=9223372036854775807"),
-        "{stderr}"
-    );
-    assert!(!out.exists());
+    let samples = (u64::from(u32::MAX) + 1).to_string();
+    assert_eq!(samples, "4294967296");
+    for samples in [samples.as_str(), "9223372036854775808"] {
+        let dir = scratch(&format!("one-past-max-{samples}"));
+        let out = dir.join("data");
+        let output = generate_refused(samples, &out);
+        assert_eq!(output.status.code(), Some(2), "{output:?}");
+        assert!(output.stdout.is_empty(), "{}", text(&output.stdout));
+        let stderr = text(&output.stderr);
+        assert!(
+            stderr.contains(&format!("{samples} is not in 0..=4294967295")),
+            "{stderr}"
+        );
+        assert!(!out.exists());
+    }
 }
 
-/// `--samples 2^62 + 8`: `samples · 4992` passes `i64::MAX`, the held-out counts are batch
-/// multiples and train is 8 mod 16, so the refusal names the rule's train count, computed here as
-/// `samples − 2 · 16 · floor(13 · samples / 2500)` in u128.
+/// `--samples 2^62 + 8`: `samples · 4992` passes `i64::MAX`. Under Da6-26 it was refused with the
+/// rule's train count; since Da7-10 it is past `u32::MAX` and a usage error (exit 2, clap's range
+/// message), never a generation and never a SplitCountNotBatchMultiple refusal.
 #[test]
-fn adversary_a_count_past_i64_times_4992_is_refused_with_the_rule_s_train_count() {
+fn adversary_a_count_past_i64_times_4992_is_a_usage_error() {
     let samples: u64 = (1 << 62) + 8;
     assert!(i64::try_from(samples).unwrap().checked_mul(4_992).is_none());
-    let held_out = 16 * (13 * u128::from(samples) / 2_500);
-    let train = u128::from(samples) - 2 * held_out;
-    assert_eq!(train % 16, 8);
 
     let dir = scratch("past-i64-product");
     let out = dir.join("data");
     let output = generate_refused(&samples.to_string(), &out);
-    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
     assert!(output.stdout.is_empty(), "{}", text(&output.stdout));
-    assert_eq!(
-        text(&output.stderr),
-        format!(
-            "patchback: generate-dataset refused: patchback.dataset.SplitCountNotBatchMultiple: \
-             the Train split of {train} samples is not a positive multiple of the batch size 16\n"
-        )
+    let stderr = text(&output.stderr);
+    assert!(
+        stderr.contains(&format!("{samples} is not in 0..=4294967295")),
+        "{stderr}"
     );
+    assert!(!stderr.contains("SplitCountNotBatchMultiple"), "{stderr}");
     assert!(!out.exists());
 }
 
 /// Da6-19, Da6-27 on disk and on stdout: `<out>` holds exactly `dataset.meta`, `train/`, `val/`
-/// and `test/`, each split directory exactly its `samples.meta`; the stdout keys are, in order,
-/// `out`, `train`, `validation`, `test` and the three diagnostic counts.
+/// and `test/`, each split directory exactly its `samples.meta`, `x.f32`, `y.f32` and
+/// `order.u32` (story:dense-data-files); the stdout keys are, in order, `out`, `train`,
+/// `validation`, `test` and the three diagnostic counts.
 #[test]
 fn adversary_a_generation_writes_exactly_the_val_layout_and_prints_the_validation_key() {
     let dir = scratch("layout");
@@ -129,7 +130,9 @@ fn adversary_a_generation_writes_exactly_the_val_layout_and_prints_the_validatio
     for split in ["train", "val", "test"] {
         assert_eq!(
             names(&out.join(split)),
-            ["samples.meta".to_owned()].into(),
+            ["order.u32", "samples.meta", "x.f32", "y.f32"]
+                .map(str::to_owned)
+                .into(),
             "{split}"
         );
     }

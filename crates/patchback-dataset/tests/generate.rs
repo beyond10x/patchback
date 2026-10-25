@@ -94,9 +94,9 @@ fn the_largest_sample_count_does_not_overflow() {
         "saturates, and an odd count is refused"
     );
 
-    // Up to `MAX_SAMPLES`, the most `--samples` admits (Da6-26), nothing saturates: the train
-    // count is the rule's, computed here in u128.
-    assert_eq!(MAX_SAMPLES, i64::MAX as u64);
+    // Up to `MAX_SAMPLES`, the most `--samples` admits (Da7-10, `u32::MAX`, replacing Da6-26's
+    // `i64::MAX`), nothing saturates: the train count is the rule's, computed here in u128.
+    assert_eq!(MAX_SAMPLES, u64::from(u32::MAX));
     let samples = u128::from(MAX_SAMPLES);
     let held_out = (samples * 4_992 / 60_000 / 16 * 16).max(16);
     let largest = SplitCounts::from_samples(MAX_SAMPLES);

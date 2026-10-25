@@ -1,7 +1,7 @@
 //! The model of `spec/domains/dataset.yaml` as plain types: the entities, their identities, the
 //! errors, and [`DatasetStore`], whose methods are the commands `GenerateDataset`, `OpenSplit`,
-//! `DrawPatch`, `AddSample`, `OpenDiagnosticSet` and `AddDiagnosticExample`, each answering its
-//! outcomes in the order the model declares them.
+//! `DrawPatch`, `AddSample`, `OpenDiagnosticSet`, `AddDiagnosticExample`, `WriteDenseFile` and
+//! `FinishSplit`, each answering its outcomes in the order the model declares them.
 //!
 //! The domain's identities are Uuids; here each is a number the store hands out from 1, in the
 //! order the store created its records, as `patchback_analysis::FeatureContractId` is.
@@ -9,8 +9,12 @@
 use std::collections::HashSet;
 use std::fmt;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
-use patchback_analysis::{AnalysisError, FeatureContractId, FeatureError, NotComputableReason};
+use patchback_analysis::{
+    AnalysisError, FEATURES_1_VALUE_COUNT, FeatureContractId, FeatureError, NotComputableReason,
+};
+use patchback_core::parameter::Topology;
 use patchback_dsp::RenderError;
 
 macro_rules! identity {
@@ -56,6 +60,11 @@ identity!(
     /// `patchback.dataset.DiagnosticExampleId`.
     DiagnosticExampleId,
     "diagnostic example"
+);
+identity!(
+    /// `patchback.dataset.DenseDataFileId`.
+    DenseDataFileId,
+    "dense data file"
 );
 
 /// `patchback.dataset.PrngAlgorithm`: the name of the generator a dataset was drawn with,
@@ -106,6 +115,85 @@ impl SplitRole {
 }
 
 impl fmt::Display for SplitRole {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
+/// The state of a [`DatasetSplit`] (`patchback.dataset.DatasetSplit.State`): `Open` from
+/// `OpenSplit`, `Written` once `FinishSplit` found its x.f32 and y.f32 verified (transition
+/// `write`, terminal).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum SplitState {
+    Open,
+    Written,
+}
+
+impl SplitState {
+    /// The state name of the model.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Open => "Open",
+            Self::Written => "Written",
+        }
+    }
+}
+
+impl fmt::Display for SplitState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
+/// `patchback.dataset.DenseFileKind`: the three ModelSpec dense-data files of a split (DESIGN.md
+/// § 7.2), row-major and little-endian.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum DenseFileKind {
+    /// `x.f32`: a row of `features/1` values a sample, as `f32`.
+    X,
+    /// `y.f32`: a row of the topology's normalized parameters a sample, as `f32`.
+    Y,
+    /// `order.u32`: one `u32` sample index a row.
+    Order,
+}
+
+impl DenseFileKind {
+    /// The kinds in the order the writer writes them.
+    pub const ALL: [Self; 3] = [Self::X, Self::Y, Self::Order];
+
+    /// The variant name of the model.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::X => "X",
+            Self::Y => "Y",
+            Self::Order => "Order",
+        }
+    }
+
+    /// The file's name in its split's directory (DESIGN.md § 7.2).
+    pub fn file_name(self) -> &'static str {
+        match self {
+            Self::X => "x.f32",
+            Self::Y => "y.f32",
+            Self::Order => "order.u32",
+        }
+    }
+
+    /// The values a row holds, the model's `WriteDenseFile` rule: the length of `features/1`
+    /// (32) for `X`, the parameter count of `subtractive-mono/1` (8) for `Y`, 1 for `Order`.
+    pub fn columns(self) -> i64 {
+        static PARAMETERS: OnceLock<i64> = OnceLock::new();
+        match self {
+            Self::X => i64::try_from(FEATURES_1_VALUE_COUNT).unwrap_or(i64::MAX),
+            Self::Y => *PARAMETERS.get_or_init(|| {
+                i64::try_from(Topology::subtractive_mono().contracts().len()).unwrap_or(i64::MAX)
+            }),
+            Self::Order => 1,
+        }
+    }
+}
+
+impl fmt::Display for DenseFileKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.name())
     }
@@ -260,8 +348,8 @@ pub struct Dataset {
     pub out_dir: PathBuf,
 }
 
-/// `patchback.dataset.DatasetSplit`, in state `Open` (its dense files, and the state `Written`,
-/// are story:dense-data-files).
+/// `patchback.dataset.DatasetSplit`: `Open` when opened, `Written` once its dense files are
+/// verified and `FinishSplit` ran.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DatasetSplit {
     pub dataset_split_id: DatasetSplitId,
@@ -269,6 +357,32 @@ pub struct DatasetSplit {
     pub role: SplitRole,
     /// The model's `Integer`: the count as opened, a positive multiple of the batch size.
     pub sample_count: i64,
+    pub state: SplitState,
+}
+
+/// `patchback.dataset.DenseDataFile`: a dense-data file of one split, recorded only once its
+/// bytes were verified ([`DatasetStore::write_dense_file`]), so its one state is the model's
+/// `Verified`. The `DenseFiles` view is [`DatasetStore::dense_files_of`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DenseDataFile {
+    pub dense_data_file_id: DenseDataFileId,
+    pub dataset_split_id: DatasetSplitId,
+    pub kind: DenseFileKind,
+    pub path: PathBuf,
+    pub rows: i64,
+    pub columns: i64,
+    pub byte_count: i64,
+}
+
+/// `WriteDenseFile`'s input: the file as written, its shape and its byte count.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WriteDenseFile {
+    pub dataset_split_id: DatasetSplitId,
+    pub kind: DenseFileKind,
+    pub path: PathBuf,
+    pub rows: i64,
+    pub columns: i64,
+    pub byte_count: i64,
 }
 
 /// `patchback.dataset.SampledPatch`: a patch seed drawn into one split.
@@ -284,8 +398,8 @@ pub struct SampledPatch {
 /// Its split is its patch's.
 ///
 /// `x` holds the 32 `features/1` values and `y` the eight normalized parameters, both as `f64`,
-/// the values the extractor and the draw produced; the `f32` files ModelSpec reads are
-/// story:dense-data-files.
+/// the values the extractor and the draw produced; the `f32` files ModelSpec reads are written
+/// from them by [`crate::dense::write_split`].
 #[derive(Clone, Debug, PartialEq)]
 pub struct Sample {
     pub sample_id: SampleId,
@@ -351,6 +465,29 @@ pub enum DatasetError {
     },
     /// `patchback.dataset.UnknownPatch`.
     UnknownPatch { sampled_patch_id: SampledPatchId },
+    /// `patchback.dataset.SplitAlreadyWritten`: `FinishSplit` of a split in state `Written`, or
+    /// [`crate::dense::write_split`] of a split that is not `Open` (before it writes anything).
+    SplitAlreadyWritten {
+        dataset_split_id: DatasetSplitId,
+        state: SplitState,
+    },
+    /// `patchback.dataset.WrongColumnCount`: the column count is not the kind's
+    /// ([`DenseFileKind::columns`]).
+    WrongColumnCount { kind: DenseFileKind, columns: i64 },
+    /// `patchback.dataset.SampleCountMismatch`: the file's rows are not the split's sample count.
+    SampleCountMismatch { rows: i64, sample_count: i64 },
+    /// `patchback.dataset.ByteCountMismatch`: the byte count is not rows × columns × 4, or the
+    /// bytes given are not that many; `byte_count` is the command's in both cases.
+    ByteCountMismatch {
+        byte_count: i64,
+        rows: i64,
+        columns: i64,
+    },
+    /// `patchback.dataset.NonFiniteValue`: an `f32` of the file is NaN or infinite.
+    NonFiniteValue { kind: DenseFileKind },
+    /// `patchback.dataset.MissingDenseFile`: `FinishSplit` of a split without a verified x.f32
+    /// or without a verified y.f32.
+    MissingDenseFile { dataset_split_id: DatasetSplitId },
 }
 
 impl DatasetError {
@@ -362,6 +499,12 @@ impl DatasetError {
         "patchback.dataset.UnknownDiagnosticSet",
         "patchback.dataset.PatchAlreadyDrawn",
         "patchback.dataset.UnknownPatch",
+        "patchback.dataset.SplitAlreadyWritten",
+        "patchback.dataset.WrongColumnCount",
+        "patchback.dataset.SampleCountMismatch",
+        "patchback.dataset.ByteCountMismatch",
+        "patchback.dataset.NonFiniteValue",
+        "patchback.dataset.MissingDenseFile",
     ];
 
     /// The error of `spec/domains/dataset.yaml` this refusal is.
@@ -375,6 +518,12 @@ impl DatasetError {
             Self::UnknownDiagnosticSet { .. } => "patchback.dataset.UnknownDiagnosticSet",
             Self::PatchAlreadyDrawn { .. } => "patchback.dataset.PatchAlreadyDrawn",
             Self::UnknownPatch { .. } => "patchback.dataset.UnknownPatch",
+            Self::SplitAlreadyWritten { .. } => "patchback.dataset.SplitAlreadyWritten",
+            Self::WrongColumnCount { .. } => "patchback.dataset.WrongColumnCount",
+            Self::SampleCountMismatch { .. } => "patchback.dataset.SampleCountMismatch",
+            Self::ByteCountMismatch { .. } => "patchback.dataset.ByteCountMismatch",
+            Self::NonFiniteValue { .. } => "patchback.dataset.NonFiniteValue",
+            Self::MissingDenseFile { .. } => "patchback.dataset.MissingDenseFile",
         }
     }
 
@@ -403,6 +552,29 @@ impl DatasetError {
             Self::UnknownPatch {
                 sampled_patch_id: SampledPatchId(255),
             },
+            Self::SplitAlreadyWritten {
+                dataset_split_id: DatasetSplitId(2),
+                state: SplitState::Written,
+            },
+            Self::WrongColumnCount {
+                kind: DenseFileKind::X,
+                columns: 31,
+            },
+            Self::SampleCountMismatch {
+                rows: 4_991,
+                sample_count: 4_992,
+            },
+            Self::ByteCountMismatch {
+                byte_count: 638_975,
+                rows: 4_992,
+                columns: 32,
+            },
+            Self::NonFiniteValue {
+                kind: DenseFileKind::Y,
+            },
+            Self::MissingDenseFile {
+                dataset_split_id: DatasetSplitId(2),
+            },
         ];
         for example in &examples {
             match example {
@@ -411,7 +583,13 @@ impl DatasetError {
                 | Self::UnknownSplit { .. }
                 | Self::UnknownDiagnosticSet { .. }
                 | Self::PatchAlreadyDrawn { .. }
-                | Self::UnknownPatch { .. } => {}
+                | Self::UnknownPatch { .. }
+                | Self::SplitAlreadyWritten { .. }
+                | Self::WrongColumnCount { .. }
+                | Self::SampleCountMismatch { .. }
+                | Self::ByteCountMismatch { .. }
+                | Self::NonFiniteValue { .. }
+                | Self::MissingDenseFile { .. } => {}
             }
         }
         examples
@@ -444,6 +622,39 @@ impl fmt::Display for DatasetError {
                  be drawn into {dataset_split_id}"
             ),
             Self::UnknownPatch { sampled_patch_id } => write!(f, "no {sampled_patch_id}"),
+            Self::SplitAlreadyWritten {
+                dataset_split_id,
+                state,
+            } => write!(
+                f,
+                "the dense data of {dataset_split_id} is already written (state {state}); \
+                 nothing changed"
+            ),
+            Self::WrongColumnCount { kind, columns } => write!(
+                f,
+                "a row of {} holds {} values, not {columns}",
+                kind.file_name(),
+                kind.columns()
+            ),
+            Self::SampleCountMismatch { rows, sample_count } => write!(
+                f,
+                "a dense file of {rows} rows does not match the split's {sample_count} samples"
+            ),
+            Self::ByteCountMismatch {
+                byte_count,
+                rows,
+                columns,
+            } => write!(
+                f,
+                "a byte count of {byte_count} is not {rows} rows × {columns} columns × 4 bytes"
+            ),
+            Self::NonFiniteValue { kind } => {
+                write!(f, "{} holds a NaN or infinite value", kind.file_name())
+            }
+            Self::MissingDenseFile { dataset_split_id } => write!(
+                f,
+                "{dataset_split_id} has no verified x.f32 or no verified y.f32"
+            ),
         }
     }
 }
@@ -468,12 +679,27 @@ pub struct DatasetStore {
     diagnostic_examples: Vec<DiagnosticExample>,
     /// The patch seeds drawn into each dataset: `DrawPatch`'s patch-identity rule.
     drawn: HashSet<(DatasetId, u64)>,
+    dense_files: Vec<DenseDataFile>,
 }
 
 /// The record of identity `id` (1-based) of `records`.
 fn at<T>(records: &[T], id: u64) -> Option<&T> {
     let index = usize::try_from(id.checked_sub(1)?).ok()?;
     records.get(index)
+}
+
+/// The record of identity `id` (1-based) of `records`, to change it.
+fn at_mut<T>(records: &mut [T], id: u64) -> Option<&mut T> {
+    let index = usize::try_from(id.checked_sub(1)?).ok()?;
+    records.get_mut(index)
+}
+
+/// Whether any `f32` of the little-endian `content` is NaN or infinite.
+fn has_non_finite(content: &[u8]) -> bool {
+    let (values, _) = content.as_chunks::<4>();
+    values
+        .iter()
+        .any(|bytes| !f32::from_le_bytes(*bytes).is_finite())
 }
 
 impl DatasetStore {
@@ -518,6 +744,7 @@ impl DatasetStore {
             dataset_id,
             role,
             sample_count,
+            state: SplitState::Open,
         });
         Ok(dataset_split_id)
     }
@@ -619,6 +846,113 @@ impl DatasetStore {
             cause: case.cause,
         });
         Ok(diagnostic_example_id)
+    }
+
+    /// `WriteDenseFile`: records a dense-data file of a split once `content`, the file's bytes as
+    /// read back, is verified. Refused, in the model's order, for a column count that is not the
+    /// kind's (`WrongColumnCount`), an unknown split (`UnknownSplit`), rows other than the split's
+    /// sample count (`SampleCountMismatch`), a byte count that is not rows × columns × 4 or bytes
+    /// that are not that many (`ByteCountMismatch`, in both cases carrying the input's
+    /// `byte_count`, `rows` and `columns`, the domain's payload), and, for x.f32 and y.f32, a
+    /// little-endian `f32` that is NaN or infinite (`NonFiniteValue`).
+    ///
+    /// The model reads the bytes itself, so no file is recorded unverified. It declares no check
+    /// of the order file's entries (its UNMAPPED comment) and no refusal of a file for a split
+    /// already `Written` (none is modelled); both are left as the model has them. The writer
+    /// checks the order file and refuses a split that is not `Open` before it writes anything
+    /// ([`crate::dense::write_split`]).
+    pub fn write_dense_file(
+        &mut self,
+        input: WriteDenseFile,
+        content: &[u8],
+    ) -> Result<DenseDataFileId, DatasetError> {
+        let WriteDenseFile {
+            dataset_split_id,
+            kind,
+            path,
+            rows,
+            columns,
+            byte_count,
+        } = input;
+        if columns != kind.columns() {
+            return Err(DatasetError::WrongColumnCount { kind, columns });
+        }
+        let split = self
+            .split(dataset_split_id)
+            .ok_or(DatasetError::UnknownSplit { dataset_split_id })?;
+        if rows != split.sample_count {
+            return Err(DatasetError::SampleCountMismatch {
+                rows,
+                sample_count: split.sample_count,
+            });
+        }
+        if i128::from(byte_count) != i128::from(rows) * i128::from(columns) * 4 {
+            return Err(DatasetError::ByteCountMismatch {
+                byte_count,
+                rows,
+                columns,
+            });
+        }
+        if i128::try_from(content.len()).ok() != Some(i128::from(byte_count)) {
+            return Err(DatasetError::ByteCountMismatch {
+                byte_count,
+                rows,
+                columns,
+            });
+        }
+        if kind != DenseFileKind::Order && has_non_finite(content) {
+            return Err(DatasetError::NonFiniteValue { kind });
+        }
+        let dense_data_file_id = DenseDataFileId(self.dense_files.len() as u64 + 1);
+        self.dense_files.push(DenseDataFile {
+            dense_data_file_id,
+            dataset_split_id,
+            kind,
+            path,
+            rows,
+            columns,
+            byte_count,
+        });
+        Ok(dense_data_file_id)
+    }
+
+    /// `FinishSplit`: moves the split to `Written`. Refused, in the model's order, for an unknown
+    /// split (`UnknownSplit`), a split without a verified x.f32 or without a verified y.f32 of its
+    /// own (`MissingDenseFile`; `order.u32` is optional), and a split already `Written`
+    /// (`SplitAlreadyWritten`).
+    pub fn finish_split(&mut self, dataset_split_id: DatasetSplitId) -> Result<(), DatasetError> {
+        let verified = |kind: DenseFileKind| {
+            self.dense_files
+                .iter()
+                .any(|file| file.dataset_split_id == dataset_split_id && file.kind == kind)
+        };
+        let complete = verified(DenseFileKind::X) && verified(DenseFileKind::Y);
+        let split = at_mut(&mut self.splits, dataset_split_id.0)
+            .ok_or(DatasetError::UnknownSplit { dataset_split_id })?;
+        if !complete {
+            return Err(DatasetError::MissingDenseFile { dataset_split_id });
+        }
+        if split.state != SplitState::Open {
+            return Err(DatasetError::SplitAlreadyWritten {
+                dataset_split_id,
+                state: split.state,
+            });
+        }
+        split.state = SplitState::Written;
+        Ok(())
+    }
+
+    pub fn dense_file(&self, id: DenseDataFileId) -> Option<&DenseDataFile> {
+        at(&self.dense_files, id.0)
+    }
+
+    /// The `DenseFiles` view of one split: its verified dense-data files, in the order they were
+    /// recorded.
+    pub fn dense_files_of(&self, dataset_split_id: DatasetSplitId) -> Vec<&DenseDataFile> {
+        self.dense_files
+            .iter()
+            .filter(|file| file.dataset_split_id == dataset_split_id)
+            .collect()
     }
 
     fn known_dataset(&self, dataset_id: DatasetId) -> Result<&Dataset, DatasetError> {

@@ -1,25 +1,29 @@
 //! `patchback generate-dataset --seed <n> --samples <n> --out <dir>` (DESIGN.md § 7, § 11,
 //! `GenerateDataset` of `spec/domains/dataset.yaml`): the deterministic training, validation and
-//! test splits of `patchback_dataset`, written as `dataset.meta` and one `samples.meta` a split
-//! (`patchback_dataset::meta`). The dense `x.f32`, `y.f32` and `order.u32` files are
-//! story:dense-data-files.
+//! test splits of `patchback_dataset`, written as `dataset.meta`, and for each split its
+//! `samples.meta` (`patchback_dataset::meta`) and its ModelSpec dense-data files `x.f32`, `y.f32`
+//! and `order.u32` (`patchback_dataset::dense`, DESIGN.md § 7.2).
 //!
 //! # The run
 //!
 //! 1. The split counts from `--samples` (`SplitCounts::from_samples`: 60,000 gives 50,016 /
 //!    4,992 / 4,992, 48 gives 16 / 16 / 16); a count that is not a positive multiple of the batch
-//!    size 16 is refused before anything is touched. `--samples` admits
-//!    `0..=9223372036854775807` (`patchback_dataset::MAX_SAMPLES`, `i64::MAX`), so every count is
-//!    the rule's; a larger value is a usage error (clap's message, exit 2).
-//! 2. `<out>` must be a directory or absent, and none of `<out>/dataset.meta`,
-//!    `<out>/train/samples.meta`, `<out>/val/samples.meta` and `<out>/test/samples.meta` may
-//!    exist: an existing file is never overwritten. Checked before the generation starts, and
-//!    again by every write. A split's directory (`SplitRole::dir`: `train`, `val`, `test`,
-//!    DESIGN.md § 7.2) is not its record name (`SplitRole::key`: `train`, `validation`, `test`).
+//!    size 16 is refused before anything is touched. `--samples` admits `0..=4294967295`
+//!    (`patchback_dataset::MAX_SAMPLES`, `u32::MAX`, so that each split's row count is a `u32`, Da7-10);
+//!    a larger value is a usage error (clap's message, exit 2).
+//! 2. `<out>` must be a directory or absent, and none of `<out>/dataset.meta` and, for each
+//!    split directory `train`, `val` and `test`, its `samples.meta`, `x.f32`, `y.f32` and
+//!    `order.u32` may exist: an existing file is never overwritten. Checked before the generation
+//!    starts, and again by every write. A split's directory (`SplitRole::dir`: `train`, `val`,
+//!    `test`, DESIGN.md § 7.2) is not its record name (`SplitRole::key`: `train`, `validation`,
+//!    `test`).
 //! 3. The generation (`Generator::run`), which renders every drawn patch.
-//! 4. The writes: `<out>` and the split directories are created when absent, each split's
-//!    `samples.meta`, then `dataset.meta`, last, each as a new file. A failed write removes every
-//!    file and directory this run created.
+//! 4. The writes, each as a new file: `<out>` and the split directories are created when absent;
+//!    for each split in the order train, validation, test, its `samples.meta`, then its `x.f32`,
+//!    `y.f32` and `order.u32` (`dense::write_split`: N × 32, N × 8 and N × 1 values, row-major
+//!    little-endian, `f32`, `f32` and `u32`; each read back and verified, then `FinishSplit`);
+//!    then `dataset.meta`, last. A failed write or verification removes every file and directory
+//!    this run created.
 //!
 //! # Output
 //!
@@ -39,8 +43,12 @@
 //!   their bound (`patchback_dataset::MAX_DRAWS_PER_SAMPLE` a sample) before the splits are full;
 //!   the model declares no error for it;
 //! - `patchback: generate-dataset refused: <domain error>: <message>` for a render or feature
-//!   refusal that is a fault rather than a diagnostic example (none is reachable from the
-//!   arguments).
+//!   refusal that is a fault rather than a diagnostic example, or a dense file the model refuses
+//!   after reading it back (`ByteCountMismatch`, `NonFiniteValue`, …; none is reachable from the
+//!   arguments: the generator's values are finite and its splits full);
+//! - `patchback: generate-dataset refused: "<path>": entry <n> is <value>, …` for an `order.u32`
+//!   that does not read back as each row index once (the writer's own check, Da7-9; not
+//!   reachable from the arguments).
 
 use std::fs;
 use std::io::{self, Write as _};
@@ -48,10 +56,13 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::Args;
+use patchback_dataset::dense::{self, DenseError};
 use patchback_dataset::meta::{
     DATASET_META_FILE, SAMPLES_META_FILE, count_records, dataset_meta, samples_meta,
 };
-use patchback_dataset::{GenerateError, Generated, Generator, MAX_SAMPLES, SplitCounts, SplitRole};
+use patchback_dataset::{
+    DenseFileKind, GenerateError, Generated, Generator, MAX_SAMPLES, SplitCounts, SplitRole,
+};
 
 /// The command ran and refused; it wrote nothing.
 const REFUSED: u8 = 1;
@@ -63,7 +74,7 @@ pub struct GenerateDatasetArgs {
     #[arg(long)]
     pub seed: u64,
     /// How many samples to generate over the training, validation and test splits, at most
-    /// 9223372036854775807
+    /// 4294967295
     #[arg(long, value_parser = clap::value_parser!(u64).range(..=MAX_SAMPLES))]
     pub samples: u64,
     /// The directory to write the dataset into; created when absent
@@ -113,6 +124,16 @@ impl From<GenerateError> for Refusal {
     }
 }
 
+impl From<DenseError> for Refusal {
+    fn from(error: DenseError) -> Self {
+        match (&error, error.domain_error()) {
+            (DenseError::Io { path, error }, _) => Self::io(path, error),
+            (_, Some(name)) => Self::domain(name, &error),
+            (_, None) => Self::one_line(format!("patchback: generate-dataset refused: {error}")),
+        }
+    }
+}
+
 /// Run the verb: the module documentation's steps, its output on stdout, a refusal on stderr.
 pub fn run(args: &GenerateDatasetArgs) -> ExitCode {
     match generate(args) {
@@ -127,14 +148,16 @@ pub fn run(args: &GenerateDatasetArgs) -> ExitCode {
     }
 }
 
-/// The files of a dataset under `out`, in the order they are written: each split's
-/// `samples.meta`, then `dataset.meta`.
-fn targets(out: &Path) -> Vec<(Option<SplitRole>, PathBuf)> {
-    let mut targets: Vec<(Option<SplitRole>, PathBuf)> = SplitRole::ALL
-        .iter()
-        .map(|&role| (Some(role), out.join(role.dir()).join(SAMPLES_META_FILE)))
-        .collect();
-    targets.push((None, out.join(DATASET_META_FILE)));
+/// The files of a dataset under `out`, in the order they are written: for each split its
+/// `samples.meta`, `x.f32`, `y.f32` and `order.u32`, then `dataset.meta`.
+fn targets(out: &Path) -> Vec<PathBuf> {
+    let mut targets = Vec::new();
+    for role in SplitRole::ALL {
+        let dir = out.join(role.dir());
+        targets.push(dir.join(SAMPLES_META_FILE));
+        targets.extend(DenseFileKind::ALL.map(|kind| dir.join(kind.file_name())));
+    }
+    targets.push(out.join(DATASET_META_FILE));
     targets
 }
 
@@ -149,19 +172,19 @@ fn generate(args: &GenerateDatasetArgs) -> Result<Generated, Refusal> {
     // dataset.meta first: it names an existing dataset.
     let mut checks = targets(out);
     checks.rotate_right(1);
-    for (_, path) in &checks {
+    for path in &checks {
         if path.exists() {
             return Err(Refusal::io(path, "already exists; it is never overwritten"));
         }
     }
 
-    let generated = Generator::new(args.seed, counts, out.clone()).run()?;
-    write(out, &generated)?;
+    let mut generated = Generator::new(args.seed, counts, out.clone()).run()?;
+    write(out, &mut generated)?;
     Ok(generated)
 }
 
 /// Writes the dataset's files (module documentation, step 4); on failure removes what it created.
-fn write(out: &Path, generated: &Generated) -> Result<(), Refusal> {
+fn write(out: &Path, generated: &mut Generated) -> Result<(), Refusal> {
     let mut created = Created::default();
     let result = write_all(out, generated, &mut created);
     if result.is_err() {
@@ -206,22 +229,24 @@ impl Created {
     }
 }
 
-fn write_all(out: &Path, generated: &Generated, created: &mut Created) -> Result<(), Refusal> {
+fn write_all(out: &Path, generated: &mut Generated, created: &mut Created) -> Result<(), Refusal> {
     created.dir(out).map_err(|error| Refusal::io(out, error))?;
-    for (role, path) in targets(out) {
-        let text = match role {
-            Some(role) => {
-                let dir = out.join(role.dir());
-                created
-                    .dir(&dir)
-                    .map_err(|error| Refusal::io(&dir, error))?;
-                samples_meta(generated, role)
-            }
-            None => dataset_meta(generated),
-        };
-        write_new(&path, text.as_bytes(), created).map_err(|error| Refusal::io(&path, error))?;
+    for role in SplitRole::ALL {
+        let dir = out.join(role.dir());
+        created
+            .dir(&dir)
+            .map_err(|error| Refusal::io(&dir, error))?;
+        let path = dir.join(SAMPLES_META_FILE);
+        write_new(&path, samples_meta(generated, role).as_bytes(), created)
+            .map_err(|error| Refusal::io(&path, error))?;
+        let split = generated.split_id(role);
+        dense::write_split(&mut generated.store, split, &dir, |path, bytes| {
+            write_new(path, bytes, created)
+        })?;
     }
-    Ok(())
+    let path = out.join(DATASET_META_FILE);
+    write_new(&path, dataset_meta(generated).as_bytes(), created)
+        .map_err(|error| Refusal::io(&path, error))
 }
 
 /// Writes `bytes` to a file that must not exist yet, recording it once it exists.

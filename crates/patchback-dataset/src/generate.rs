@@ -60,10 +60,14 @@ pub const SAMPLES_REFERENCE: u64 = 60_000;
 /// The validation (and test) count of § 7.1's first dataset, 4,992.
 pub const HELD_OUT_REFERENCE: u64 = 4_992;
 
-/// The largest sample count a generation admits, `i64::MAX` (Da6-26): every split count of
-/// [`SplitCounts::from_samples`] then fits the model's `Integer` (i64) without saturating.
+/// The largest sample count a generation admits, `u32::MAX` (Da7-10, replacing Da6-26's
+/// `i64::MAX`): a split's row count is a `u32` (`order.u32` is written from it), so no split may hold more, and
+/// every split count of [`SplitCounts::from_samples`] then also fits the model's `Integer` (i64).
 /// `patchback generate-dataset` refuses a larger `--samples` as a usage error.
-pub const MAX_SAMPLES: u64 = i64::MAX as u64;
+///
+/// It bounds rows, not memory: every sample is held in memory until the dense files are written,
+/// and DESIGN.md § 12.3's memory bound (a streaming writer) is a later story.
+pub const MAX_SAMPLES: u64 = u32::MAX as u64;
 
 /// The note's patch in the note sequence: the renderer does not compare it with the plan.
 const NOTE_PATCH_ID: &str = "00000000-0000-4000-8000-000000000000";
