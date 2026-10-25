@@ -6,7 +6,8 @@ status: approved
 title: Wave a12 approved by Timo
 relations:
 - decides: story:ml-init-benchmark
-revision: 2
+- decides: story:docs-progress-and-demos
+revision: 4
 transitions:
 - {from: "draft", to: "approved", at: "2026-10-25T08:28:53Z", actor: "human:timo", revision: 2}
 ---
@@ -45,6 +46,13 @@ follows approval-record:release-process. Wave a11 released 0.10.0 on 2026-10-25 
   § Releases), push, release 0.11.0.
 - Not in the wave: `story:note-estimation` and the other Milestone C–E stories, the studio
   stories (option B since a4).
+- Unit 2, added 2026-10-25 while unit 1 was under adversary review, at the operator's request
+  in chat ("make sure we have our impl progress reflected in the public docs, also provide some
+  demos there, eg synthesizing/reproduction samles, etc"): `story:docs-progress-and-demos`
+  (`crates/patchback-docs`, `demos/`, `models/demo/`, `website/`), one Opus implementor, one
+  Opus adversary pass, one correction round, verified by the coordinator. Scoped by
+  `aep:story-scoper` on `wave/a12` at d99f9f5; its 8 open points are answered by Da12-18 to
+  Da12-27. It is tooling, belongs to no epic, and ships in 0.11.0 with unit 1.
 
 ## Decisions taken by the orchestrator
 
@@ -113,9 +121,90 @@ in `a12/ml-init-benchmark-scope/open-points.md`):
   run; `train-the-regressor.md` and `concepts/regressor.md` (four arms, not three);
   `AGENTS.md` § State.
 
+- Da12-13 (implementor deviation 1) `patchback_fit::predicted_arm` and `PredictedArmError` are
+  public: the CLI's arm 3 renders and scores one arbitrary point through them, and `default_arm`
+  is that function at the default point (`arm_at`). Additive to `lib.rs` (Da12-11).
+- Da12-14 (implementor deviation 2) `read_bounded` and `read_seed_inputs` are duplicated from
+  `crates/patchback-cli/src/fit.rs` into `benchmark.rs`, since `fit.rs` was not the unit's file.
+  Accepted for the unit; moving them into a shared module of the CLI crate is a cleanup for a
+  later unit (for the owner).
+- Da12-15 (implementor deviation 3) The Da12-7 path (a holdout clip whose analysis is refused
+  is refused as `clip <k>: …`) has no end-to-end test; the implementor could not synthesize
+  such a clip. The adversary tries (a patch whose render is silent or unpitched); if none is
+  reachable from the generator's parameter ranges, the path stays covered by code reading and
+  the adversary says so as a judgement finding.
+- Da12-16 (implementor deviation 5) The predicted arm's render is resized to the reference's
+  length before scoring, as the other arms are; the implementor's first test assumed equal
+  lengths and was corrected, not the code. The adversary checks that arm 3's loss equals
+  `patchback compare` of its listening file against the reference.
+- Da12-17 (the implementor's seven calls on open points) `MlInitResult` is a struct of the
+  spec's eight inputs as public fields, `record_ml_init_result` returns `Result<(), FitError>`
+  and the crate models no event type; `clips.txt` appends `raw_loss seeded_best_loss
+  seeded_evaluations seeded_restarts seeded_stop_reason clamped` after the eight baseline
+  columns; each clip clones the one read-once `SeedInputs`, checked once; the inputs are read
+  before `Benchmark::start` (the start needs `weight_artifact_id`), the arms run 1, 2, 4, 3;
+  the head records `weights`, `modelspec`, `normalization`, `feature_contract` follow `prng`;
+  no zero-median refusal on `ml-init` (no reduction is computed); `--weights` or
+  `--normalization` with the engine baseline exits 2 through clap's `ArgumentConflict` error
+  raised by hand. Deviation 4 (the `files-doc.md` clip line shows clip 0 only) is a note for the
+  coordinator's documents.
+
+Unit 2, `story:docs-progress-and-demos` (the open points are the scoper's, 2026-10-25, numbered
+1–8 in `a12/docs-demos/scoper-report.md`):
+
+- Da12-18 Tooling acceptance (point 1): the documentation crate is tooling (AGENTS.md) with no
+  ESS domain, so the story names no scenario. `task acceptance-check` accepts a story without a
+  scenario when its body carries a line starting `Tooling acceptance: ` that names the Rust
+  test files under `crates/patchback-docs/` holding its tests, and fails when one of those
+  files does not exist. Every other story still needs a scenario. The coordinator's change, in
+  the plan commit that adds the story.
+- Da12-19 Release per story (point 2): the newest CHANGELOG release whose section, with its
+  lines joined, names `(story <slug>)`, `(stories … <slug> …)` or `story:<slug>`; the scoper's
+  unjoined search missed four wrapped mentions (`CHANGELOG.md:402`, `:469`, `:485`, `:496`).
+  A story the CHANGELOG never names (six remain: wav-io, parameter-contracts,
+  workspace-scaffold, cli-clap, dependency-gate, modelspec-pin-and-check) shows the first
+  release dated on or after the day of its `implemented` transition, marked "by date" on the
+  page. Generation never fails on it.
+- Da12-20 Grouping (point 3): a story with no `decomposes` edge is listed under "Outside the
+  milestones", below the milestones.
+- Da12-21 Retraining (point 4): `patchback-docs demos train --modelspec <binary> --dataset
+  <dir> --out <dir>` in the docs crate, running `patchback_model::TrainingRun` with the
+  provenance's seed, sizes and steps; the generator never downloads ModelSpec. `PROVENANCE`
+  records whether a retrain reproduced the checksum: "not verified" until someone runs it. The
+  committed weights are the coordinator's 2026-10-25 demo run's, trained by a probe whose
+  source is handed to the implementor.
+- Da12-22 Voice count (point 5): four voices (the pluck, pad and bass of the 2026-10-25 demo
+  plus one lead), one note each, under 2 s per file; the implementor measures `demos fit` in
+  release mode and drops to three if the total passes 4 minutes. Fits use
+  `FitConfig::default()` with `max_wall_time_ms` 600,000, so no fit stops on wall time and
+  `demos.json` does not depend on the machine.
+- Da12-23 Time budget (point 6): the 30 s obligation counts run time, compilation apart; the
+  render step runs in debug in `pages.yml` and `task docs-generate`; the implementor measures
+  and reports run time and compile time.
+- Da12-24 The fourth take (point 7): the clamped prediction (`SeededStart::point()`) rendered,
+  labelled "prediction", with the clamp count shown beside it.
+- Da12-25 PCM16 range (point 8): demo voices are chosen so every take's render stays within
+  [-1, 1]; `demo_audio_is_pcm16_48k_mono_under_two_seconds` asserts it; a voice that clips is
+  replaced, not normalized.
+- Da12-26 Layout (the scoper's): committed inputs `demos/<voice>/voice.patch` and
+  `note.events`; committed model `models/demo/regressor.weights`, `normalization.stats` and
+  `PROVENANCE`; committed numbers `website/data/demos.json`, written only by `demos fit`;
+  generated pages `website/docs/progress.mdx` and `website/docs/listen.mdx`; audio rendered at
+  build time into git-ignored `website/demo-audio/<voice>/{recording,default-fit,seeded-fit,prediction}.wav`,
+  referenced with `require('@site/demo-audio/…')` so a missing file fails the site build. The
+  pages carry titles and milestone names, no planning ids (`PRIVATE` in
+  `crates/patchback-docs/src/main.rs`).
+- Da12-27 Fork point: unit 2's tree forks from the plan commit that adds the story and the
+  acceptance exemption, not from unit 1's merge. Unit 2 edits `Taskfile.yml` (`docs-generate`,
+  new `docs-demos`); the coordinator edited `acceptance-check` in that commit; `Cargo.lock`
+  gains the `patchback-docs` stanza only. The README, AGENTS.md and CHANGELOG lines are the
+  coordinator's from the implementor's notes (as Da12-12).
+
 ## Provisional values
 
 | Name | Value | Where | Why provisional |
 | --- | --- | --- | --- |
 | listening examples (Da12-6) | 5 files per clip on `ml-init`, 3 on the baseline | `crates/patchback-cli/src/benchmark.rs` | DESIGN.md names no count |
 | clamp record (Da12-5) | `clamped_predictions <n> of <clips>` | `benchmark.txt` | DESIGN.md § 5.2 says "measured", names no record |
+| demo voices (Da12-22) | 4, one note each, under 2 s per file | `demos/` | the operator asked for "some demos" and named no count |
+| demo audio format (Da12-26) | 16-bit PCM WAV, 48 kHz, mono | `website/demo-audio/` | a browser plays it; the engine writes float32 |

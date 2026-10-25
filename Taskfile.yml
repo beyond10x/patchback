@@ -46,10 +46,20 @@ tasks:
             fi
           done
           for story in .engineering/planning/story/*.md; do
-            if ! grep -qE 'spec/scenarios/[A-Za-z0-9._-]+\.yaml' "$story"; then
-              echo "acceptance-check: $story names no acceptance scenario" >&2
-              missing=1
+            if grep -qE 'spec/scenarios/[A-Za-z0-9._-]+\.yaml' "$story"; then
+              continue
             fi
+            if grep -qE '^Tooling acceptance: ' "$story"; then
+              for path in $(grep -ohE 'crates/patchback-docs/[A-Za-z0-9._/-]+\.rs' "$story" | sort -u); do
+                if [ ! -f "$path" ]; then
+                  echo "acceptance-check: $path is named by $story and does not exist" >&2
+                  missing=1
+                fi
+              done
+              continue
+            fi
+            echo "acceptance-check: $story names no acceptance scenario" >&2
+            missing=1
           done
           exit "$missing"
 
