@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-25T04:50:54Z",
+  "actor": "human:timo",
+  "artifact": "story:weight-export",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "correction round 1 (Da9-19, Da9-20): 110→112 green; the pass-1 cases kept",
+    "review": "review-result:weight-export-adversary-1",
+    "outcome": "fixed"
+  }
+}

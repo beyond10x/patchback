@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-25T04:50:54Z",
+  "actor": "human:timo",
+  "artifact": "story:weight-export",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "the three coverage notes are closed by the pass-2 cases kept in the unit (Da9-20); no correction round 2",
+    "review": "review-result:weight-export-adversary-2",
+    "outcome": "fixed"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-25T04:50:54Z",
+  "actor": "human:timo",
+  "artifact": "story:weight-export",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "coordinator verify-unit1.sh on the unit tree before commit 1aee730: cargo test -p patchback-model, plain and pinned lanes, 117 executed each, 16 suites ok, 0 SKIPPED in the pinned lane; clippy -D warnings and fmt --check exit 0"
+  }
+}

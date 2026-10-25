@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-25T04:50:54Z",
+  "actor": "human:timo",
+  "artifact": "story:weight-export",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "coordinator: unit commit 1aee730 merged --no-ff into wave/a9 as 64d9f41; two adversary passes green (98→110, 112→117); correction round 1 answered Da9-19"
+  }
+}

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:weight-export
 kind: story
-status: active
+status: implemented
 title: Strict weight export
 relations:
 - decomposes: epic:modelspec-regressor
@@ -24,10 +24,11 @@ scope:
   path: crates/patchback-model/tests/pinned_training.rs
 - confidence: inferred
   path: crates/patchback-model/tests/weight_export.rs
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-25T03:48:02Z", actor: "human:timo", revision: 7}
 - {from: "proposed", to: "active", at: "2026-10-25T03:48:02Z", actor: "human:timo", revision: 8}
+- {from: "active", to: "implemented", at: "2026-10-25T04:51:09Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":1}}}
 ---
 # Strict weight export
 

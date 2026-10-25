@@ -6,7 +6,7 @@ status: approved
 title: Wave a9 approved by Timo
 relations:
 - decides: story:weight-export
-revision: 2
+revision: 3
 transitions:
 - {from: "draft", to: "approved", at: "2026-10-25T03:47:53Z", actor: "human:timo", revision: 2}
 ---
@@ -152,3 +152,15 @@ Unit 1, `story:weight-export` (the open points are the scoper's, 2026-10-25, in 
 - Da9-18 `tests/domain.rs` gains `ExportWeights` to its command table and accounts for every
   error it declares, `UnknownTrainingRun` as not emitted (Da8-21), and `CorruptWeightArtifact`
   as emitted by the reader for `Predict`.
+
+Correction round 1 (after adversary pass 1, `review-result:weight-export-adversary-1`):
+
+- Da9-19 The name of an `init` or `param` line is `@<ident>.<ident>` in the grammar (each part
+  one or more ASCII letters, digits or `_`); the names step compares the first `param` name with
+  `@PatchRegressor.w1` and the second with `@PatchRegressor.w2` in full, so `param @Other.w1` is
+  `UnrecognizedParameter { w1_name: "@Other.w1", … }` as `model.yaml`'s `unrecognized-parameter`
+  outcome words it; an `init` name is not checked (Da9-6). Supersedes the fixed prefix in Da9-5's
+  grammar line and the implementor's decision 2 (adversary F4).
+- Da9-20 The adversary's cases stay in the unit (`tests/adversary_weight_export.rs`): three of
+  them are the only tests of the export's header bound at 1,024 bytes, the reader's read limit
+  and its `.take(limit)` guard (adversary F1 to F3).
