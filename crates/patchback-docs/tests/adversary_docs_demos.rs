@@ -670,13 +670,13 @@ fn adv_progress_counts_rows_and_order_equal_the_store() {
         total += rows.len();
     }
     assert_eq!(total, stories.len(), "every story file is one row");
-    let top = format!(
-        "{} stories ({} implemented, {} active, {} draft).",
-        stories.len(),
-        tally["implemented"],
-        tally["active"],
-        tally["draft"]
-    );
+    let mut parts: Vec<(usize, String)> = tally
+        .iter()
+        .map(|(status, n)| (rank(status), format!("{n} {status}")))
+        .collect();
+    parts.sort();
+    let parts: Vec<String> = parts.into_iter().map(|(_, part)| part).collect();
+    let top = format!("{} stories ({}).", stories.len(), parts.join(", "));
     assert!(page.contains(&top), "{top}\n{page}");
     for title in stories.keys() {
         assert_eq!(page.matches(&format!("| {title} |")).count(), 1, "{title}");

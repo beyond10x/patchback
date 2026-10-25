@@ -7,7 +7,7 @@ title: Wave a12 approved by Timo
 relations:
 - decides: story:ml-init-benchmark
 - decides: story:docs-progress-and-demos
-revision: 14
+revision: 15
 transitions:
 - {from: "draft", to: "approved", at: "2026-10-25T08:28:53Z", actor: "human:timo", revision: 2}
 ---
@@ -326,6 +326,15 @@ all INFEASIBLE in reach, severity note):
   screenshots. The visual and template findings (prose links without underline, landing-page
   small text under 4.5:1, the OSC caption overhang, the ESS graph pan boxes, the 404 page)
   wait for the operator's look and the fix list.
+- Da12-45 (coordinator, after the close) The release commit `348244e` failed CI's
+  Documentation validation: `adv_progress_counts_rows_and_order_equal_the_store` (pass 1 of
+  unit 2) built the page's count line as `tally["active"]`, a key the store no longer has once
+  every Milestone B story is implemented; the generator's documented rule omits zero counts
+  ("3 stories (2 implemented, 1 draft)"). The gate and the docs-check rerun passed because
+  both ran before the close moved the stories. The test now builds the line as the generator
+  does, from the statuses present in rank order; the page is unchanged. The fix commit lands on
+  `main` after the release commit and 0.11.0 is tagged on it, as 0.10.0 was tagged on the
+  commit after its release commit.
 
 ## Provisional values
 
