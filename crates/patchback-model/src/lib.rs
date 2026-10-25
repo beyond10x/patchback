@@ -27,14 +27,21 @@
 //!    `Completed` run's stdout, refuses anything outside the documented output of the pinned
 //!    version, and writes the checksummed `weights/1` file; [`WeightArtifact::read`] reads one
 //!    back and verifies it (`ExportWeights`, module `weights`).
+//! 8. [`Predictor::load`] reads a checked artifact and [`Predictor::predict`] runs its two dense
+//!    layers and ReLU in `f32` on one normalized `features/1` vector, refusing a vector of
+//!    another length, another feature contract or a non-finite value, and returns a
+//!    [`Prediction`] with its outputs clamped to [0, 1] and counted (`Predict`, module
+//!    `predict`).
 //!
 //! Every run of the binary is bounded by a timeout ([`DEFAULT_TIMEOUT`] unless the caller gives
 //! one to [`ModelSpec::open_with_timeout`], [`DEFAULT_TRAINING_TIMEOUT`] for a training run unless
 //! the caller gives another); past it the process is killed and waited for.
 
+mod predict;
 mod training;
 mod weights;
 
+pub use predict::{PredictError, Prediction, Predictor};
 pub use training::{
     Backend, DEFAULT_TRAINING_TIMEOUT, LossCurve, OutputError, TrainingError, TrainingFailure,
     TrainingRun, TrainingRunState,
