@@ -119,8 +119,9 @@ impl fmt::Display for CompareError {
 
 impl std::error::Error for CompareError {}
 
-/// Why a fit refused to start, why a command of a [`crate::FitRun`] was refused, or why a run
-/// ended without a patch. A refusal produces no partial result.
+/// Why a fit refused to start, why a command of a [`crate::FitRun`] was refused, why a run
+/// ended without a patch, or why a run's results were not written. A refusal produces no partial
+/// result.
 #[derive(Clone, Debug, PartialEq)]
 pub enum FitError {
     /// `patchback.fit.InvalidSearchBound`: a render, wall-time or restart bound is not positive.
@@ -153,6 +154,12 @@ pub enum FitError {
     /// rate other than 48 kHz, a clip past the analysis duration bound, a non-finite sample):
     /// every comparison against it would be refused, so the fit is.
     Compare(CompareError),
+    /// `patchback.fit.FailedRunHasNoPatch`: the run failed, so it has no patch to write and its
+    /// results are not written ([`crate::write_results`]).
+    FailedRunHasNoPatch,
+    /// `patchback.fit.FitStillRunning`: the run has not ended, so it has no final patch to write
+    /// ([`crate::write_results`]).
+    FitStillRunning,
 }
 
 impl FitError {
@@ -166,6 +173,8 @@ impl FitError {
         "patchback.fit.FitNotRunning",
         "patchback.fit.RenderBudgetExhausted",
         "patchback.fit.NoValidCandidate",
+        "patchback.fit.FailedRunHasNoPatch",
+        "patchback.fit.FitStillRunning",
         "patchback.fit.SampleRateMismatch",
         "patchback.fit.LengthOutsideAlignment",
         "patchback.analysis.EmptyAudio",
@@ -192,6 +201,8 @@ impl FitError {
             Self::FitNotRunning { .. } => "patchback.fit.FitNotRunning",
             Self::RenderBudgetExhausted => "patchback.fit.RenderBudgetExhausted",
             Self::NoValidCandidate | Self::RendererFault { .. } => "patchback.fit.NoValidCandidate",
+            Self::FailedRunHasNoPatch => "patchback.fit.FailedRunHasNoPatch",
+            Self::FitStillRunning => "patchback.fit.FitStillRunning",
             Self::Compare(error) => error.domain_error(),
         }
     }
@@ -233,6 +244,8 @@ impl FitError {
             Self::RendererFault {
                 message: "a parameter outside its contract".to_owned(),
             },
+            Self::FailedRunHasNoPatch,
+            Self::FitStillRunning,
         ];
         examples.extend(CompareError::examples().into_iter().map(Self::Compare));
         for example in &examples {
@@ -245,7 +258,9 @@ impl FitError {
                 | Self::RenderBudgetExhausted
                 | Self::NoValidCandidate
                 | Self::RendererFault { .. }
-                | Self::Compare(_) => {}
+                | Self::Compare(_)
+                | Self::FailedRunHasNoPatch
+                | Self::FitStillRunning => {}
             }
         }
         examples
@@ -295,6 +310,13 @@ impl fmt::Display for FitError {
                  RendererFault and nothing is written"
             ),
             Self::Compare(error) => write!(f, "the reference is refused: {error}"),
+            Self::FailedRunHasNoPatch => f.write_str(
+                "the fit run failed, so it has no patch to write; no results are written",
+            ),
+            Self::FitStillRunning => f.write_str(
+                "the fit run has not ended, so it has no final patch to write; no results are \
+                 written",
+            ),
         }
     }
 }

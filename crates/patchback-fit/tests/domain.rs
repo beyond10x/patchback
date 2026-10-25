@@ -170,3 +170,45 @@ fn every_error_of_the_fit_run_commands_is_emitted_or_accounted_for() {
         );
     }
 }
+
+/// story:fit-run-artifacts: `WriteFitResults` declares `FitRunNotFound`, `FailedRunHasNoPatch`
+/// and `FitStillRunning`, in that order. `patchback_fit::write_results` emits the last two in
+/// that order; `FitRunNotFound` has no counterpart (Da7-7) and stays in
+/// [`NOT_EMITTED_BY_THE_CRATE`].
+#[test]
+fn every_error_of_write_fit_results_is_emitted_or_accounted_for() {
+    let fit = read("fit");
+    let command = section(
+        &fit,
+        "  - name: patchback.fit.WriteFitResults\n",
+        "\n  - name: patchback.fit.ProposeCandidate\n",
+    );
+    let errors: Vec<&str> = command
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("error: "))
+        .collect();
+    assert_eq!(
+        errors,
+        [
+            "patchback.fit.FitRunNotFound",
+            "patchback.fit.FailedRunHasNoPatch",
+            "patchback.fit.FitStillRunning",
+        ]
+    );
+    for name in errors {
+        let emitted = FitError::DOMAIN_ERRORS.contains(&name);
+        let accounted = NOT_EMITTED_BY_THE_CRATE.iter().any(|(n, _)| *n == name);
+        assert!(
+            emitted != accounted,
+            "{name}: emitted {emitted}, listed as not emitted {accounted}"
+        );
+    }
+    assert_eq!(
+        FitError::FailedRunHasNoPatch.domain_error(),
+        "patchback.fit.FailedRunHasNoPatch"
+    );
+    assert_eq!(
+        FitError::FitStillRunning.domain_error(),
+        "patchback.fit.FitStillRunning"
+    );
+}
