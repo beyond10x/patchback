@@ -1,10 +1,13 @@
-//! Every refusal of a training run and of a weight export names an error
+//! Every refusal of a training run, a weight export and a prediction names an error
 //! `spec/domains/model.yaml` declares, and every error the four training-run commands
-//! (`PlanTrainingRun`, `BindModelSource`, `StartTrainingRun`, `FinishTrainingRun`) and
-//! `ExportWeights` declare is emitted by driving that command through [`TrainingRun`] or
-//! [`WeightArtifact::export`], or is listed in [`NOT_EMITTED_BY_THE_CRATE`] with the reason no
-//! path of this crate reaches it. `CorruptWeightArtifact`, which `Predict` declares, is emitted
-//! by [`WeightArtifact::read`], the reader the predictor will call (Da9-10, Da9-18).
+//! (`PlanTrainingRun`, `BindModelSource`, `StartTrainingRun`, `FinishTrainingRun`),
+//! `ExportWeights` and `Predict` declare is emitted by driving that command through
+//! [`TrainingRun`], [`WeightArtifact::export`] or [`Predictor`] (`load`, then `predict`), or is
+//! listed in [`NOT_EMITTED_BY_THE_CRATE`] with the reason no path of this crate reaches it.
+//! `CorruptWeightArtifact` is emitted by [`WeightArtifact::read`] and, through it, by
+//! [`Predictor::load`] (Da9-10, Da9-18, Da10-12). `PredictError::NonFinitePrediction` and
+//! `PredictError::Io` name no domain error, as `ExportError::Unwritable` and `ExportError::Io`
+//! do not (Da10-7).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -18,8 +21,8 @@ use patchback_dataset::{
 };
 use patchback_model::{
     Backend, DEFAULT_TRAINING_TIMEOUT, ExportError, ModelSource, ModelSpec, ModelSpecError,
-    ModelSpecPin, ReadError, TrainingError, TrainingRun, TrainingRunState, W1_NAME, W1_SHAPE,
-    W2_NAME, W2_SHAPE, WeightArtifact,
+    ModelSpecPin, PAYLOAD_BYTES, PredictError, Predictor, ReadError, TrainingError, TrainingRun,
+    TrainingRunState, W1_NAME, W1_SHAPE, W2_NAME, W2_SHAPE, WeightArtifact,
 };
 
 fn spec() -> String {
@@ -49,8 +52,9 @@ fn declared_by(spec: &str, command: &str, next: &str) -> BTreeSet<String> {
     .collect()
 }
 
-/// The training-run commands and `ExportWeights`, each with what follows it in the domain.
-const COMMANDS: [(&str, &str); 5] = [
+/// The training-run commands, `ExportWeights` and `Predict`, each with what follows it in the
+/// domain.
+const COMMANDS: [(&str, &str); 6] = [
     (
         "PlanTrainingRun",
         "\n  - name: patchback.model.BindModelSource\n",
@@ -68,9 +72,11 @@ const COMMANDS: [(&str, &str); 5] = [
         "\n  - name: patchback.model.ExportWeights\n",
     ),
     ("ExportWeights", "\n  - name: patchback.model.Predict\n"),
+    ("Predict", "\nevents:\n"),
 ];
 
-/// The errors the five commands declare that no path of this crate emits, each with its reason.
+/// The errors the six commands declare that no path of this crate emits, each with its reason.
+/// `Predict` adds none: all five of its errors are emitted through [`Predictor`].
 const NOT_EMITTED_BY_THE_CRATE: [(&str, &str); 4] = [
     (
         "patchback.model.UnknownPin",
@@ -155,7 +161,14 @@ fn standins() -> &'static Path {
         let version = pin().version().to_owned();
         script("checks", &version, ":");
         script("other", "0.4.0", ":");
-        for (name, lines) in export_outputs() {
+        let documented = (
+            "documented",
+            vec![
+                param(W1_NAME, W1_SHAPE, 2048, "0.5"),
+                param(W2_NAME, W2_SHAPE, 512, "0.5"),
+            ],
+        );
+        for (name, lines) in export_outputs().into_iter().chain([documented]) {
             let stdout = dir.join(format!("{name}.stdout"));
             let text: String = lines.iter().map(|line| format!("{line}\n")).collect();
             fs::write(&stdout, text).unwrap();
@@ -283,6 +296,34 @@ fn driven() -> Vec<Refusal> {
         assert_eq!(run.finish().unwrap(), TrainingRunState::Completed);
         exported(&run);
     }
+
+    // Predict: an artifact exported from a documented run, then `load` and `predict` driven to
+    // each refusal, in the Rust order (Da10-4).
+    let mut run = TrainingRun::plan(Backend::Cpu, &pin).unwrap();
+    run.bind(&source.trainable().unwrap()).unwrap();
+    let binary = ModelSpec::open(&standins().join("documented"), &pin).unwrap();
+    run.start(&store, written, None, &binary, 1, DEFAULT_TRAINING_TIMEOUT)
+        .unwrap();
+    assert_eq!(run.finish().unwrap(), TrainingRunState::Completed);
+    let good = dir.join("documented.weights");
+    WeightArtifact::export(&run, "features/1", &good).unwrap();
+    let mut bytes = fs::read(&good).unwrap();
+    let at = bytes.len() - PAYLOAD_BYTES;
+    bytes[at] ^= 0x01;
+    let corrupt = dir.join("corrupt.weights");
+    fs::write(&corrupt, &bytes).unwrap();
+    let mut predicted = |result: Result<(), PredictError>| {
+        if let Err(error) = result {
+            refusals.push(("Predict", error.domain_error(), format!("{error:?}")));
+        }
+    };
+    predicted(Predictor::load(&dir.join("missing.weights")).map(drop));
+    predicted(Predictor::load(&corrupt).map(drop));
+    let mut predictor = Predictor::load(&good).unwrap();
+    predicted(predictor.predict("features/1", &[0.5; 31]).map(drop));
+    predicted(predictor.predict("features/2", &[0.5; 32]).map(drop));
+    predicted(predictor.predict("features/1", &[f64::NAN; 32]).map(drop));
+    predicted(predictor.predict("features/1", &[0.5; 32]).map(drop));
     refusals
 }
 
@@ -297,6 +338,7 @@ fn every_refusal_names_a_declared_error() {
         TrainingError::DOMAIN_ERRORS,
         ExportError::DOMAIN_ERRORS,
         ReadError::DOMAIN_ERRORS,
+        PredictError::DOMAIN_ERRORS,
     ];
     for name in lists.iter().copied().flatten() {
         assert!(declared.contains(name), "{name} is not declared in spec/");
@@ -343,17 +385,41 @@ fn every_refusal_names_a_declared_error() {
         ReadError::DOMAIN_ERRORS,
         "one example an error"
     );
+    assert_eq!(
+        named(
+            PredictError::examples()
+                .iter()
+                .map(|e| (e.domain_error(), e.to_string()))
+                .collect()
+        ),
+        PredictError::DOMAIN_ERRORS,
+        "one example an error"
+    );
     let not_a_verdict = TrainingError::ModelSpec(ModelSpecError::NotFound {
         searched: Vec::new(),
     });
     assert_eq!(not_a_verdict.domain_error(), None);
+    // Da10-7: a NaN output and an I/O failure are not the model's.
+    assert_eq!(
+        PredictError::NonFinitePrediction { index: 0 }.domain_error(),
+        None
+    );
+    assert_eq!(
+        PredictError::Io {
+            path: PathBuf::new(),
+            error: std::io::Error::other("x")
+        }
+        .domain_error(),
+        None
+    );
 }
 
 /// Each command's refusals, observed by driving it, and the errors listed as not emitted, are
 /// together exactly the errors the domain declares for that command; the observed ones are
-/// [`TrainingError::DOMAIN_ERRORS`] and [`ExportError::DOMAIN_ERRORS`].
+/// [`TrainingError::DOMAIN_ERRORS`], [`ExportError::DOMAIN_ERRORS`] and
+/// [`PredictError::DOMAIN_ERRORS`].
 #[test]
-fn every_error_of_the_five_commands_is_emitted_or_accounted_for() {
+fn every_error_of_the_six_commands_is_emitted_or_accounted_for() {
     let spec = spec();
     let mut declared: BTreeMap<&str, BTreeSet<String>> = BTreeMap::new();
     for (command, next) in COMMANDS {
@@ -383,15 +449,16 @@ fn every_error_of_the_five_commands_is_emitted_or_accounted_for() {
     }
 
     let all_declared: BTreeSet<&str> = declared.values().flatten().map(String::as_str).collect();
-    assert_eq!(all_declared.len(), 20, "{all_declared:?}");
+    assert_eq!(all_declared.len(), 25, "{all_declared:?}");
     let all_observed: BTreeSet<&str> = observed.values().flatten().map(String::as_str).collect();
     let listed: BTreeSet<&str> = TrainingError::DOMAIN_ERRORS
         .iter()
         .chain(ExportError::DOMAIN_ERRORS)
+        .chain(PredictError::DOMAIN_ERRORS)
         .copied()
         .collect();
     assert_eq!(all_observed, listed);
-    assert_eq!(all_observed.len(), 16);
+    assert_eq!(all_observed.len(), 21);
     assert!(all_observed.is_disjoint(&not_emitted));
     let export: BTreeSet<&str> = ExportError::DOMAIN_ERRORS.iter().copied().collect();
     assert_eq!(
@@ -401,11 +468,21 @@ fn every_error_of_the_five_commands_is_emitted_or_accounted_for() {
             .collect::<BTreeSet<_>>(),
         export
     );
+    let predict: BTreeSet<&str> = PredictError::DOMAIN_ERRORS.iter().copied().collect();
+    assert_eq!(
+        observed["Predict"]
+            .iter()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>(),
+        predict
+    );
+    assert_eq!(predict.len(), 5);
 }
 
-/// `Predict` declares `CorruptWeightArtifact`; [`WeightArtifact::read`], the reader `Predict`
-/// will call, emits it for every artifact it refuses, and it is the reader's only domain error.
-/// `Predict`'s other errors are the native predictor's (story:native-predictor).
+/// `Predict` declares `CorruptWeightArtifact`; [`WeightArtifact::read`], the reader
+/// [`Predictor::load`] calls, emits it for every artifact it refuses, and it is the reader's only
+/// domain error; `load` emits it for the same files (Da10-12). A missing file is the reader's
+/// I/O error and `load`'s `UnknownWeightArtifact` (Da10-4).
 #[test]
 fn corrupt_weight_artifact_is_emitted_by_the_reader_for_predict() {
     let spec = spec();
@@ -436,9 +513,24 @@ fn corrupt_weight_artifact_is_emitted_by_the_reader_for_predict() {
             ),
             Ok(artifact) => panic!("{name}: {artifact:?}"),
         }
+        match Predictor::load(&path) {
+            Err(error) => assert_eq!(
+                error.domain_error(),
+                Some("patchback.model.CorruptWeightArtifact"),
+                "{name}: {error:?}"
+            ),
+            Ok(predictor) => panic!("{name}: {predictor:?}"),
+        }
     }
     match WeightArtifact::read(&dir.join("missing")) {
         Err(error @ ReadError::Io { .. }) => assert_eq!(error.domain_error(), None),
         other => panic!("{other:?}"),
+    }
+    match Predictor::load(&dir.join("missing")) {
+        Err(error) => assert_eq!(
+            error.domain_error(),
+            Some("patchback.model.UnknownWeightArtifact")
+        ),
+        other => panic!("{:?}", other.map(drop)),
     }
 }
