@@ -7,7 +7,7 @@ title: Wave a7 approved by Timo
 relations:
 - decides: story:fit-run-artifacts
 - decides: story:dense-data-files
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "approved", at: "2026-10-24T23:09:22Z", actor: "human:timo", revision: 2}
 ---
@@ -141,3 +141,13 @@ follows approval-record:release-process. Wave a6 released 0.5.0 on 2026-10-25.
   twelve domain errors through a `DatasetStore` command and asserts the error it returns, so
   it observes an emission; `DatasetError::examples()` stays for the rendering checks that read
   it.
+- Da7-20 (unit 1 adversary pass 2, G1, G2) `parse_trace` refuses a best-after value of `-` on
+  a line whose outcome is `first-retained`, `improved` or `not-improved` (those outcomes mean a
+  candidate is retained, so a best exists), and a numeric best-after on a `rejected` line
+  before the first `first-retained` line (no candidate scored it); each is a named parser
+  refusal beside Da7-16's. The four other line patterns pass 2 characterised (a restart number
+  that skips or falls, `first-retained` after the first numeric best, `improved` with a best
+  other than its total, a `rejected` or `not-improved` line whose best fell) stay accepted:
+  no run writes them, the characterisation cases pin the behaviour, and the owner decides
+  with the trace grammar (DESIGN.md § 9.1). The stdout `limited` row of `patchback fit` says
+  it describes the uncut render, as `report.txt`'s warning does.
