@@ -7,7 +7,7 @@ title: Wave a12 approved by Timo
 relations:
 - decides: story:ml-init-benchmark
 - decides: story:docs-progress-and-demos
-revision: 4
+revision: 14
 transitions:
 - {from: "draft", to: "approved", at: "2026-10-25T08:28:53Z", actor: "human:timo", revision: 2}
 ---
@@ -200,6 +200,133 @@ Unit 2, `story:docs-progress-and-demos` (the open points are the scoper's, 2026-
   gains the `patchback-docs` stanza only. The README, AGENTS.md and CHANGELOG lines are the
   coordinator's from the implementor's notes (as Da12-12).
 
+Unit 1, after adversary pass 1 (green, 0 red, 2 notes; review-result:ml-init-benchmark-adversary-1):
+
+- Da12-28 (pass 1, note 1, closes Da12-15) The Da12-7 path stays as a guard with no end-to-end
+  test: the generator admits only clips whose analysis under the same configuration
+  (`contract.analysis_config()`, equal to `AnalysisConfig::default()`) succeeded, so no
+  generated holdout reaches the refusal (40 of 40 clips over 5 seeds, the adversary's case
+  `no_admitted_holdout_clip_reaches_the_analysis_or_seeded_fit_refusal`). The implementor says
+  so in the module doc of `crates/patchback-cli/src/benchmark.rs` (correction 1, doc only).
+- Da12-29 (pass 1, note 2) The adversary's case
+  `the_seeded_arm_runs_with_the_clips_fit_seed_and_pairs_restart_1` stays in the suite as the
+  only observation of arm 4's fit seed; the unit's own tests keep `--max-restarts 1` for wall
+  time. Pass 2 runs on the corrected tree against what pass 1 did not list.
+
+Unit 2, after the implementor's report (green, 19 → 33 cases, red 14 first):
+
+- Da12-30 (implementor deviations) The staged voices were re-tuned to stay within the PCM16
+  range and under 2 s: pluck output gain -8 dB (was -4), bass -9 dB (was -3), pad release 0.9 s
+  (was 1.2) with its note ending at frame 33,600 (was 48,000); at the old gains the limiter
+  clipped pluck on 9 samples and bass on 343. The lead voice is new (drive 8, cutoff 2,400 Hz,
+  Q 4.5, ADSR 0.02/0.25/0.7/0.25, output gain -9 dB, MIDI 69). Accepted: Da12-25 forbids
+  normalizing a rendered take, and choosing a demo voice's parameters is designing the voice.
+- Da12-31 (extends Da12-19) An implemented story with no release dated on or after its
+  implemented day shows "Unreleased". The progress page's sections are the milestone epics,
+  then Patch studio, then "Outside the milestones"; rows are ordered by status, then
+  implementation date; count lines read "N stories (…)".
+- Da12-32 (the implementor's calls) `website/data/demos.json` is `patchback-demos/1` (fit
+  config, generator, model, parameters, patchback version, topology; per voice the inputs with
+  SHA-256, the note, the recording, the voice's parameters, both fits with start and best loss,
+  evaluations, restarts, stop reason and parameters, the prediction with its clamp count);
+  `models/demo/PROVENANCE` is `patchback-demo-provenance 1` key-value lines; the eight fits run
+  on parallel threads; serde_json's `float_roundtrip` feature is on (no new crate); plain
+  `generate`, not only `--check`, refuses a `demos.json` made from other inputs.
+- Da12-33 `demos train` never ran and has no test (no ModelSpec binary on this machine, never
+  downloaded); `PROVENANCE` says `retrain_reproduces_checksum not-verified`. Verifying it is the
+  owner's, with a binary.
+- Da12-34 (coupling) Every commit that moves a story's status or adds a CHANGELOG release
+  heading regenerates `website/docs/progress.mdx` (`task docs-generate`), or `generate --check`
+  fails `task check`. The wave's close and release commits do so; AGENTS.md § Commands and
+  § Releases say so.
+- Da12-35 The implementor ran `python3 --version` once to check whether Python was installed;
+  no code ran and no file was written. Recorded as a rule deviation.
+
+Unit 1, after adversary pass 2 (review-result:ml-init-benchmark-adversary-2; green, 402 → 411,
+0 red):
+
+- Da12-36 (correction 2, by the coordinator) The module doc of `crates/patchback-cli/src/
+  benchmark.rs` claimed `wall_time_ms` is the only record that differs between two runs of the
+  same flags; under a binding `--max-wall-time-ms` a clip's evaluations, losses, `fit.wav` and
+  `seeded.wav` differ too (pre-existing, base `benchmark.rs:92-93`). The sentence now says so.
+  No code changed, so no third pass. The three findings on the unit's own tests (a usage test
+  that passes on the base binary, a modelspec record test that cannot see a mutant writing the
+  pin, an `is_err()`-only refusal test) are covered by the pass-2 cases, which are committed
+  with the unit; the unit's tests stay as written.
+- Da12-37 (the wave's close) `epic:modelspec-regressor` (draft → proposed → active →
+  implemented) and `initiative:milestone-b` (active → implemented) move in the a12 close
+  commit, before the release commit, once every story of the epic is implemented and the wave
+  gate is green; the release that follows delivers the last two stories. Earlier plan: after
+  the release. Taken by the coordinator under the grant: one commit and one CI cycle fewer, and
+  `progress.mdx` regenerates once.
+
+Unit 2, after adversary pass 1 (review-result:docs-progress-and-demos-adversary-1; red 2 of 12,
+both INFEASIBLE in reach):
+
+- Da12-38 (correction 1) All four findings are corrected: `demos fit` records a SHA-256 of
+  each take's rendered PCM16 bytes in `website/data/demos.json`, and `demos render` and
+  `generate` refuse a mismatch naming the take and `task docs-demos` (the audio is bound to
+  the page, not only to the inputs); CHANGELOG heading dates are compared as year, month, day
+  numbers and an unreadable date is refused; the provenance test asserts the recorded
+  literals; a relative `demos fit --out` resolves against `--root`. The format stays
+  `patchback-demos/1`: it is unreleased. `task docs-demos` rewrites `demos.json` and
+  `listen.mdx` with the digests; the fit numbers must not change.
+- Da12-39 All 12 adversary cases stay in the suite (about 49 s more in the docs lane). The
+  adversary offered to keep only the two red ones; the ten drift, release-rule and page
+  cases are what would catch the next regression.
+- Da12-40 (correction 1, the implementor's calls, accepted) The take digest is the SHA-256 of
+  the WAV `data` chunk (the PCM16 sample bytes), recorded per voice under `pcm16Sha256` keyed
+  by take file name; `listen.mdx` ends with one 16-row table of them. `demos render --out`
+  resolves against `--root` as `demos fit --out` does; `demos train`'s paths stay relative to
+  the working directory (they are not repository paths). A story whose transition time does
+  not read as a date shows "—", as a missing transition does. `demos.json` grew from 14,704 to
+  16,268 bytes; no fit number changed (0 lines removed, 24 added).
+
+Unit 2, after adversary pass 2 (review-result:docs-progress-and-demos-adversary-2; red 3 of 7,
+all INFEASIBLE in reach, severity note):
+
+- Da12-41 (correction 2) The three red cases are corrected: `render_takes` recomputes the
+  physical values from each recorded vector and the voice's from `voice.patch` and refuses a
+  mismatch by voice and field; a versioned CHANGELOG heading whose date does not read as
+  `YYYY-MM-DD` (missing, empty or malformed) is refused by version, `[Unreleased]` being the
+  only undated heading; `read_day` requires a 4-digit year, 2-digit month and 2-digit day. The
+  judgement finding on `main.rs:718` needs no change: the adversary's binary-level case covers
+  `render --out`, and a binary-level `demos fit --out` case would need a fit. An extra key
+  under `pcm16Sha256` is ignored and stays so. No third adversary pass: the correction
+  recomputes and compares, and changes no recorded value; the coordinator's verification runs
+  the whole docs lane, both adversary files included.
+- Da12-42 (coordinator, the landing page) The site's home page
+  (`website/src/theme/ProductLandingPage.tsx`) still carried its first-commit status copy:
+  "Specified, not built yet", "there is no code yet", the pill "In specification · first
+  milestone has no ML", Milestone A marked "first". Found by the operator's docs-site review
+  of 2026-10-25 (the local build of the unit-2 tree) and by reading the page. Rewritten in the
+  wave's docs commit: Milestones A and B built, phrases next, links to Progress and Listen, A
+  and B marked done and C next (`data-done` styled in `landing.module.css`). Hand-written copy
+  about implementation status on the home page is the coordinator's at every release, until a
+  story generates it from the store as `progress.mdx` is.
+- Da12-43 (correction 2, the implementor's deviation, accepted) A CHANGELOG heading's date
+  needs a four-digit year; its month and day take one or two digits, because pass 1's case
+  `adv_release_dates_compare_as_dates_not_strings` writes `2026-9-5` and expects `generate` to
+  succeed, and an adversary case is never weakened. `26-10-30`, `02026-10-30`, `2026-010-30`
+  and `2026-10-030` are refused by version. The digest check runs before the physical-value
+  check, so a shifted vector is reported as the take whose samples changed and an edited
+  `physical` value as the field. `voice.normalized` is not re-derived; the page shows only the
+  physical values. Correction 2 green: unit tests 37, pass-1 file 12, pass-2 file 7; no fit
+  rerun; `demos.json` unchanged at 16,268 bytes.
+- Da12-44 (coordinator, the site review's content findings) The docs-site review of
+  2026-10-25 (five haiku screeners on the local build of the unit-2 tree) confirmed six content
+  defects in hand-written pages: three `patchback fit` examples without the required `--notes`
+  (exit 2), "five files" for a run that writes six, a `confidence` record `report.txt` does not
+  hold, analysis described as estimating onset and gate, the regressor named as the start
+  without `--weights`, and "the standard library only" beside `clap`. Fixed in the wave's docs
+  commit on `index.md`, `getting-started.md` and `guides/fit-a-recording.md`, with a Fixed
+  section in the CHANGELOG, before the review's report reached the operator: the skill hands
+  the owner its fix list only after the operator has seen the report, but a release whose
+  Getting started example exits 2 is worse than an early fix, and the report keeps its
+  screenshots. The visual and template findings (prose links without underline, landing-page
+  small text under 4.5:1, the OSC caption overhang, the ESS graph pan boxes, the 404 page)
+  wait for the operator's look and the fix list.
+
 ## Provisional values
 
 | Name | Value | Where | Why provisional |
@@ -208,3 +335,6 @@ Unit 2, `story:docs-progress-and-demos` (the open points are the scoper's, 2026-
 | clamp record (Da12-5) | `clamped_predictions <n> of <clips>` | `benchmark.txt` | DESIGN.md § 5.2 says "measured", names no record |
 | demo voices (Da12-22) | 4, one note each, under 2 s per file | `demos/` | the operator asked for "some demos" and named no count |
 | demo audio format (Da12-26) | 16-bit PCM WAV, 48 kHz, mono | `website/demo-audio/` | a browser plays it; the engine writes float32 |
+| demo fit wall bound (Da12-22) | `MAX_WALL_TIME_MS` 600,000 ms | `crates/patchback-docs/src/demos.rs` | the slowest fit took 98.2 s on a loaded machine; no fit may stop on wall time |
+| demo data bound (Da12-26) | `MAX_DATA_BYTES` 65,536 | `crates/patchback-docs/src/demos.rs` | the story's obligation; actual 16,268 bytes |
+| demo voices (Da12-30) | pluck (gain -8 dB), pad (release 0.9 s, note end 33,600), bass (gain -9 dB), lead (new) | `demos/*/voice.patch`, `note.events` | tuned so no take clips or passes 2 s |

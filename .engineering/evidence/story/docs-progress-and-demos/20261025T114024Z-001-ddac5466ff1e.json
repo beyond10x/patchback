@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-25T11:40:24Z",
+  "actor": "human:timo",
+  "artifact": "story:docs-progress-and-demos",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "coordinator verification on the unit tree: docs crate tests, clippy, fmt, dependency gate, generate --check, two byte-equal renders (a12/coordinator/verify-unit2.txt); two adversary passes"
+  }
+}

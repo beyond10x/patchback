@@ -2,13 +2,17 @@
 format: aep.planning-md/3
 id: epic:modelspec-regressor
 kind: epic
-status: draft
+status: implemented
 title: 'Milestone B: native dataset and ModelSpec M0 regressor'
 relations:
 - serves: vision:patchback
 - depends_on: epic:sound-engine
 - informed_by: executable-system-specification:patchback-contracts
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-25T11:49:57Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-10-25T11:49:57Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-25T11:49:58Z", actor: "human:timo", revision: 4}
 ---
 # Milestone B: native dataset and ModelSpec M0 regressor
 

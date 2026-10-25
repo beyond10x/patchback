@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-25T11:40:24Z",
+  "actor": "human:timo",
+  "artifact": "story:ml-init-benchmark",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "coordinator verification on the unit tree: fit and cli lane, dependency gate, clippy, fmt (a12/coordinator/verify-unit1.txt); two adversary passes"
+  }
+}

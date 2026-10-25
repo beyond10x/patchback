@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:ml-init-benchmark
 kind: story
-status: active
+status: implemented
 title: Default vs ML-init benchmark
 relations:
 - decomposes: epic:modelspec-regressor
@@ -41,10 +41,11 @@ scope:
   path: website/docs/reference/cli.md
 - confidence: cited
   path: website/docs/reference/files.md
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-25T08:28:54Z", actor: "human:timo", revision: 8}
 - {from: "proposed", to: "active", at: "2026-10-25T08:28:54Z", actor: "human:timo", revision: 9}
+- {from: "active", to: "implemented", at: "2026-10-25T11:49:56Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 # Default vs ML-init benchmark
 

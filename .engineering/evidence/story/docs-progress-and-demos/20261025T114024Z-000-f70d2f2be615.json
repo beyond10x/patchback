@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-25T11:40:24Z",
+  "actor": "human:timo",
+  "artifact": "story:docs-progress-and-demos",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check on wave/a12 after integration (a12/coordinator/gate-1.txt)"
+  }
+}

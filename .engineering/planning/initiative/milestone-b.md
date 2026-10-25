@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: initiative:milestone-b
 kind: initiative
-status: active
+status: implemented
 title: 'Goal: Milestone B reached'
 summary: 'Timo, 2026-10-24: Goal set: milestone b reached. Reached when epic:sound-engine and epic:modelspec-regressor are implemented and released.'
 owner: timo
@@ -10,10 +10,11 @@ relations:
 - serves: vision:patchback
 - depends_on: epic:sound-engine
 - depends_on: epic:modelspec-regressor
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-24T19:45:23Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-24T19:45:23Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-25T11:49:58Z", actor: "human:timo", revision: 4}
 ---
 # Goal: Milestone B reached
 
