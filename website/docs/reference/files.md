@@ -612,5 +612,53 @@ splits together, stops at the same number.
 
 ## Exported weights
 
-The regressor's trained weights are stored as a checksummed, versioned little-endian `f32`
-artifact that also records the model version and the feature-contract version.
+`patchback_model::WeightArtifact::export` writes the trained weights of a completed ModelSpec run
+to one file, format `weights/1`; the recommended name is `regressor.weights` (provisional), and
+the path is the caller's. The file is a text header, one empty line, then a binary payload.
+
+The header is seven lines in this order, each ending in `\n`:
+
+| Line | Holds |
+| --- | --- |
+| `weights/1` | the format and its version; a reader refuses any other first line |
+| `model PatchRegressor` | the model whose parameters the file holds |
+| `modelspec <version> <commit>` | the ModelSpec pin the run was planned under: a dotted numeric version and a 40-digit lowercase hexadecimal commit |
+| `features <contract>` | the feature-contract version given at export, such as `features/1`; one token of printable ASCII, not checked against the dataset |
+| `w1 32 64` | w1's shape, rows then columns |
+| `w2 64 8` | w2's shape |
+| `sha256 <hex>` | the SHA-256 of the payload bytes, 64 lowercase hexadecimal digits |
+
+The header, its empty line included, is at most 1,024 bytes (provisional). The payload is the
+2,560 values as little-endian `f32`: w1's 2,048, then w2's 512, each tensor in the order
+ModelSpec printed it, 10,240 bytes. The checksum covers the payload only; every header line is
+checked by its form, so a changed digit in the version, the commit or the feature contract is
+not detected by the checksum.
+
+A header as written from the pinned ModelSpec 0.5.0, 4 steps on 64 generated rows (the real
+binary, `crates/patchback-model/tests/pinned_export.rs`):
+
+```text
+weights/1
+model PatchRegressor
+modelspec 0.5.0 7c45c1adaf6e0cc0ba05f18878b31bfdc57cc529
+features features/1
+w1 32 64
+w2 64 8
+sha256 aac8aecc7721f0343cfe42feed52292bc4319a9526ec6b0776ba546847136f6a
+
+```
+
+`patchback_model::WeightArtifact::read` reads at most 11,265 bytes of a file and refuses it as
+`CorruptWeightArtifact` when:
+
+- the first line is not `weights/1`;
+- no empty line closes the header within 1,024 bytes;
+- a header line is missing, out of order, repeated or followed by another, or does not have its
+  form (`model PatchRegressor`, `w1 32 64`, `w2 64 8` exactly);
+- the payload is not exactly 10,240 bytes;
+- the payload's SHA-256 is not the header's;
+- a value is NaN or infinite.
+
+A file that cannot be opened or read is an I/O error, not a corrupt artifact. The export never
+overwrites a file and removes the file it created when writing it fails.
+

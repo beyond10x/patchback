@@ -6,6 +6,27 @@ All notable changes to Patchback are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `patchback_model::WeightArtifact::export` (story weight-export): the `ExportWeights` of
+  `spec/domains/model.yaml`, a library call with no `patchback` command. From a `Completed`
+  `TrainingRun` it reads the whole stdout of the pinned ModelSpec under one grammar (`init`,
+  `step`, `eval` and exactly two `param` lines; any other line, an empty one included, is
+  refused), then checks, in this order, the names `@PatchRegressor.w1` and `.w2`, the shapes
+  `[32, 64]` and `[64, 8]`, the counts 2,048 and 512 and that every value is finite, and writes
+  a new `weights/1` file: a seven-line header (`model PatchRegressor`, the run's ModelSpec version
+  and commit, the feature contract the caller gives, the shapes, the SHA-256 of the payload) and
+  10,240 bytes of little-endian `f32`, w1 then w2 in the order printed. It refuses with
+  `ExportError` (`TrainingNotCompleted`, `UnrecognizedTrainingOutput`, `UnrecognizedParameter`,
+  `WrongWeightShape`, `WrongElementCount`, `NonFiniteWeight`); a refusal writes nothing, an
+  existing file is never overwritten, and a failed write removes the file it created.
+- `patchback_model::WeightArtifact::read` (story weight-export): reads a `weights/1` file back,
+  its header within `MAX_HEADER_BYTES` (1,024, provisional), checks every header line in order,
+  the payload's length, its SHA-256 and that every value is finite, and refuses anything else as
+  `ReadError::Corrupt` (`CorruptWeightArtifact`). With `FORMAT_VERSION`, `MODEL_NAME`,
+  `W1_NAME`, `W2_NAME`, `W1_SHAPE`, `W2_SHAPE`, `W1_ELEMENTS`, `W2_ELEMENTS`, `PAYLOAD_BYTES` and
+  `RECOMMENDED_FILE_NAME` (`regressor.weights`, provisional).
+
 ## [0.7.0] - 2026-10-25
 
 ### Added

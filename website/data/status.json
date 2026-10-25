@@ -130,16 +130,23 @@
     },
     {
       "area": "Model",
-      "detail": "A fixed-shape two-layer MLP, 32 features to 8 normalized parameters, checked and trained by modelspec on its CPU backend. patchback_model::TrainingRun runs modelspec train --backend cpu on a written training split, with an optional evaluation split, under a timeout; exit status 0 completes the run, and its stdout gives the loss curve and the evaluation loss. On generated data the pinned ModelSpec 0.5.0 lowers the loss from 1.0717294 to 0.8882302 in 4 steps on 64 rows. The run is a library call with no patchback command yet, and no weights leave it until weight export ships. Held by test the_pinned_modelspec_trains_on_real_generated_data in crates/patchback-model/tests/pinned_training.rs.",
+      "detail": "A fixed-shape two-layer MLP, 32 features to 8 normalized parameters, checked and trained by modelspec on its CPU backend. patchback_model::TrainingRun runs modelspec train --backend cpu on a written training split, with an optional evaluation split, under a timeout; exit status 0 completes the run, and its stdout gives the loss curve and the evaluation loss. On generated data the pinned ModelSpec 0.5.0 lowers the loss from 1.0717294 to 0.8882302 in 4 steps on 64 rows. The run is a library call with no patchback command yet; patchback_model::WeightArtifact::export writes its checked weights to a checksummed weights/1 file. Held by test the_pinned_modelspec_trains_on_real_generated_data in crates/patchback-model/tests/pinned_training.rs.",
       "href": "/docs/guides/train-the-regressor#check-and-train",
       "label": "A parameter regressor trained with ModelSpec",
       "status": "shipped"
     },
     {
       "area": "Model",
-      "detail": "Trained weights are validated, versioned and checksummed, then run by a small Rust matmul and ReLU predictor held to golden tests. Milestone B.",
+      "detail": "patchback_model::WeightArtifact::export reads the stdout of a completed run of the pinned ModelSpec and refuses any line outside its documented init, step, eval and param lines, a parameter other than @PatchRegressor.w1 and .w2, shapes other than [32, 64] and [64, 8], counts other than 2,048 and 512, and non-finite values. It writes a new weights/1 file: a header with the model, the ModelSpec version and commit, the feature contract and the payload's SHA-256, then 10,240 bytes of little-endian f32. WeightArtifact::read verifies the header, the length and the checksum. On the pinned ModelSpec 0.5.0 all 2,560 values read back as printed. A library call with no patchback command yet. Held by test the_weights_of_a_pinned_run_are_exported_and_read_back in crates/patchback-model/tests/pinned_export.rs.",
+      "href": "/docs/reference/files#exported-weights",
+      "label": "Checked weight export",
+      "status": "shipped"
+    },
+    {
+      "area": "Model",
+      "detail": "The exported weights are run by a small Rust matmul and ReLU predictor held to golden tests. Milestone B.",
       "href": "/docs/concepts/regressor#from-training-to-prediction",
-      "label": "Checked weight export and a native predictor",
+      "label": "A native predictor",
       "status": "planned"
     },
     {

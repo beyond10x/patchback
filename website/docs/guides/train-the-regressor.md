@@ -97,9 +97,34 @@ ModelSpec has no inference or checkpoint interface Patchback relies on, so Patch
 adapter runs the same `modelspec train` as a subprocess, against the pinned ModelSpec version.
 It reads only the documented `param @PatchRegressor.w1` and `.w2` outputs and checks the
 names, the shapes `[32, 64]` and `[64, 8]`, the element counts, that every value is finite and
-the exit status. Output it does not recognize is refused, not approximated. The weights are
-stored as a checksummed, versioned little-endian `f32` artifact together with the model and
-feature-contract versions, and Patchback's native predictor runs them.
+the exit status. Output it does not recognize is refused, not approximated.
+
+Once the run is `Completed`, hand it to `patchback_model::WeightArtifact::export`, a library
+call with no `patchback` command yet:
+
+```rust
+use patchback_analysis::FEATURES_1_VERSION;
+use patchback_model::{RECOMMENDED_FILE_NAME, WeightArtifact};
+
+let artifact = WeightArtifact::export(&run, FEATURES_1_VERSION, &out.join(RECOMMENDED_FILE_NAME))?;
+```
+
+It refuses, in this order, and writes nothing when it does:
+
+| Refusal | When |
+| --- | --- |
+| `TrainingNotCompleted` | the run is not `Completed` (a run that exited 1 is `Failed`, whatever it printed) |
+| `UnrecognizedTrainingOutput` | a stdout line is not an `init`, `step`, `eval` or `param` line of the documented form (an empty line, a warning, a value `f32::from_str` does not read, a step number that does not increase, a second `eval` line), or there are not exactly two `param` lines |
+| `UnrecognizedParameter` | the first `param` line is not `@PatchRegressor.w1` or the second not `@PatchRegressor.w2` |
+| `WrongWeightShape` | the declared shapes are not `[32, 64]` and `[64, 8]` |
+| `WrongElementCount` | the lines hold another number of values than 2,048 and 512 |
+| `NonFiniteWeight` | a value is NaN or infinite |
+
+The loss curve is not the export's verdict: a completed run whose loss is NaN exports if its
+weights are finite. The feature contract is recorded as you give it, not checked against the
+dataset. The file is created new and never overwritten; its format is described in
+[Exported weights](../reference/files.md#exported-weights). `WeightArtifact::read` reads it back
+and refuses a file whose header, length or checksum is wrong as `CorruptWeightArtifact`.
 
 ## Did it help
 
