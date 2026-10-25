@@ -18,6 +18,7 @@ them starts a server or needs a network.
 | [`patchback analyze`](#patchback-analyze) | Measures a recording |
 | [`patchback fit`](#patchback-fit) | Recovers a patch and its events from a recording |
 | [`patchback compare`](#patchback-compare) | Compares two recordings term by term |
+| [`patchback benchmark`](#patchback-benchmark) | Measures the fit against the default patch over a synthesized holdout |
 | [`patchback generate-dataset`](#patchback-generate-dataset) | Renders the regressor's training data |
 
 ## patchback patch validate
@@ -264,6 +265,101 @@ patchback: compare refused: patchback.audio.UnsupportedSampleRate: candidate "ca
 | 1 | Refused: a missing or unreadable file, a WAV import refuses, lengths alignment cannot absorb, or a recording longer than the 60 s the analysis takes |
 | 2 | Usage error: `--reference` or `--candidate` missing, or an argument the command does not take |
 
+## patchback benchmark
+
+```bash
+patchback benchmark --out bench/ --examples 200 --seed 1234
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `--out` | The directory for the [benchmark's files](./files.md#a-benchmark-run); created when absent |
+| `--examples` | The number of reference clips in the holdout, 0 to 2^64 - 1; required. 0 is refused |
+| `--seed` | The seed the holdout is drawn from, 0 to 2^64 - 1; 0 by default |
+| `--topology` | The topology the holdout is synthesized and fitted in, by name; `subtractive-mono/1` by default |
+| `--max-renders`, `--max-wall-time-ms`, `--max-restarts`, `--improvement-threshold`, `--block-size` | Every clip's fit bounds and render block size, as [`patchback fit`](#patchback-fit) takes them, with its defaults |
+
+The engine baseline: does the closed loop beat the fixed default patch? The holdout is a seeded
+set of reference clips Patchback synthesizes itself, each with its known note. One SplitMix64
+stream from `--seed`, kept apart from the one `generate-dataset` reads for the same seed, gives
+clip 0 a patch seed, then its fit seed, then clip 1 a patch seed, and so on. Each patch seed
+draws a patch and one note as the dataset generator does; a draw the generator would set aside
+as a diagnostic example (silence, noise, clipping) is skipped and the next output is the next
+patch seed. At most four draws a clip are made.
+
+For each clip, the default patch is rendered with the clip's note, cut or padded to the
+reference's length and compared with it: the default loss. Then `patchback fit`'s search runs on
+the clip, from the default patch, seeded with the clip's fit seed: its best loss. The benchmark
+takes the lower median of each (the middle value; of an even count, the lower of the two middle
+ones), the reduction `(default − search) / default × 100`, and the verdict: `met` at a reduction
+of at least 20 %, else `not-met`. The target is a go/no-go experiment target, not a guarantee;
+both verdicts complete the benchmark and exit 0.
+
+It writes into `--out` ([a benchmark run](./files.md#a-benchmark-run)):
+
+```text
+bench/
+├── clips.txt             per clip: seeds, both losses, evaluations, restarts, stop reason
+├── examples/
+│   ├── 0/
+│   │   ├── reference.wav the clip
+│   │   ├── default.wav   the default patch's render, scored on
+│   │   └── fit.wav       the fitted patch's render, scored on
+│   ├── 1/ …
+│   └── 2/ …
+└── benchmark.txt         settings, medians, reduction, verdict, evaluations, wall time
+```
+
+`patchback compare --reference bench/examples/0/reference.wav --candidate
+bench/examples/0/fit.wav` prints clip 0's best loss as its `loss`, and with `default.wav` its
+default loss. The same flags write the same files, byte for byte, except the `wall_time_ms`
+record of `benchmark.txt`, unless a fit's wall-time bound stops it.
+
+It prints the records of `benchmark.txt` from `default_median_loss` on to stdout, in its order:
+
+```text
+default_median_loss 0.37281723960683943
+default_search_median_loss 0.24204298323998533
+median_loss_reduction_percent 35.07730932849679
+target_verdict met
+default_search_median_evaluations 12
+wall_time_ms 10139
+listening_example examples/0/reference.wav
+listening_example examples/0/default.wav
+listening_example examples/0/fit.wav
+listening_example examples/1/reference.wav
+listening_example examples/1/default.wav
+listening_example examples/1/fit.wav
+```
+
+(`--examples 2 --seed 7 --max-renders 12 --max-restarts 1`.)
+
+A refused benchmark writes nothing, not even the directory, and prints one line to stderr:
+
+```text
+patchback: benchmark refused: patchback.fit.InvalidHoldoutSize: the holdout of 0 examples holds no example; a benchmark needs at least one; no benchmark starts
+patchback: benchmark refused: patchback.fit.TopologyNotFound: no topology named "no-such/1" is known to the renderer; no run starts
+patchback: benchmark refused: cannot write "bench/benchmark.txt": already exists; it is never overwritten
+patchback: benchmark refused: clip <k>: <domain error>: <message>
+```
+
+They are answered in this order: the holdout size, the topology, the fit bounds, `--out` (an
+`--out` that is not a directory or lies beneath a file; then `benchmark.txt`, `clips.txt` or
+`examples` already in it, a symlink counting whether it resolves or not; every file unchanged),
+the holdout (`holdout exhausted: …` when four draws a clip do not fill it), then each clip in
+order (`clip <k>: <error>: <message>` when its reference or default patch cannot be rendered or
+compared, or its fit is refused or finds no valid candidate), then a default median of 0 (no
+reduction is defined). A file that cannot be written at the end is refused
+`cannot write "<path>": <message>`, and every file and directory the run wrote is removed.
+
+| Exit status | Meaning |
+| --- | --- |
+| 0 | Benchmarked, `met` or `not-met`, and the files written |
+| 1 | Refused: `--examples 0` (`InvalidHoldoutSize`), an unknown `--topology` (`TopologyNotFound`), a bound of 0 (`InvalidSearchBound`), an `--out` that is not a directory, one of its files that exists or cannot be written, a holdout not drawn within its draws, a clip whose fit is refused or fails, or a default median of 0 |
+| 2 | Usage error: a missing `--out` or `--examples`, a count, seed or bound that is not a non-negative integer, a threshold that is not a finite non-negative decimal, a `--block-size` below 1, or an unknown flag |
+
+See [the closed loop](../concepts/closed-loop.md#the-starting-point).
+
 ## patchback generate-dataset
 
 ```bash
@@ -289,13 +385,16 @@ limiter changed, a silent render, and a render whose features cannot be computed
 ambiguous pitch) go to a separate diagnostic set, and the next seed is drawn. A patch is in one
 split only. The training distribution is provisional.
 
-For each split, in the order train, validation, test, the command writes `samples.meta` and then
-the split's [dense files](./files.md#dense-files) `x.f32`, `y.f32` and `order.u32`. It reads each
-dense file back and checks its byte count and that every value is finite before it writes the
-next one. `dataset.meta` is written last. `--samples` bounds all splits together, and a split
-admits at most `u32::MAX` rows, so that its row count is a `u32`; `--samples` stops at
-4294967295. Every sample stays in memory until its split's files are written, so memory grows
-with `--samples`.
+Once every sample is drawn, the command computes the mean and standard deviation of each
+`features/1` value over the training split and writes them first, as
+[`normalization.stats`](./files.md#normalizationstats). Then, for each split in the order train,
+validation, test, it writes `samples.meta` and the split's [dense files](./files.md#dense-files)
+`x.f32`, `y.f32` and `order.u32`. `x.f32` holds every split's features z-scored under the
+training statistics, never a split's own. It reads each dense file back and checks its byte count
+and that every value is finite before it writes the next one. `dataset.meta` is written last.
+`--samples` bounds all splits together, and a split admits at most `u32::MAX` rows, so that its
+row count is a `u32`; `--samples` stops at 4294967295. Every sample stays in memory until its
+split's files are written, so memory grows with `--samples`.
 
 The command prints one `key value` line per value to stdout: `out`, the directory quoted as
 `patchback render` quotes its output, then the counts that `dataset.meta` records:
@@ -318,13 +417,14 @@ A refusal prints one line to stderr and leaves nothing written:
 ```text
 patchback: generate-dataset refused: patchback.dataset.SplitCountNotBatchMultiple: the Train split of 15 samples is not a positive multiple of the batch size 16
 patchback: generate-dataset refused: cannot write "data/dataset.meta": already exists; it is never overwritten
+patchback: generate-dataset refused: cannot write "data/normalization.stats": already exists; it is never overwritten
 patchback: generate-dataset refused: cannot write "data/train/x.f32": already exists; it is never overwritten
 ```
 
 | Exit status | Meaning |
 | --- | --- |
 | 0 | Generated and written |
-| 1 | Refused: a split count that is not a positive multiple of 16, an existing `dataset.meta`, `samples.meta`, `x.f32`, `y.f32` or `order.u32`, an output that cannot be written, a dense file that does not read back with its byte count and finite values, or a generation that ran out of draws (more than 4 per sample) before the splits were full |
+| 1 | Refused: a split count that is not a positive multiple of 16, an existing `dataset.meta`, `normalization.stats`, `samples.meta`, `x.f32`, `y.f32` or `order.u32`, an output that cannot be written, a dense file that does not read back with its byte count and finite values, or a generation that ran out of draws (more than 4 per sample) before the splits were full |
 | 2 | Usage error: a missing `--seed`, `--samples` or `--out`, a `--seed` or `--samples` that is not an unsigned integer, a `--samples` above 4294967295, or an unknown flag |
 
 See [train the regressor](../guides/train-the-regressor.md).
@@ -333,6 +433,6 @@ See [train the regressor](../guides/train-the-regressor.md).
 
 Training uses ModelSpec's own CLI, not a `patchback` command:
 `modelspec check`, `modelspec ir --stage training` and `modelspec train --backend cpu --data
---eval`. They are documented in the
+--eval --steps`. They are documented in the
 [ModelSpec CLI reference](https://beyond10x.github.io/modelspec/docs/reference/cli)
 ([GitHub](https://github.com/beyond10x/modelspec)).

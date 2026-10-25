@@ -30,6 +30,8 @@ pub struct Milestone {
     pub epic: &'static str,
 }
 
+/// Every Milestone A capability is shipped, so only the tests name it until a new one is planned.
+#[cfg_attr(not(test), allow(dead_code))]
 const A: Milestone = Milestone {
     name: "Milestone A",
     epic: "sound-engine",
@@ -206,13 +208,17 @@ pub const CAPABILITIES: &[Capability] = &[
         milestone: None,
         href: "/docs/reference/files#a-fit-run",
     },
-    planned(
-        A,
-        "Fit",
-        "A baseline against the default patch",
-        "Over a seeded holdout of clips synthesized by Patchback, the fit's median normalized audio loss is compared with the default patch's, with wall-clock time, render evaluations and listening examples recorded.",
-        "/docs/concepts/closed-loop#the-starting-point",
-    ),
+    Capability {
+        area: "Fit",
+        label: "A baseline against the default patch",
+        detail: "patchback benchmark synthesizes a seeded holdout of reference clips with known notes, scores the default patch on each and fits each from it, and records the lower median loss of both, the reduction, whether the 20 % go/no-go target was met, the median render evaluations, the wall time and three listening examples in benchmark.txt, clips.txt and examples/. Both verdicts complete the benchmark. The same flags write the same files, benchmark.txt's wall time aside.",
+        status: "shipped",
+        evidence: Some(
+            "crates/patchback-cli/tests/benchmark.rs::a_small_benchmark_completes_and_its_files_agree",
+        ),
+        milestone: None,
+        href: "/docs/reference/cli#patchback-benchmark",
+    },
     Capability {
         area: "Audio",
         label: "Provenance for every fixture",
@@ -255,17 +261,21 @@ pub const CAPABILITIES: &[Capability] = &[
         milestone: None,
         href: "/docs/concepts/listening#features1",
     },
-    planned(
-        B,
-        "Analysis",
-        "Training-split normalization statistics",
-        "Per-feature means and standard deviations come from the training split only and are reused unchanged for inference.",
-        "/docs/concepts/listening#features1",
-    ),
+    Capability {
+        area: "Analysis",
+        label: "Training-split normalization statistics",
+        detail: "patchback generate-dataset writes normalization.stats: the mean and population standard deviation of each features/1 value over the training split's rows, computed in f64 under the dataset's published contract. Statistics from the validation or test split, under an unknown or draft contract, or under a version the contract does not carry are refused. The same statistics normalize features at training and inference, as (x − mean) / std, with divisor 1 for a feature whose training values are all equal; features of another contract version and non-finite values are refused. The x.f32 of every split, validation and test included, holds the features z-scored under the training statistics.",
+        status: "shipped",
+        evidence: Some(
+            "crates/patchback-dataset/tests/normalization_scenarios.rs::normalization_stats_train_only",
+        ),
+        milestone: None,
+        href: "/docs/reference/files#normalizationstats",
+    },
     Capability {
         area: "Dataset",
         label: "A deterministic paired dataset",
-        detail: "patchback generate-dataset draws patch seeds from SplitMix64 of --seed. From each seed's own xoshiro256** stream it draws eight normalized parameters, a MIDI note from 36 to 84 and a gate from 0.25 to 1.5 s, log-uniform. It renders each draw with the same DSP engine and extracts features/1, then fills train, validation and test to exact multiples of the batch size 16. Splits are isolated by patch seed. Clipped, silent and noisy renders go to a separate diagnostic set and never into a split. Each split is written as ModelSpec dense data: x.f32 (N × 32) and y.f32 (N × 8), row-major little-endian f32, and order.u32 (the row indices). Each file is read back and checked: its byte count, finite values in x.f32 and y.f32, and each row index once in order.u32. The same seed writes byte-identical dataset.meta, samples.meta and dense files.",
+        detail: "patchback generate-dataset draws patch seeds from SplitMix64 of --seed. From each seed's own xoshiro256** stream it draws eight normalized parameters, a MIDI note from 36 to 84 and a gate from 0.25 to 1.5 s, log-uniform. It renders each draw with the same DSP engine and extracts features/1, then fills train, validation and test to exact multiples of the batch size 16. Splits are isolated by patch seed. Clipped, silent and noisy renders go to a separate diagnostic set and never into a split. Each split is written as ModelSpec dense data: x.f32 (N × 32) of features z-scored under the training split's statistics and y.f32 (N × 8), row-major little-endian f32, and order.u32 (the row indices). Each file is read back and checked: its byte count, finite values in x.f32 and y.f32, and each row index once in order.u32. The same seed writes byte-identical dataset.meta, samples.meta and dense files.",
         status: "shipped",
         evidence: Some(
             "crates/patchback-dataset/tests/generate.rs::a_real_generation_fills_each_split_with_valid_isolated_samples",
@@ -273,13 +283,17 @@ pub const CAPABILITIES: &[Capability] = &[
         milestone: None,
         href: "/docs/reference/cli#patchback-generate-dataset",
     },
-    planned(
-        B,
-        "Model",
-        "A parameter regressor trained with ModelSpec",
-        "A fixed-shape two-layer MLP, 32 features to 8 normalized parameters, checked and trained by modelspec on its CPU backend.",
-        "/docs/concepts/regressor",
-    ),
+    Capability {
+        area: "Model",
+        label: "A parameter regressor trained with ModelSpec",
+        detail: "A fixed-shape two-layer MLP, 32 features to 8 normalized parameters, checked and trained by modelspec on its CPU backend. patchback_model::TrainingRun runs modelspec train --backend cpu on a written training split, with an optional evaluation split, under a timeout; exit status 0 completes the run, and its stdout gives the loss curve and the evaluation loss. On generated data the pinned ModelSpec 0.5.0 lowers the loss from 1.0717294 to 0.8882302 in 4 steps on 64 rows. The run is a library call with no patchback command yet, and no weights leave it until weight export ships.",
+        status: "shipped",
+        evidence: Some(
+            "crates/patchback-model/tests/pinned_training.rs::the_pinned_modelspec_trains_on_real_generated_data",
+        ),
+        milestone: None,
+        href: "/docs/guides/train-the-regressor#check-and-train",
+    },
     planned(
         B,
         "Model",

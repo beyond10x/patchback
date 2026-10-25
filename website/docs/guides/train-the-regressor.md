@@ -30,16 +30,21 @@ appears in two splits, even at different notes. Silence, noise and clipping case
 separate diagnostic set.
 
 ```text
-data/train/x.f32         N × 32 f32 feature matrix, one sample per row
+data/normalization.stats per-feature mean and standard deviation of the train split
+data/train/x.f32         N × 32 f32 z-scored feature matrix, one sample per row
 data/train/y.f32         N × 8  f32 normalized target matrix
-data/train/order.u32     optional, checked sequence of sample indices
+data/train/order.u32     N u32 sample indices, one per row
 data/val/x.f32
 data/val/y.f32
+data/val/order.u32
 ```
 
 The files are row-major, little-endian `f32`, named after the model's `input` and `target`.
 The writer checks the exact byte counts, the sample counts and that no value is NaN or
-infinite.
+infinite. `x.f32` is already normalized: every split, validation and test included, holds its
+features z-scored under the training split's statistics, which are recorded in
+[`normalization.stats`](../reference/files.md#normalizationstats). ModelSpec reads the
+directories as written.
 
 ## Check and train
 
@@ -51,13 +56,40 @@ train on the CPU:
 modelspec check models/patch_regressor.mspec
 modelspec ir models/patch_regressor.mspec --stage training
 modelspec train models/patch_regressor.mspec --backend cpu \
-  --data data/train --eval data/val
+  --data data/train --eval data/val --steps 3126
 ```
 
-The leading dimension in the model is the minibatch size, not the dataset size, and the
-validation count must be a multiple of it. Without `order.u32`, ModelSpec reads the samples in
-order, cycling. For a regression like this one, judge the run by its evaluation loss and the
-audio tests, not by the `accuracy` value `--eval` also prints.
+The leading dimension in the model is the minibatch size of 16, not the dataset size, and the
+validation count must be a multiple of it. Patchback writes one `order.u32` index per row, and
+ModelSpec 0.5.0 reads steps × 16 of them, so pass `--steps` with steps × 16 at most the train
+split's row count: for the 50,016-row split, `--steps 3126` at most. Without `--steps` the
+model's own 5,000 steps need 80,000 indices, and ModelSpec refuses the run with exit status 1:
+
+```text
+E-DATA-008: the order file holds fewer than steps · B indices
+  indices: 50016
+  needed: 80000
+```
+
+The run prints a loss line per reported step and, with `--eval`, one evaluation line. On a
+64-row training split with `--steps 4` and 16 validation rows, the pinned binary printed:
+
+```text
+step 0 loss 1.0717294
+step 4 loss 0.8882302
+eval loss=0.9350907802581787 accuracy=0.0625
+```
+
+For a regression like this one, judge the run by its evaluation loss and the audio tests, not
+by the `accuracy` value `--eval` also prints.
+
+Patchback runs the same command as a subprocess through `patchback_model::TrainingRun`, a
+library call with no `patchback` command yet, under a 600 s timeout (provisional). The exit
+status alone decides the run: `Completed` means ModelSpec exited 0, and any other status, a
+signal or the timeout make it `Failed`, `E-DATA-008` included. Check `output_error()` before
+reading the loss curve. A missing `step` line, or a malformed line, leaves the curve empty and
+says which line; a missing `eval` line on a run given `--eval` keeps the curve and reports only
+that.
 
 ## Hand the weights to Patchback
 

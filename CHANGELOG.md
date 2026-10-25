@@ -6,6 +6,92 @@ All notable changes to Patchback are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `patchback benchmark --out <dir> --examples <n>` (story engine-baseline): the engine baseline
+  of DESIGN.md § 12.2. Over a holdout of `--examples` reference clips synthesized from `--seed`
+  (one `SplitMix64` stream of `--seed ^ 0x686f6c646f757431`, apart from `generate-dataset`'s,
+  gives each clip a patch seed, drawn under the dataset generator's diagnostic rule, then a fit
+  seed; Da8-2, Da8-46), it scores the default patch and fits each clip from it, and records the
+  lower medians of both losses, the reduction `(default − search) / default × 100`, the verdict
+  (`met` at 20 % or more, else `not-met`, both exit 0), the median render evaluations, the wall
+  time and three listening examples. `--seed`, `--topology` and `fit`'s bounds and
+  `--block-size` apply to every clip. It writes `clips.txt` (`patchback-benchmark-clips 1`),
+  `examples/<k>/reference.wav`, `default.wav` and `fit.wav`, and `benchmark.txt`
+  (`patchback-benchmark 1`) last, each created new; any of the three already in `--out` is
+  refused before any work, and a failed write removes everything the run wrote. A clip whose fit
+  is refused or fails, a holdout not drawn within four draws a clip, or a default median of 0
+  ends the run with exit 1 and nothing written. The same flags write the same files,
+  `benchmark.txt`'s `wall_time_ms` aside.
+- `patchback_fit::Benchmark` (story engine-baseline): the `Benchmark` of `spec/domains/fit.yaml`
+  as a value. `start` (`StartBenchmark`) refuses `InvalidHoldoutSize`, `WeightArtifactRequired`
+  and `TopologyNotFound`, in that order; `record_baseline_result` (`RecordBaselineResult`)
+  refuses `BenchmarkKindMismatch`, then `BenchmarkStateConflict`, and completes the benchmark
+  with `TargetVerdict::Met` at `TARGET_REDUCTION_PERCENT` (20) or more, else
+  `TargetVerdict::NotMet`. With `BenchmarkKind`, `BenchmarkState`, `BaselineResult` and
+  `summary`, the `Benchmarks` view's `BenchmarkRow`.
+- `patchback_fit::median` and `median_count` (the lower median, the element at `(n − 1) / 2` of
+  the sorted values), `reduction_percent`, `default_arm` (the default patch's render cut or
+  padded to a reference, and its comparison) with `DefaultArm` and `DefaultArmError`, and
+  `LISTENING_EXAMPLE_COUNT` (3, provisional) (story engine-baseline).
+
+- `patchback_analysis::compute_normalization_stats` (story normalization-stats): the mean and
+  population standard deviation of each `features/1` value over a split's rows, computed in
+  `f64` in two passes, as `NormalizationStats`. The split is a `SplitInput` (its role and rows),
+  refused in the model's order: `DatasetSplitNotFound`, `FeatureContractNotFound`,
+  `StatsFromNonTrainingSplit` (validation and test alike, OQ-18), `FeatureContractNotPublished`,
+  `FeatureVersionMismatch`, and `NonFiniteFeature` for a row the contract refuses or a statistic
+  that is not finite. A feature whose values are all bit-equal to the first row's has that value
+  as its mean and standard deviation 0 (Da8-44); a split of no rows gives 0 and 0 (provisional).
+- `NormalizationStats::apply` and `NormalizationTable::normalize` (story normalization-stats):
+  `(x − mean) / std` per value in `f64`, the same at training and inference, with divisor 1
+  where the training standard deviation is 0 (provisional). `apply` refuses features of another
+  contract version (`NormalizationContractMismatch`) and a non-finite input or result
+  (`NonFiniteFeature`); `normalize` is the unchecked arithmetic. Refusals are
+  `NormalizationError`, each naming an error of `spec/domains/analysis.yaml`.
+- `normalization.stats` (`patchback-normalization-stats 1`, `patchback_analysis::write_stats`
+  and `read_stats`, story normalization-stats): `feature_contract`, `split train`, `rows`,
+  `std population`, then one `feature <i> <mean> <std>` line per feature in index order, reals in
+  Rust's shortest round-trip form and read back bit for bit. The reader refuses an unknown
+  version, a malformed record or number, a negative standard deviation, a repeated, missing or
+  out-of-order feature, a file that ends early and a line over `STATS_MAX_LINE_BYTES` (256,
+  provisional), naming the line (`StatsFileError`, `StatsReason`).
+- `patchback_dataset::compute_split_stats` and `training_stats` (story normalization-stats):
+  `compute_normalization_stats` over a split of a `DatasetStore`, and over a generation's
+  training split under its dataset's contract.
+- `patchback_model::TrainingRun` (story training-run): one `modelspec train` run as a value whose
+  methods are the domain's commands in order. `plan` refuses `Backend::Vulkan`
+  (`BackendNotShipped`) before anything is spawned; `bind` takes a `ModelSource` and refuses a
+  run past `Planned`, an unchecked or rejected source (`ModelNotChecked`) and a source checked
+  under another pin (`PinMismatch`); `start` reads the `--data` and `--eval` splits from a
+  `DatasetStore`, refuses an unknown or unwritten split and an eval count that is not a multiple
+  of the batch size, then runs `modelspec train <source> --backend cpu --data <dir> [--eval <dir>]
+  --steps <n>` under `DEFAULT_TRAINING_TIMEOUT` (600 s, provisional); `finish` decides the state
+  by the exit status alone, `Completed` on 0 whatever the output and `Failed` with a
+  `TrainingFailure` otherwise (Da8-40). Refusals are `TrainingError`.
+- `patchback_model::LossCurve` (story training-run): the `step <k> loss <v>` lines and the
+  `eval loss=<v>` value of `modelspec train`'s stdout, step numbers increasing. A completed run
+  whose stdout does not parse says why in `TrainingRun::output_error` (`OutputError::Malformed`
+  naming the line, `NoStepLine`, or `NoEvalLine` when `--eval` was given), and keeps the raw
+  stdout and stderr.
+- The pinned ModelSpec 0.5.0 trains the design model on generated data (story training-run): on
+  a 64-row training split with `--steps 4` the loss falls from 1.0717294 to 0.8882302, with an
+  evaluation loss of 0.9350907802581787 on 16 validation rows. `TrainingRun::start` passes the
+  split directories as written and normalizes nothing (Da8-32).
+
+### Changed
+
+- `patchback generate-dataset` (story normalization-stats, Da8-30) writes
+  `<out>/normalization.stats`, the training split's statistics under `features/1`, before any
+  split's files, and every split's `x.f32`, validation and test included, now holds the features
+  z-scored under those statistics, `((x − mean) / std) as f32` computed in `f64` with divisor 1
+  where the standard deviation is 0. `y.f32`, `order.u32` and `dataset.meta` are unchanged. An
+  existing `normalization.stats` is refused before the generation like every other file, and a
+  failed write removes everything the run created.
+- `patchback_dataset::dense::write_split` takes the training statistics (`&NormalizationStats`)
+  and writes `x.f32` as their z-scores; no writer of raw features is left (Da8-30). A non-finite
+  value before or after the normalization is still refused by the read-back as `NonFiniteValue`.
+
 ## [0.6.0] - 2026-10-25
 
 ### Added

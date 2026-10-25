@@ -1,7 +1,7 @@
 ---
 title: Files
 sidebar_position: 2
-description: The files Patchback reads and writes - reference audio, patches, events, fit runs and the dataset.
+description: The files Patchback reads and writes - reference audio, patches, events, fit runs, benchmark runs and the dataset.
 source: "DESIGN.md § 6.1, § 7.2, § 8.2, § 11; hand-written"
 ---
 
@@ -358,12 +358,134 @@ number, a best loss above the line before or `-` after a number, a `-` best loss
 before the first `first-retained` line, and a file without its `completed` line. A fit that fails
 writes no trace; whether it should keep one is open.
 
+## A benchmark run
+
+`patchback benchmark --out bench/` writes its files into the directory, each created new; none is
+ever overwritten, and a benchmark that finds `benchmark.txt`, `clips.txt` or `examples` already
+there writes nothing. They are written in this order, `benchmark.txt` last:
+
+```text
+bench/
+├── clips.txt             one line per clip of the holdout
+├── examples/
+│   ├── 0/
+│   │   ├── reference.wav the clip
+│   │   ├── default.wav   the default patch's render, as scored
+│   │   └── fit.wav       the fitted patch's render, as scored
+│   ├── 1/ …
+│   └── 2/ …
+└── benchmark.txt         settings and result
+```
+
+`benchmark.txt` and `clips.txt` are line-oriented, versioned UTF-8 text like
+[`run.meta`](#runmeta): a header line, then one record per line, fields separated by one space,
+each line ended by a newline. Reals are printed as Rust prints an `f64`: the shortest decimal
+that reads back to the same value. The same flags write the same files, byte for byte, except the
+`wall_time_ms` record of `benchmark.txt`, unless a fit's wall-time bound stops it.
+
+### examples/
+
+The listening examples of the first three clips (fewer when the holdout is smaller), one
+directory per clip index. Each WAV is mono, 48 kHz, 32-bit float:
+
+- `reference.wav`: the clip, the whole render of its drawn patch and note (the note, its release
+  and 100 ms of tail);
+- `default.wav`: the default patch's render of the same note, cut or padded with silence to the
+  reference's length, the clip the default loss was computed on;
+- `fit.wav`: the fit's best patch rendered the same way, the clip its best loss was computed on.
+
+So `patchback compare --reference bench/examples/0/reference.wav --candidate
+bench/examples/0/fit.wav` prints clip 0's `best_loss` from `clips.txt` as its `loss`, and with
+`default.wav` its `default_loss`.
+
+### clips.txt
+
+```text
+patchback-benchmark-clips 1
+columns index patch_seed fit_seed default_loss best_loss evaluations restarts stop_reason
+clip 0 13524456677075056560 836295751125946591 0.37281723960683943 0.24204298323998533 12 1 RenderBudgetExhausted
+clip 1 11592138271047464192 17313889850056493492 0.5372503003380052 0.33093019262954804 12 1 RenderBudgetExhausted
+```
+
+The header line, a `columns` line naming the fields, then one `clip` line per clip in holdout
+order:
+
+| Field | Value |
+| --- | --- |
+| `index` | the clip's index, from 0 |
+| `patch_seed` | the seed its patch and note were drawn from: an output of `SplitMix64::new(seed ^ 0x686f6c646f757431)` (the holdout's own stream, apart from the one `generate-dataset` draws from the same seed) |
+| `fit_seed` | the seed of its fit's restarts: the stream's output after its patch seed |
+| `default_loss` | the default patch's loss on it |
+| `best_loss` | the fit's best loss on it |
+| `evaluations` | the fit's render evaluations, valid and rejected |
+| `restarts` | the fit's restarts that began |
+| `stop_reason` | `RenderBudgetExhausted`, `TimeBudgetExhausted`, `RestartsExhausted` or `ImprovementBelowThreshold` |
+
+### benchmark.txt
+
+```text
+patchback-benchmark 1
+patchback 0.6.0
+kind engine-baseline
+topology subtractive-mono/1
+seed 7
+example_count 2
+sample_rate 48000
+block_size 256
+max_renders 12
+max_wall_time_ms 60000
+max_restarts 1
+improvement_threshold 0.0001
+prng xoshiro256**
+default_median_loss 0.37281723960683943
+default_search_median_loss 0.24204298323998533
+median_loss_reduction_percent 35.07730932849679
+target_verdict met
+default_search_median_evaluations 12
+wall_time_ms 10139
+listening_example examples/0/reference.wav
+listening_example examples/0/default.wav
+listening_example examples/0/fit.wav
+listening_example examples/1/reference.wav
+listening_example examples/1/default.wav
+listening_example examples/1/fit.wav
+```
+
+This is `patchback benchmark --out bench/ --examples 2 --seed 7 --max-renders 12
+--max-restarts 1`. Each record appears once, in this order, except `listening_example`:
+
+| Record | Value |
+| --- | --- |
+| `patchback-benchmark` | the format version, `1`; first line |
+| `patchback` | the Patchback version that wrote it |
+| `kind` | `engine-baseline` |
+| `topology` | the topology the holdout was synthesized and fitted in |
+| `seed` | the holdout's seed |
+| `example_count` | the holdout's clip count |
+| `sample_rate` | `48000` |
+| `block_size` | the frames per render block |
+| `max_renders`, `max_wall_time_ms`, `max_restarts`, `improvement_threshold` | every fit's bounds |
+| `prng` | `xoshiro256**` |
+| `default_median_loss` | the lower median of `clips.txt`'s `default_loss` |
+| `default_search_median_loss` | the lower median of its `best_loss` |
+| `median_loss_reduction_percent` | `(default − search) / default × 100` of the two medians, computed in `f64` with each step rounded; `target_verdict` is decided on this recorded value, so a pair within rounding distance of 20 % may fall on the other side than exact arithmetic would put it |
+| `target_verdict` | `met` when the recorded `median_loss_reduction_percent` is at least 20, else `not-met` |
+| `default_search_median_evaluations` | the lower median of its `evaluations` |
+| `wall_time_ms` | the whole run's wall time in milliseconds; the one record that differs between two runs of the same flags |
+| `listening_example` | zero or more, last: each listening example's path relative to the directory, clip by clip, `reference.wav`, `default.wav`, `fit.wav` |
+
+The lower median of `n` values is the value at position `(n − 1) / 2`, from 0, of the values in
+ascending order: the middle one, or of an even count the lower of the two middle ones. The
+version, sample rate, block size and bounds are what two compared benchmarks must share; no
+device is recorded. The number of listening examples, three, is provisional.
+
 ## The dataset
 
-`patchback generate-dataset --out data/` writes `data/dataset.meta` and one directory per split,
-`data/train/`, `data/val/` and `data/test/`, each holding `samples.meta` and the split's
-[dense files](#dense-files). `dataset.meta` and `samples.meta` are line-oriented, versioned UTF-8
-text like `.patch`: a header line, then one record per line, with fields separated by one space.
+`patchback generate-dataset --out data/` writes `data/normalization.stats`, `data/dataset.meta`
+and one directory per split, `data/train/`, `data/val/` and `data/test/`, each holding
+`samples.meta` and the split's [dense files](#dense-files). `dataset.meta`, `normalization.stats`
+and `samples.meta` are line-oriented, versioned UTF-8 text like `.patch`: a header line, then one
+record per line, with fields separated by one space.
 
 ### `dataset.meta`
 
@@ -407,13 +529,56 @@ After the header line, `patchback-dataset-samples 1`, there is one line per samp
 the samples were drawn: the patch seed, the MIDI note and the gate in samples at 48 kHz, all
 unsigned decimal integers. Line `i + 1` describes row `i` of the split's dense files.
 
+### `normalization.stats`
+
+```text
+patchback-normalization-stats 1
+feature_contract features/1
+split train
+rows 16
+std population
+feature 0 -2.5931940656860064 25.41488751081361
+feature 1 -2.3163692242632736 29.088175321125107
+…
+feature 28 1.7389027722882833e-5 6.324909927673759e-5
+feature 29 0.03864295722306106 0.03496411507577276
+feature 30 7.955169996694104 9.427514505048313
+feature 31 0.5072540602250747 0.12816014745675616
+```
+
+The mean and standard deviation of each [`features/1`](../concepts/listening.md#features1) value
+over the training split, saved once and applied unchanged at training and at inference as
+`(x − mean) / std`. A value whose standard deviation is 0 is applied as `x − mean`. They are
+computed in `f64` from the training samples as the generator drew them, in two passes: the mean,
+then the population standard deviation. A value that is the same in every training sample, to
+the last bit, has that value as its mean and standard deviation 0. Statistics are never taken
+from the validation or test split. The `x.f32` of every split is written under these statistics
+(see [Dense files](#dense-files)).
+
+| Record | Value |
+| --- | --- |
+| `patchback-normalization-stats` | the format version, `1`; first line |
+| `feature_contract` | `features/1`, the contract the statistics were computed under |
+| `split` | `train`; the only split statistics are computed from |
+| `rows` | the training split's sample count, the `train` count of `dataset.meta` |
+| `std` | `population`: the standard deviation divides by the row count, not the row count less 1 |
+| `feature` | one line per value, `0` to `31` in order: its index, its mean, its standard deviation |
+
+The records appear once each, in this order, and the file is written before any split's files.
+Reals are written in the shortest form that reads back to the same value, in exponent form when
+that is shorter. A reader refuses a version other than 1, a record out of place, a split other
+than `train`, a divisor other than `population`, a number that does not read, a negative
+standard deviation, a feature line repeated, missing or out of order, a line after feature 31, a
+file that ends before feature 31, and a line longer than 256 bytes. The line bound and the
+handling of a value whose standard deviation is 0 are provisional.
+
 ### Dense files
 
 Each split directory also holds three binary files in ModelSpec's dense-data layout. Row `i` of
 each file is the `i`th sample of the split, in the order of `samples.meta`:
 
 ```text
-data/train/x.f32         N × 32 f32 feature matrix, one sample per row
+data/train/x.f32         N × 32 f32 z-scored feature matrix, one sample per row
 data/train/y.f32         N × 8  f32 normalized target matrix
 data/train/order.u32     N u32 sample indices
 data/val/x.f32
@@ -426,12 +591,16 @@ data/test/order.u32
 
 | File | One row | Bytes for N samples | N = 16 | N = 4,992 |
 | --- | --- | --- | --- | --- |
-| `x.f32` | the 32 values of [`features/1`](../concepts/listening.md#features1) | N × 32 × 4 | 2,048 | 638,976 |
+| `x.f32` | the 32 values of [`features/1`](../concepts/listening.md#features1), z-scored under the train split's statistics in [`normalization.stats`](#normalizationstats) | N × 32 × 4 | 2,048 | 638,976 |
 | `y.f32` | the eight [normalized parameters](./parameters.md), in index order | N × 8 × 4 | 512 | 159,744 |
 | `order.u32` | the row's index | N × 4 | 64 | 19,968 |
 
-The matrices are row-major little-endian `f32`. Each value is the generator's `f64` rounded to
-the nearest `f32`. `order.u32` holds the row indices 0 to N − 1 in order, as little-endian `u32`.
+The matrices are row-major little-endian `f32`. A value of `y.f32` is the generator's `f64`
+rounded to the nearest `f32`. A value of `x.f32` is z-scored under the train split's statistics
+in `normalization.stats`: `(x − mean) / std` computed in `f64` from the generator's value, with
+divisor 1 where the standard deviation is 0, then rounded to the nearest `f32`. The validation
+and test splits are z-scored under the train split's statistics too, never their own.
+`order.u32` holds the row indices 0 to N − 1 in order, as little-endian `u32`.
 The check that `order.u32` gets is provisional until ModelSpec's expectation is known: N entries,
 each below N, each appearing once.
 
