@@ -7,7 +7,7 @@ title: Wave a7 approved by Timo
 relations:
 - decides: story:fit-run-artifacts
 - decides: story:dense-data-files
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "approved", at: "2026-10-24T23:09:22Z", actor: "human:timo", revision: 2}
 ---
@@ -128,3 +128,16 @@ follows approval-record:release-process. Wave a6 released 0.5.0 on 2026-10-25.
   its sequence, and a best-after value that rises above the previous line's or is `-` after a
   number; each is a named parser refusal. `write_trace` never writes such a line; the refusals
   hold the replay the studio reads to `TraceFrame`'s invariant ("never rises").
+- Da7-17 (unit 2 adversary pass 1, F1) `ByteCountMismatch` carries the input's `byte_count`,
+  `rows` and `columns`, as `spec/domains/dataset.yaml`'s payload says, in both branches of the
+  check (the arithmetic and the content's length). The content's length is not part of the
+  payload; the writer always passes the content's length as `byte_count`, so the CLI's refusal
+  names the file's length either way.
+- Da7-18 (F2) `write_split` refuses a split whose state is not `Open` before any write, as
+  `DatasetError::SplitAlreadyWritten`, the same way it refuses `UnknownSplit`. The model's
+  `WriteDenseFile` still admits a file on a `Written` split (the story's second open question,
+  the owner's); the writer is where the CLI's behaviour is held.
+- Da7-19 (F3, pre-existing) `every_error_of_the_eight_commands_is_emitted` drives each of the
+  twelve domain errors through a `DatasetStore` command and asserts the error it returns, so
+  it observes an emission; `DatasetError::examples()` stays for the rendering checks that read
+  it.
