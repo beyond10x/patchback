@@ -185,7 +185,8 @@ fn forty_eight_samples_write_the_dataset_meta_and_one_sample_list_a_split() {
             .collect();
         assert_eq!(order, (0..16).collect::<Vec<u32>>(), "{split}");
     }
-    let mut expected_tree = vec!["dataset.meta".to_owned()];
+    // story:normalization-stats: the training split's statistics beside dataset.meta.
+    let mut expected_tree = vec!["dataset.meta".to_owned(), "normalization.stats".to_owned()];
     for split in SPLITS {
         expected_tree.push(split.to_owned());
         expected_tree.extend(SPLIT_FILES.iter().map(|file| format!("{split}/{file}")));
@@ -333,7 +334,8 @@ fn an_existing_dense_file_is_never_overwritten_and_nothing_is_written() {
 /// A dense write that fails after the generation (the last file of the last split,
 /// `test/order.u32`, is a dangling symbolic link, which the pre-check does not see and the
 /// exclusive create refuses) removes every file and directory the run created, the other eleven
-/// dense and sample files among them; what the run did not create stays.
+/// dense and sample files and `normalization.stats`, written first (Da8-30), among them; what
+/// the run did not create stays.
 #[cfg(unix)]
 #[test]
 fn a_failed_dense_write_removes_everything_the_run_created() {

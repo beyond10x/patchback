@@ -1,8 +1,10 @@
 //! `patchback generate-dataset --seed <n> --samples <n> --out <dir>` (DESIGN.md § 7, § 11,
 //! `GenerateDataset` of `spec/domains/dataset.yaml`): the deterministic training, validation and
-//! test splits of `patchback_dataset`, written as `dataset.meta`, and for each split its
+//! test splits of `patchback_dataset`, written as `dataset.meta`, for each split its
 //! `samples.meta` (`patchback_dataset::meta`) and its ModelSpec dense-data files `x.f32`, `y.f32`
-//! and `order.u32` (`patchback_dataset::dense`, DESIGN.md § 7.2).
+//! and `order.u32` (`patchback_dataset::dense`, DESIGN.md § 7.2), and the training split's
+//! normalization statistics, `normalization.stats` (`patchback_analysis::write_stats`, DESIGN.md
+//! § 6.3, story:normalization-stats).
 //!
 //! # The run
 //!
@@ -11,19 +13,24 @@
 //!    size 16 is refused before anything is touched. `--samples` admits `0..=4294967295`
 //!    (`patchback_dataset::MAX_SAMPLES`, `u32::MAX`, so that each split's row count is a `u32`, Da7-10);
 //!    a larger value is a usage error (clap's message, exit 2).
-//! 2. `<out>` must be a directory or absent, and none of `<out>/dataset.meta` and, for each
-//!    split directory `train`, `val` and `test`, its `samples.meta`, `x.f32`, `y.f32` and
-//!    `order.u32` may exist: an existing file is never overwritten. Checked before the generation
-//!    starts, and again by every write. A split's directory (`SplitRole::dir`: `train`, `val`,
+//! 2. `<out>` must be a directory or absent, and none of `<out>/dataset.meta`,
+//!    `<out>/normalization.stats` and, for each split directory `train`, `val` and `test`, its
+//!    `samples.meta`, `x.f32`, `y.f32` and `order.u32` may exist: an existing file is never
+//!    overwritten. Checked before the generation starts, and again by every write. A split's directory (`SplitRole::dir`: `train`, `val`,
 //!    `test`, DESIGN.md § 7.2) is not its record name (`SplitRole::key`: `train`, `validation`,
 //!    `test`).
 //! 3. The generation (`Generator::run`), which renders every drawn patch.
-//! 4. The writes, each as a new file: `<out>` and the split directories are created when absent;
-//!    for each split in the order train, validation, test, its `samples.meta`, then its `x.f32`,
-//!    `y.f32` and `order.u32` (`dense::write_split`: N × 32, N × 8 and N × 1 values, row-major
-//!    little-endian, `f32`, `f32` and `u32`; each read back and verified, then `FinishSplit`);
-//!    then `dataset.meta`, last. A failed write or verification removes every file and directory
-//!    this run created.
+//! 4. The training split's statistics, once every sample is drawn: the means and population
+//!    standard deviations of its samples' `f64` values under the dataset's contract, `features/1`
+//!    (`patchback_dataset::training_stats`, Da8-13, Da8-16).
+//! 5. The writes, each as a new file: `<out>` and the split directories are created when absent;
+//!    first `normalization.stats`, the statistics of step 4; then for each split in the order
+//!    train, validation, test, its `samples.meta`, then its `x.f32`, `y.f32` and `order.u32`
+//!    (`dense::write_split`: N × 32, N × 8 and N × 1 values, row-major little-endian, `f32`,
+//!    `f32` and `u32`; each read back and verified, then `FinishSplit`), `x.f32` holding each
+//!    sample's z-scores under the training statistics, `((x − mean) / std) as f32` with divisor 1
+//!    where the standard deviation is 0, for every split alike (Da8-30); then `dataset.meta`,
+//!    last. A failed write or verification removes every file and directory this run created.
 //!
 //! # Output
 //!
@@ -43,9 +50,10 @@
 //!   their bound (`patchback_dataset::MAX_DRAWS_PER_SAMPLE` a sample) before the splits are full;
 //!   the model declares no error for it;
 //! - `patchback: generate-dataset refused: <domain error>: <message>` for a render or feature
-//!   refusal that is a fault rather than a diagnostic example, or a dense file the model refuses
-//!   after reading it back (`ByteCountMismatch`, `NonFiniteValue`, …; none is reachable from the
-//!   arguments: the generator's values are finite and its splits full);
+//!   refusal that is a fault rather than a diagnostic example, a dense file the model refuses
+//!   after reading it back (`ByteCountMismatch`, `NonFiniteValue`, …), or training statistics the
+//!   analysis refuses (`NonFiniteFeature`, …); none is reachable from the arguments: the
+//!   generator's values are finite and its splits full;
 //! - `patchback: generate-dataset refused: "<path>": entry <n> is <value>, …` for an `order.u32`
 //!   that does not read back as each row index once (the writer's own check, Da7-9; not
 //!   reachable from the arguments).
@@ -56,12 +64,14 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::Args;
+use patchback_analysis::{NORMALIZATION_STATS_FILE, write_stats};
 use patchback_dataset::dense::{self, DenseError};
 use patchback_dataset::meta::{
     DATASET_META_FILE, SAMPLES_META_FILE, count_records, dataset_meta, samples_meta,
 };
 use patchback_dataset::{
     DenseFileKind, GenerateError, Generated, Generator, MAX_SAMPLES, SplitCounts, SplitRole,
+    training_stats,
 };
 
 /// The command ran and refused; it wrote nothing.
@@ -148,10 +158,11 @@ pub fn run(args: &GenerateDatasetArgs) -> ExitCode {
     }
 }
 
-/// The files of a dataset under `out`, in the order they are written: for each split its
-/// `samples.meta`, `x.f32`, `y.f32` and `order.u32`, then `dataset.meta`.
+/// The files of a dataset under `out`, in the order they are written: `normalization.stats`,
+/// then for each split its `samples.meta`, `x.f32`, `y.f32` and `order.u32`, then
+/// `dataset.meta`.
 fn targets(out: &Path) -> Vec<PathBuf> {
-    let mut targets = Vec::new();
+    let mut targets = vec![out.join(NORMALIZATION_STATS_FILE)];
     for role in SplitRole::ALL {
         let dir = out.join(role.dir());
         targets.push(dir.join(SAMPLES_META_FILE));
@@ -183,7 +194,8 @@ fn generate(args: &GenerateDatasetArgs) -> Result<Generated, Refusal> {
     Ok(generated)
 }
 
-/// Writes the dataset's files (module documentation, step 4); on failure removes what it created.
+/// Writes the dataset's files (module documentation, steps 4 and 5); on failure removes what
+/// it created.
 fn write(out: &Path, generated: &mut Generated) -> Result<(), Refusal> {
     let mut created = Created::default();
     let result = write_all(out, generated, &mut created);
@@ -230,7 +242,12 @@ impl Created {
 }
 
 fn write_all(out: &Path, generated: &mut Generated, created: &mut Created) -> Result<(), Refusal> {
+    let stats =
+        training_stats(generated).map_err(|error| Refusal::domain(error.domain_error(), &error))?;
     created.dir(out).map_err(|error| Refusal::io(out, error))?;
+    let path = out.join(NORMALIZATION_STATS_FILE);
+    write_new(&path, write_stats(stats.table()).as_bytes(), created)
+        .map_err(|error| Refusal::io(&path, error))?;
     for role in SplitRole::ALL {
         let dir = out.join(role.dir());
         created
@@ -240,7 +257,7 @@ fn write_all(out: &Path, generated: &mut Generated, created: &mut Created) -> Re
         write_new(&path, samples_meta(generated, role).as_bytes(), created)
             .map_err(|error| Refusal::io(&path, error))?;
         let split = generated.split_id(role);
-        dense::write_split(&mut generated.store, split, &dir, |path, bytes| {
+        dense::write_split(&mut generated.store, split, &dir, &stats, |path, bytes| {
             write_new(path, bytes, created)
         })?;
     }

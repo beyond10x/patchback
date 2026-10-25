@@ -106,7 +106,8 @@ impl fmt::Display for SplitState {
 /// § 7.2), row-major and little-endian.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum DenseFileKind {
-    /// `x.f32`: a row of `features/1` values a sample, as `f32`.
+    /// `x.f32`: a row of `features/1` values a sample, z-scored under the train split's
+    /// statistics (`normalization.stats`), as `f32`.
     X,
     /// `y.f32`: a row of the topology's normalized parameters a sample, as `f32`.
     Y,

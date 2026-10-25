@@ -1,13 +1,20 @@
-//! The ModelSpec dense-data writer of DESIGN.md § 7.2 (Da7-8, Da7-9, Da7-11): for one split, from
-//! its samples in draw order, `x.f32` (each sample's 32 `x` values), `y.f32` (its 8 `y` values)
-//! and `order.u32` (the row indices 0 to N − 1), each row-major and little-endian, then
-//! `FinishSplit`.
+//! The ModelSpec dense-data writer of DESIGN.md § 7.2 (Da7-8, Da7-9, Da7-11, Da8-30): for one
+//! split, from its samples in draw order, `x.f32` (each sample's 32 `x` values, z-scored under
+//! the training split's statistics), `y.f32` (its 8 `y` values) and `order.u32` (the row indices
+//! 0 to N − 1), each row-major and little-endian, then `FinishSplit`.
 //!
 //! | File | Row | Bytes |
 //! |---|---|---|
-//! | `x.f32` | the sample's `features/1` values, `f64 as f32` | N × 32 × 4 |
+//! | `x.f32` | the sample's `features/1` values z-scored, `((x − mean) / std) as f32` | N × 32 × 4 |
 //! | `y.f32` | the sample's normalized parameters, `f64 as f32` | N × 8 × 4 |
 //! | `order.u32` | the row's index, `u32` | N × 4 |
+//!
+//! The z-scores are those of [`patchback_analysis::NormalizationTable::normalize`], in `f64` and
+//! then `as f32`: the mean subtracted and the result divided by the standard deviation, by 1 where
+//! it is 0. Every split, the training split itself and the validation and test splits, is written
+//! under the statistics of the training split the caller passes (Da8-30); nothing here checks
+//! which split they came from. A value that is not finite before or after is left to the
+//! read-back.
 //!
 //! A split that is not `Open` is refused before anything is written or recorded
 //! (`SplitAlreadyWritten`, Da7-18): its dense data is written, and the refusal says nothing
@@ -29,6 +36,8 @@ use std::fmt;
 use std::fs;
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
+
+use patchback_analysis::NormalizationStats;
 
 use crate::model::{
     DatasetError, DatasetSplitId, DatasetStore, DenseDataFileId, DenseFileKind, Sample, SplitState,
@@ -119,7 +128,8 @@ pub fn create_new(path: &Path, bytes: &[u8]) -> io::Result<()> {
 
 /// Writes, verifies and records the three dense files of the split `dataset_split_id` into `dir`
 /// (which must exist), in the order x.f32, y.f32, order.u32, then `FinishSplit`; returns the
-/// records' identities in that order.
+/// records' identities in that order. x.f32 holds the samples' z-scores under `stats`, the
+/// training split's statistics (module documentation).
 ///
 /// `write` puts the bytes of one file on disk ([`create_new`] or a caller's own, which may
 /// track what it created). Refused before anything is written or recorded, in this order, for an
@@ -131,6 +141,7 @@ pub fn write_split(
     store: &mut DatasetStore,
     dataset_split_id: DatasetSplitId,
     dir: &Path,
+    stats: &NormalizationStats,
     mut write: impl FnMut(&Path, &[u8]) -> io::Result<()>,
 ) -> Result<[DenseDataFileId; 3], DenseError> {
     let Some(split) = store.split(dataset_split_id) else {
@@ -151,7 +162,7 @@ pub fn write_split(
     let mut ids = [DenseDataFileId(0); 3];
     for (id, kind) in ids.iter_mut().zip(DenseFileKind::ALL) {
         let path = dir.join(kind.file_name());
-        let bytes = encode(kind, &store.samples_in(dataset_split_id), order_rows);
+        let bytes = encode(kind, &store.samples_in(dataset_split_id), stats, order_rows);
         write(&path, &bytes).map_err(|error| DenseError::Io {
             path: path.clone(),
             error,
@@ -165,12 +176,24 @@ pub fn write_split(
     Ok(ids)
 }
 
-/// The bytes of the `kind` file of `samples`, row-major, little-endian.
-fn encode(kind: DenseFileKind, samples: &[&Sample], rows: u32) -> Vec<u8> {
+/// The bytes of the `kind` file of `samples`, row-major, little-endian; x.f32 holds each
+/// sample's z-scores under `stats`.
+fn encode(
+    kind: DenseFileKind,
+    samples: &[&Sample],
+    stats: &NormalizationStats,
+    rows: u32,
+) -> Vec<u8> {
     match kind {
         DenseFileKind::X => samples
             .iter()
-            .flat_map(|sample| sample.x.iter().flat_map(|&v| (v as f32).to_le_bytes()))
+            .flat_map(|sample| {
+                stats
+                    .table()
+                    .normalize(&sample.x)
+                    .into_iter()
+                    .flat_map(|v| (v as f32).to_le_bytes())
+            })
             .collect(),
         DenseFileKind::Y => samples
             .iter()

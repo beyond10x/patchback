@@ -2,13 +2,18 @@
 //! `FinishSplit` against `spec/domains/dataset.yaml` (payloads, every combination of refusals in
 //! the model's order), the writer's read-back against misbehaving `write` closures, the `f64 as
 //! f32` edges of Da7-11 decoded by a reader of this file's own, hand-built `order.u32` files
-//! (Da7-9), and a second `write_split` of one split.
+//! (Da7-9), and a second `write_split` of one split. Every `write_split` passes training
+//! statistics (Da8-30): `train_stats`, or `identity_stats` where an x value must reach the
+//! `as f32` unchanged.
 
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use patchback_analysis::FeatureContractId;
+use patchback_analysis::{
+    FeatureContractDefinition, FeatureContractId, FeatureRegistry, NormalizationStats, SplitInput,
+    compute_normalization_stats,
+};
 use patchback_core::prng::NAME;
 use patchback_dataset::dense::{self, DenseError};
 use patchback_dataset::{
@@ -105,6 +110,46 @@ fn plain(i: u64) -> ([f64; 32], [f64; 8]) {
     (x, y)
 }
 
+/// The statistics of 16 training `rows(i)` under a published `features/1`.
+fn stats_of(rows: impl Fn(u64) -> [f64; 32]) -> NormalizationStats {
+    let definition = FeatureContractDefinition::features_1();
+    let version = definition.version.clone();
+    let mut registry = FeatureRegistry::new();
+    let id = registry.define(definition).unwrap();
+    registry.publish(id).unwrap();
+    let rows: Vec<[f64; 32]> = (0..16).map(rows).collect();
+    let input = SplitInput {
+        role: SplitRole::Train,
+        rows: &rows,
+    };
+    compute_normalization_stats(&registry, id, &version, 0, Some(input)).unwrap()
+}
+
+/// The training statistics the writer cases pass (Da8-30): those of 16 rows `plain(i).0`.
+fn train_stats() -> NormalizationStats {
+    stats_of(|i| plain(i).0)
+}
+
+/// Statistics under which a z-score is the value itself, bit for bit: 16 training rows of 1.0
+/// and −1.0 alternating give each feature mean 0 and standard deviation 1, so
+/// `(v − 0) / 1 == v` for every `v`, `-0.0` included (`-0.0 − 0.0` is `-0.0`).
+fn identity_stats() -> NormalizationStats {
+    let stats = stats_of(|i| [if i % 2 == 0 { 1.0 } else { -1.0 }; 32]);
+    assert_eq!(
+        (stats.means().map(f64::to_bits), stats.stds()),
+        ([0.0f64.to_bits(); 32], &[1.0; 32]),
+        "premise: mean +0.0 and standard deviation 1"
+    );
+    stats
+}
+
+/// Value `j` of a row z-scored under `stats` in `f64`, then `as f32` (Da8-30), recomputed from
+/// the statistics' means and standard deviations.
+fn z_f32(stats: &NormalizationStats, j: usize, value: f64) -> f32 {
+    let std = stats.stds()[j];
+    ((value - stats.means()[j]) / if std == 0.0 { 1.0 } else { std }) as f32
+}
+
 /// `spec/domains/dataset.yaml`, `WriteDenseFile`, outcome `byte-count-mismatch`: the payload is
 /// `byte_count: input.byte_count`. A command whose byte count agrees with its shape (2,048 for
 /// 16 × 32) and whose bytes are short (2,044) is refused, and the refusal carries the command's
@@ -142,14 +187,20 @@ fn adversary_write_split_of_a_written_split_changes_nothing() {
     fs::create_dir_all(&second).unwrap();
     let mut store = DatasetStore::new();
     let split = filled(&mut store, 16, plain);
-    dense::write_split(&mut store, split, &first, dense::create_new).unwrap();
+    dense::write_split(&mut store, split, &first, &train_stats(), dense::create_new).unwrap();
     assert_eq!(store.split(split).unwrap().state, SplitState::Written);
 
     let mut calls: Vec<PathBuf> = Vec::new();
-    let refused = dense::write_split(&mut store, split, &second, |path: &Path, bytes: &[u8]| {
-        calls.push(path.to_path_buf());
-        dense::create_new(path, bytes)
-    });
+    let refused = dense::write_split(
+        &mut store,
+        split,
+        &second,
+        &train_stats(),
+        |path: &Path, bytes: &[u8]| {
+            calls.push(path.to_path_buf());
+            dense::create_new(path, bytes)
+        },
+    );
     assert!(
         matches!(
             refused,
@@ -223,8 +274,10 @@ fn adversary_every_combination_of_refusals_gets_the_first_in_the_model_s_order()
 
 /// Da7-11 through the writer, decoded by this file's reader: an `f64` subnormal becomes `0.0`, an
 /// `f32` subnormal stays non-zero, `-0.0` keeps its sign bit, and a value just past `f32::MAX`
-/// that rounds to `f32::MAX` is finite and admitted; every value of x.f32 and y.f32 is the
-/// sample's `as f32`, in draw order.
+/// that rounds to `f32::MAX` is finite and admitted; every value of x.f32 is the sample's z-score
+/// `as f32` (Da8-30) and every value of y.f32 the sample's `as f32`, in draw order. The x edges
+/// pass the normalization unchanged under [`identity_stats`], so they reach the `as f32` as
+/// themselves.
 #[test]
 fn adversary_the_f32_edges_round_trip_through_the_writer() {
     let just_past_max = f64::from(f32::MAX) + 2f64.powi(102);
@@ -244,7 +297,8 @@ fn adversary_the_f32_edges_round_trip_through_the_writer() {
         }
         (x, y)
     });
-    dense::write_split(&mut store, split, &dir, dense::create_new).unwrap();
+    let stats = identity_stats();
+    dense::write_split(&mut store, split, &dir, &stats, dense::create_new).unwrap();
     assert_eq!(store.split(split).unwrap().state, SplitState::Written);
 
     let x = decode_bits(&fs::read(dir.join("x.f32")).unwrap());
@@ -252,7 +306,11 @@ fn adversary_the_f32_edges_round_trip_through_the_writer() {
     let samples = store.samples_in(split);
     let expected_x: Vec<u32> = samples
         .iter()
-        .flat_map(|s| s.x.iter().map(|&v| (v as f32).to_bits()))
+        .flat_map(|s| {
+            s.x.iter()
+                .enumerate()
+                .map(|(j, &v)| z_f32(&stats, j, v).to_bits())
+        })
         .collect();
     let expected_y: Vec<u32> = samples
         .iter()
@@ -271,7 +329,8 @@ fn adversary_the_f32_edges_round_trip_through_the_writer() {
 
 /// Past the rounding midpoint above `f32::MAX` the value is infinite in the file: refused as
 /// `NonFiniteValue` naming the file it is in (x or y, and in y also negative), that file removed,
-/// nothing of it recorded.
+/// nothing of it recorded. Under [`identity_stats`] an x value's z-score is the value itself; a
+/// NaN x stays NaN through the normalization and is the read-back's to refuse, as before it.
 #[test]
 fn adversary_a_value_rounding_to_infinity_is_refused_naming_its_file() {
     let midpoint = f64::from(f32::MAX) + 2f64.powi(103);
@@ -301,7 +360,13 @@ fn adversary_a_value_rounding_to_infinity_is_refused_naming_its_file() {
             }
             (x, y)
         });
-        let refused = dense::write_split(&mut store, split, &dir, dense::create_new);
+        let refused = dense::write_split(
+            &mut store,
+            split,
+            &dir,
+            &identity_stats(),
+            dense::create_new,
+        );
         assert!(
             matches!(refused, Err(DenseError::Dataset(DatasetError::NonFiniteValue { kind: k })) if k == kind),
             "{case}: {refused:?}"
@@ -340,13 +405,19 @@ fn adversary_hand_built_order_files() {
         let dir = scratch(&format!("order-{case}"));
         let mut store = DatasetStore::new();
         let split = filled(&mut store, 16, plain);
-        let result = dense::write_split(&mut store, split, &dir, |path: &Path, bytes: &[u8]| {
-            if path.ends_with("order.u32") {
-                dense::create_new(path, order)
-            } else {
-                dense::create_new(path, bytes)
-            }
-        });
+        let result = dense::write_split(
+            &mut store,
+            split,
+            &dir,
+            &train_stats(),
+            |path: &Path, bytes: &[u8]| {
+                if path.ends_with("order.u32") {
+                    dense::create_new(path, order)
+                } else {
+                    dense::create_new(path, bytes)
+                }
+            },
+        );
         let order_path = dir.join("order.u32");
         match case {
             "reversed" => {
@@ -408,7 +479,13 @@ fn adversary_a_misbehaving_write_is_caught_by_the_read_back() {
     let dir = scratch("write-nothing");
     let mut store = DatasetStore::new();
     let split = filled(&mut store, 16, plain);
-    let refused = dense::write_split(&mut store, split, &dir, |_: &Path, _: &[u8]| Ok(()));
+    let refused = dense::write_split(
+        &mut store,
+        split,
+        &dir,
+        &train_stats(),
+        |_: &Path, _: &[u8]| Ok(()),
+    );
     match &refused {
         Err(DenseError::Io { path, error }) => {
             assert_eq!(path, &dir.join("x.f32"));
@@ -420,11 +497,17 @@ fn adversary_a_misbehaving_write_is_caught_by_the_read_back() {
     assert!(store.dense_files_of(split).is_empty());
 
     let dir = scratch("write-twice");
-    let refused = dense::write_split(&mut store, split, &dir, |path: &Path, bytes: &[u8]| {
-        let mut twice = bytes.to_vec();
-        twice.extend_from_slice(bytes);
-        dense::create_new(path, &twice)
-    });
+    let refused = dense::write_split(
+        &mut store,
+        split,
+        &dir,
+        &train_stats(),
+        |path: &Path, bytes: &[u8]| {
+            let mut twice = bytes.to_vec();
+            twice.extend_from_slice(bytes);
+            dense::create_new(path, &twice)
+        },
+    );
     assert!(
         matches!(
             refused,
@@ -440,9 +523,13 @@ fn adversary_a_misbehaving_write_is_caught_by_the_read_back() {
     assert!(store.dense_files_of(split).is_empty());
 
     let dir = scratch("write-elsewhere");
-    let refused = dense::write_split(&mut store, split, &dir, |path: &Path, bytes: &[u8]| {
-        dense::create_new(&path.with_extension("elsewhere"), bytes)
-    });
+    let refused = dense::write_split(
+        &mut store,
+        split,
+        &dir,
+        &train_stats(),
+        |path: &Path, bytes: &[u8]| dense::create_new(&path.with_extension("elsewhere"), bytes),
+    );
     assert!(
         matches!(&refused, Err(DenseError::Io { path, error }) if path == &dir.join("x.f32") && error.kind() == io::ErrorKind::NotFound),
         "{refused:?}"
@@ -462,13 +549,19 @@ fn adversary_characterise_a_second_write_split_after_a_partial_failure() {
     let dir = scratch("second-after-partial");
     let mut store = DatasetStore::new();
     let split = filled(&mut store, 16, plain);
-    let refused = dense::write_split(&mut store, split, &dir, |path: &Path, bytes: &[u8]| {
-        if path.ends_with("y.f32") {
-            Err(io::Error::other("refused by the test"))
-        } else {
-            dense::create_new(path, bytes)
-        }
-    });
+    let refused = dense::write_split(
+        &mut store,
+        split,
+        &dir,
+        &train_stats(),
+        |path: &Path, bytes: &[u8]| {
+            if path.ends_with("y.f32") {
+                Err(io::Error::other("refused by the test"))
+            } else {
+                dense::create_new(path, bytes)
+            }
+        },
+    );
     assert!(matches!(refused, Err(DenseError::Io { .. })), "{refused:?}");
     let kinds = |store: &DatasetStore| -> Vec<DenseFileKind> {
         store.dense_files_of(split).iter().map(|f| f.kind).collect()
@@ -477,9 +570,13 @@ fn adversary_characterise_a_second_write_split_after_a_partial_failure() {
     assert_eq!(store.split(split).unwrap().state, SplitState::Open);
     assert_eq!(names(&dir), ["x.f32"]);
 
-    dense::write_split(&mut store, split, &dir, |path: &Path, bytes: &[u8]| {
-        fs::write(path, bytes)
-    })
+    dense::write_split(
+        &mut store,
+        split,
+        &dir,
+        &train_stats(),
+        |path: &Path, bytes: &[u8]| fs::write(path, bytes),
+    )
     .unwrap();
     assert_eq!(
         kinds(&store),
