@@ -6,7 +6,7 @@ status: approved
 title: Wave a11 approved by Timo
 relations:
 - decides: story:regressor-seeded-fit
-revision: 2
+revision: 6
 transitions:
 - {from: "draft", to: "approved", at: "2026-10-25T06:07:04Z", actor: "human:timo", revision: 2}
 ---
@@ -153,10 +153,70 @@ Unit 1, `story:regressor-seeded-fit` (the open points are the scoper's, 2026-10-
   `website/docs/guides/fit-a-recording.md` (one paragraph: the two flags, where the two files
   come from); the `fit` usage line in `crates/patchback-cli/src/main.rs` if it lists flags.
 
+- Da11-18 (implementor deviation from Da11-16, accepted) `FitError` gains a third variant,
+  `PredictionFailed { message }`, whose `domain_error()` is `patchback.fit.NoValidCandidate`: it
+  carries the predictor's message as Da11-12 asks, which the unit variant `NoValidCandidate`
+  and `RendererFault`'s fixed text cannot. a12 touches `error.rs` after this wave, not beside it.
+- Da11-19 (implementor deviation from Da11-10, accepted) The seeded `run.meta` record for the
+  training binary is `weights_modelspec <version> <commit>`, not `modelspec …`: `run.meta`
+  already carries `modelspec <version>` for the pinned binary, and keys stay unique.
+- Da11-20 (implementor deviation from the brief, accepted) The seeded records (`init`,
+  `weights sha256`, `weights_modelspec`, `normalization sha256`) travel in
+  `FitOutcome::seeded` (`SeededStart`), not in `RunMeta`, which is unchanged; the CLI computes
+  the statistics file's SHA-256 over the bytes `read_stats` parsed and passes it in
+  `SeedInputs::normalization_sha256`. The weights and statistics are read after `--notes` and
+  before the `--out` checks; the contract check runs after the pin check and before silence.
+  `MAX_STATS_BYTES` (1 MiB) bounds the statistics read (provisional).
+
+- Da11-21 (adversary pass 1, F1) The prediction's `features/1` vector is extracted from the
+  first note's own clip, not from the whole reference: `analyze_and_extract(contract,
+  &reference.samples()[..tail_end], SAMPLE_RATE_HZ, span)` with `tail_end = min(span.end_sample
+  + RELEASE_OFFSET_FRAMES + RELEASE_WINDOW_FRAMES, frames)`, the dataset's own call over one
+  note's render (`crates/patchback-dataset/src/generate.rs:386-391`). Measured by the adversary:
+  on a two-note reference the whole-clip f0 put the second note's pitch into the first note's
+  vector (index 31: 1.0 against 1.0551). The given analysis still admits the reference (step 5)
+  and is still required (Da11-4); it is no longer the prediction's source. The first-note
+  analysis runs inside the fit's clock. The adversary's `tests/adversary_seeded_fit.rs` and
+  `tests/adversary_fit_seeded.rs` stay in the unit, as the pass-2 files will.
+- Da11-22 (adversary pass 1, F2) A first note whose `end_sample` is at or past the reference's
+  end has an empty release window; the seeded fit refuses `patchback.fit.NoValidCandidate` with
+  the extractor's message (`FeatureNotComputable`, feature 16, "the window from sample <end> to
+  <end> holds no frame centre") and does not fall back to a default start the caller did not
+  ask for. The clamp of Da11-8 stays. The refusal is documented (`cli.md` § `patchback fit`,
+  row 1 and the seeded paragraph; the `search.rs` module doc, step 6), and the adversary's case
+  `adversary_a_note_held_to_the_reference_end_is_predicted_from` is rewritten as
+  `…_is_refused`: for `end_sample` 48000 and 60000 in a 48000-frame clip the seeded fit refuses
+  as above and the default fit of the same inputs runs.
+- Da11-23 (adversary pass 1, F3) The `wall_time_ms` and `--max-wall-time-ms` doc rows in
+  `crates/patchback-cli/src/fit.rs` and the stdout paragraph in `cli.md` say that on a seeded
+  run the fit's clock holds the first-note analysis and the prediction, and that the reference
+  analysis the CLI makes before the fit is outside it.
+
+- Da11-24 (adversary pass 2, F1) `fit_request` refuses a given analysis whose frame count or
+  sample rate is not the reference's, before the prediction, as `FitError::PredictionFailed`
+  (`patchback.fit.NoValidCandidate`) whose message names the analysis's and the reference's
+  frame counts and rates. That restores, as an explicit check, what pass 1 observed through
+  `extract_features`'s `ClipMismatch` before Da11-21 stopped reading the analysis. No new
+  variant (Da11-16, Da11-18); the CLI cannot reach it, since it analyses its own reference; an
+  unseeded request with such an analysis is not refused: the analysis is ignored and the fit
+  analyses the reference itself (the implementor's call, accepted);
+  the `FitRequest.analysis` doc states the obligation.
+- Da11-25 (adversary pass 2, F2) The first note's clip starts at the note's start, not at the
+  reference's: `analyze_and_extract` runs over `samples[start..tail_end]` with the span
+  `0..end − start` (both ends clamped as before), so a note after a lead-in gets the vector the
+  dataset would compute for that note (bit-equal when the lead-in is silence). Measured by the
+  adversary under Da11-21's slice from 0: a lead-in of 4,096 frames changed 11 of 32 raw values,
+  one of 1,000 frames 28 of 32. `tail_end` is as Da11-21 computed it.
+- Da11-26 (adversary pass 2, F3) Refusal row 7 of the `crates/patchback-cli/src/fit.rs` module
+  doc names the first-note analysis refusals: the held note (Da11-22), a first-note clip that
+  is silent or whose pitch is ambiguous, each `patchback.fit.NoValidCandidate` with the
+  analysis crate's message. The adversary's pass-2 files stay in the unit (Da11-21).
+
 ## Provisional values
 
 | Name | Value | Where | Why provisional |
 | --- | --- | --- | --- |
-| note span (Da11-8) | the first note's `start_sample..end_sample` | fit feature extraction | DESIGN.md § 9.2 names none; training used `0..gate_samples` of one note |
+| note span (Da11-8, Da11-21, Da11-25) | the first note's `start_sample..end_sample`, extracted from the reference's samples from the note's start to its release window end | fit feature extraction | DESIGN.md § 9.2 names none; training used `0..gate_samples` of one note's own clip |
 | init value (Da11-10) | `init regressor-prediction` | `run.meta` | files.md documents `default` only |
 | warning line (Da11-11) | `warning clamped <n> of 8 predictions` | stdout, `report.txt` | DESIGN.md § 5.2 asks for a warning, names no text |
+| statistics read bound (Da11-20) | `MAX_STATS_BYTES` 1 MiB | `crates/patchback-cli/src/fit.rs` | a `features/1` statistics text is about 9.5 KB; DESIGN.md names no bound |

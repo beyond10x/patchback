@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-25T08:26:09Z",
+  "actor": "human:timo",
+  "artifact": "story:regressor-seeded-fit",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "coordinator verify-unit1.sh on impl/seeded-fit d37d910 (a11/coordinator/verify-unit1.txt): 379 of 379 in 47 suites (fit and cli lane), dependencies 39 of 39, clippy -D warnings exit 0, fmt exit 0, no /home/ path in the change"
+  }
+}

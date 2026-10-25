@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-25T08:26:10Z",
+  "actor": "human:timo",
+  "artifact": "story:regressor-seeded-fit",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "correction 1 (Da11-21 to Da11-23): the two red cases green, 369 of 369; adversary pass 2 confirmed no regression of pass-1 cases",
+    "review": "review-result:regressor-seeded-fit-adversary-1",
+    "outcome": "fixed"
+  }
+}

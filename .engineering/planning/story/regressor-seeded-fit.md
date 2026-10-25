@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:regressor-seeded-fit
 kind: story
-status: active
+status: implemented
 title: Regressor-seeded fit
 relations:
 - decomposes: epic:modelspec-regressor
@@ -35,10 +35,11 @@ scope:
   path: crates/patchback-fit/tests/domain.rs
 - confidence: inferred
   path: crates/patchback-fit/tests/regressor_seeded_fit_scenarios.rs
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-25T06:07:04Z", actor: "human:timo", revision: 8}
 - {from: "proposed", to: "active", at: "2026-10-25T06:07:04Z", actor: "human:timo", revision: 9}
+- {from: "active", to: "implemented", at: "2026-10-25T08:26:10Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":1}}}
 ---
 # Regressor-seeded fit
 

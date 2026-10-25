@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-25T08:26:10Z",
+  "actor": "human:timo",
+  "artifact": "story:regressor-seeded-fit",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "correction 2 (Da11-24 to Da11-26): the red case and the new lead-in case green, 379 of 379; verified by the coordinator",
+    "review": "review-result:regressor-seeded-fit-adversary-2",
+    "outcome": "fixed"
+  }
+}
