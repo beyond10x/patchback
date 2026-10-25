@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-25T02:54:30Z",
+  "actor": "human:timo",
+  "artifact": "story:normalization-stats",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "pinned ModelSpec 0.5.0, sgd lr 0.01, batch 16, the same 64/16/16 generation: raw x.f32 loss 781871.56 at step 0 and NaN at step 4; z-scored under the train statistics 1.0717 at step 0, 0.8882 at step 4, eval 0.2070 after 200 steps (unit 3 probe, scratch a8/training-run/scratch/probe-normalized.txt); generate-dataset writes byte-identical normalization.stats and x.f32 across two processes (generate_dataset_stats.rs)"
+  }
+}

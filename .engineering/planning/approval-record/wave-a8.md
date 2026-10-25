@@ -8,7 +8,7 @@ relations:
 - decides: story:engine-baseline
 - decides: story:normalization-stats
 - decides: story:training-run
-revision: 2
+revision: 9
 transitions:
 - {from: "draft", to: "approved", at: "2026-10-25T01:21:55Z", actor: "human:timo", revision: 2, correlation: "wave-a8"}
 ---
@@ -179,3 +179,109 @@ Wave:
 
 - Da8-29 The ESS pin stays at 0.68.0 (Da7-12) until the ess repository's 0.69.1 is released and
   verified; moving it is a coordinator commit, in this wave if the release lands before close.
+
+Taken after unit 3's implementor report (2026-10-25):
+
+- Da8-30 `x.f32` holds the z-scored features: `patchback generate-dataset` computes the training
+  split's statistics once every sample is drawn, writes `normalization.stats`, then writes the
+  dense files of every split with `x` normalized under those statistics (`(x − mean) / std`,
+  divisor 1 where `std` is 0, Da8-14); `y.f32` and `order.u32` are unchanged, and the writer's
+  read-back verification holds as before. DESIGN.md § 6.3 makes the statistics part of the
+  frozen feature definitions, "reused unchanged for inference", and § 7.2 calls `x.f32` the
+  feature matrix without saying raw; the measured run decides it: on the pinned ModelSpec 0.5.0
+  with `sgd(lr = 0.01)`, raw rows (features 26 and 27 reach 7,662 and 10,547) give a loss of
+  781,871.56 at step 0 and NaN at step 4, the same rows z-scored give 1.0717 at step 0 and 0.8882
+  at step 4, 0.2070 eval loss after 200 steps (unit 3, `scratch/probe-normalized.txt`). Unit 2
+  does it in its correction round; `dense::write_split` takes the statistics, so every caller
+  normalizes.
+- Da8-31 The a7 cases that pin `x.f32` as `f64 as f32` of `Sample.x` (`dense_bytes.rs`,
+  `dense_scenarios.rs`, `dense_adversary*.rs`, `generate_dataset_dense_adversary.rs`, and any
+  other) are superseded by Da8-30 and re-pinned against the normalized values by unit 2's
+  correction round, each with its oracle recomputed from the statistics; no assertion is dropped.
+- Da8-32 Unit 3 is ordered after unit 2: once unit 2 is merged into `wave/a8`, the coordinator
+  merges `wave/a8` into `impl/training-run`, unit 3's fixtures take the statistics the writer now
+  needs, and its pinned-binary test runs on normalized data. `TrainingRun::start` normalizes
+  nothing itself (the guide's `modelspec train` command must work on the dataset directory as
+  written) and records nothing about normalization: `normalization.stats` beside the data is the
+  record.
+- Da8-33 A run that exits 0 with a NaN loss is `Completed`: the domain decides by exit status.
+  The § 12.2 loss-decrease check in the pinned test is where a NaN fails, and
+  story:weight-export's finiteness check (§ 8.2 step 2) is the refusal at export. For the owner.
+- Da8-34 Unit 3's calls stand: a new `TrainingError` (its `domain_error()` returns `Option`;
+  `OtherPin`, `MissingDenseFile` and `ModelSpec` are not domain errors); `start` takes `eval:
+  Option<DatasetSplitId>` as the spec's field is optional; `start` blocks until the child exits
+  and `finish()` records its outcome; the run's state is checked before the declared outcomes
+  (the unwritten-data scenario pins `TrainingRunNotReady` there); `ModelNotChecked` comes from
+  `trainable()` before `bind`; a binary of another pin at `start` is `OtherPin`; exit 0 without
+  the `eval` line while `--eval` was given, and a timeout, are `Failed`.
+
+Taken after unit 1's adversary pass 1 (2026-10-25):
+
+- Da8-35 The engine-baseline target verdict is decided on the recorded `f64`
+  `median_loss_reduction_percent`, the value `reduction_percent` computes and `benchmark.txt`
+  prints, so the record and the verdict always agree. A pair of medians within rounding distance
+  of 20 % may differ from rational arithmetic; the adversary found 325 such pairs in 6000
+  constructed ones and none from real medians, both verdicts exit 0, so it is documented in the
+  function's and the file's documentation and the case is re-pinned to the recorded value.
+- Da8-36 `record_baseline_result` keeps the spec's four outcomes and adds no refusal for a
+  non-finite reduction: it is recorded as computed with verdict `NotMet` and the benchmark
+  Completed, the precondition (finite medians, a default median above 0) is documented on the
+  method, and the CLI's refusal of a default median of 0 stays the guard. A spec outcome for a
+  non-finite result is the owner's.
+- Da8-37 The implementor's seed-derivation case asserts the exact recomputation of every clip's
+  patch and fit seed from the benchmark seed (a diagnostic draw consumes one output and is
+  skipped), with no search for the seed in the stream; the adversary's strict case stays beside it.
+- Da8-38 The determinism case of the `benchmark` verb runs at `--max-renders 2` when every pin it
+  carries holds there, to cut the 10.77 s the adversary measured for its two runs at 12 renders.
+
+Taken after unit 3's adversary pass 1 (2026-10-25):
+
+- Da8-39 `TrainingRun::bind` takes the unchecked `ModelSource` and refuses in the interpreter's
+  order: the run's state (`TrainingRunPastPlanning`), then the source's state
+  (`ModelNotChecked`), then the pin (`PinMismatch`). The adversary's probe scenario through
+  `ess verify conform run --target interpreted` answered `wrong-state` for a bound run with an
+  unchecked source; the earlier shape `bind(&CheckedModel)` raised `ModelNotChecked` first
+  (Da8-34, superseded on that point).
+- Da8-40 `TrainingRun::finish` decides the state by exit status alone, as `FinishTrainingRun`
+  declares (`failed: when exit_status != 0`, otherwise `completed`): exit 0 is `Completed`
+  whatever the output, and the parse of stdout (a malformed curve, no `step` line, no `eval`
+  line although `--eval` was given) is recorded beside the state, not as a failure. A timeout
+  and a signal stay `Failed`. Da8-25 and Da8-34 are superseded on that point; the § 12.2
+  loss-decrease check of the pinned test reads the curve and fails when it is absent (Da8-27).
+  A spec outcome for a completed run with unusable output is the owner's.
+- Da8-41 The ModelSpec subprocess deadline is `Instant::now().checked_add(timeout)`, and `None`
+  waits without a deadline; `Duration::MAX` panicked at d796084 `lib.rs:370` (pre-existing,
+  unreachable from any caller, fixed because the unit edits that file).
+- Da8-42 `LossCurve::parse` refuses a step number that is not greater than the previous one as
+  `Malformed`; the pinned binary prints increasing steps and the Da8-27 check assumes them.
+
+- Da8-43 The adversary case for the bind order calls `run.bind(&unchecked)` on the bound run and
+  expects `TrainingRunPastPlanning`; the route through `trainable()` first answers
+  `ModelNotChecked` by design and stays. `bind` accepts both `&ModelSource` and `&CheckedModel`
+  (`AsRef<ModelSource>`), so the a7 callers compile unchanged.
+
+Taken after unit 2's adversary pass 1 (2026-10-25):
+
+- Da8-44 `compute_normalization_stats` treats a column whose values are all bit-equal to its first
+  value as constant: the mean is that value and the standard deviation 0, so Da8-14's divisor 1
+  applies and the column normalizes to +0.0. The two-pass formula gave 1e-17 to 5e-13 for a
+  constant non-dyadic value (0.1 at n = 3: mean 0.10000000000000002, std 1.39e-17, z −1.0); no
+  generated column was constant (seed 42, 64 samples: smallest std 9.38 in column 24).
+- Da8-45 The `DenseFileKind::X` doc at `crates/patchback-dataset/src/model.rs:109` says z-scored,
+  not raw. Da8-17 stands: `write_split` compares no contract or split id with the statistics it
+  is given; the adversary's note names the two compares it would take (`dataset_split_id` against
+  the Train split, `feature_contract_id` against the dataset's), for the owner.
+
+Taken after unit 1's adversary pass 2 (2026-10-25):
+
+- Da8-46 The benchmark holdout stream is `SplitMix64::new(seed ^ HOLDOUT_DOMAIN)`, a documented
+  constant in `crates/patchback-cli/src/benchmark.rs`, so that the same `--seed` does not make
+  holdout clip 0 the first training sample of `generate-dataset`, and a fit seeded with `--seed`
+  does not start at clip 0's own patch (the adversary measured a loss of 0.0 there). Da8-2 is
+  otherwise unchanged. Taken before 0.7.0 ships `clips.txt`, so the derivation changes once.
+- Da8-47 The implementor's draw-bound assertion (`cli/tests/benchmark.rs:340`) is dropped: it
+  read only the test's own stream walk; the adversary's case pins the verb's bound at both edges.
+
+- Da8-48 Unit 2's pass-2 finding (the module doc of `patchback-analysis::normalization` said every
+  overflowing sum is refused; since Da8-44 a constant column at `f64::MAX` is admitted) is a
+  one-sentence doc reword, made by the coordinator during verification; the gate ran after it.

@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-25T02:54:30Z",
+  "actor": "human:timo",
+  "artifact": "story:normalization-stats",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "pass 2 green; the module doc reworded by the coordinator (Da8-48); 442 cases green",
+    "review": "review-result:normalization-stats-adversary-2",
+    "outcome": "fixed"
+  }
+}
