@@ -506,6 +506,9 @@
 }
 .milestones li[data-next] { border-color: color-mix(in srgb, var(--pb-c-estimate) 55%, transparent); background: color-mix(in srgb, var(--pb-c-estimate) 8%, transparent); color: var(--pb-text); }
 .milestones li[data-next] span { background: var(--pb-c-estimate); color: #0a0618; }
+.milestones li[data-done] { border-color: color-mix(in srgb, var(--pb-c-listen) 45%, transparent); color: var(--pb-text); }
+.milestones li[data-done] span { background: var(--pb-c-listen); color: #0a0618; }
+.milestones li[data-done] em { color: var(--pb-c-listen); }
 .milestones em { margin-left: auto; color: var(--pb-c-estimate); font: 600 0.7rem var(--b10x-font-mono, monospace); font-style: normal; letter-spacing: 0.12em; text-transform: uppercase; }
 
 @media (max-width: 996px) {

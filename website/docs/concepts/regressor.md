@@ -74,8 +74,12 @@ adds no ML library to work around anything ModelSpec does not do yet.
 
 The prediction only starts the [search](./closed-loop.md#the-search). Its outputs may leave
 `[0, 1]`; they are clamped with a warning, and how often that happens is measured. The
-regressor earns its place when a fit seeded by it beats a fit from the default patch; the
-benchmark compares the default patch, the raw prediction and the prediction refined by search.
+regressor earns its place when a fit seeded by it beats a fit from the default patch. The ML-init
+benchmark (`patchback benchmark --kind ml-init`) compares four arms over one seeded holdout: the
+default patch, the default patch refined by search, the raw prediction, and the prediction
+refined by search, with the same search bounds and seed for both searches. It records the four
+median losses, the two searches' median evaluations and the clamped predictions, and no verdict;
+reading them is the owner's call.
 
 GPU training moves to ModelSpec's GPU backend once that backend ships and passes CPU/GPU
 equivalence tests.

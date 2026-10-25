@@ -18,7 +18,7 @@ them starts a server or needs a network.
 | [`patchback analyze`](#patchback-analyze) | Measures a recording |
 | [`patchback fit`](#patchback-fit) | Recovers a patch and its events from a recording |
 | [`patchback compare`](#patchback-compare) | Compares two recordings term by term |
-| [`patchback benchmark`](#patchback-benchmark) | Measures the fit against the default patch over a synthesized holdout |
+| [`patchback benchmark`](#patchback-benchmark) | Measures the fit against the default patch, or the regressor's start, over a synthesized holdout |
 | [`patchback generate-dataset`](#patchback-generate-dataset) | Renders the regressor's training data |
 
 ## patchback patch validate
@@ -295,6 +295,8 @@ patchback: compare refused: patchback.audio.UnsupportedSampleRate: candidate "ca
 
 ```bash
 patchback benchmark --out bench/ --examples 200 --seed 1234
+patchback benchmark --out bench-ml/ --examples 200 --seed 1234 \
+  --kind ml-init --weights regressor.weights --normalization dataset/normalization.stats
 ```
 
 | Argument | Meaning |
@@ -304,6 +306,9 @@ patchback benchmark --out bench/ --examples 200 --seed 1234
 | `--seed` | The seed the holdout is drawn from, 0 to 2^64 - 1; 0 by default |
 | `--topology` | The topology the holdout is synthesized and fitted in, by name; `subtractive-mono/1` by default |
 | `--max-renders`, `--max-wall-time-ms`, `--max-restarts`, `--improvement-threshold`, `--block-size` | Every clip's fit bounds and render block size, as [`patchback fit`](#patchback-fit) takes them, with its defaults |
+| `--kind` | `engine-baseline` (the default) or `ml-init` |
+| `--weights` | The regressor's `weights/1` artifact, as [`patchback fit`](#patchback-fit) takes it; requires `--normalization`; `--kind ml-init` only |
+| `--normalization` | The `normalization.stats` file the artifact was trained with, at most 1 MiB; requires `--weights`; `--kind ml-init` only |
 
 The engine baseline: does the closed loop beat the fixed default patch? The holdout is a seeded
 set of reference clips Patchback synthesizes itself, each with its known note. One SplitMix64
@@ -320,6 +325,16 @@ takes the lower median of each (the middle value; of an even count, the lower of
 ones), the reduction `(default − search) / default × 100`, and the verdict: `met` at a reduction
 of at least 20 %, else `not-met`. The target is a go/no-go experiment target, not a guarantee;
 both verdicts complete the benchmark and exit 0.
+
+With `--kind ml-init` the benchmark answers Milestone B's question: does the regressor reduce
+matching work or improve the fit? It reads the artifact and the statistics once, before any clip
+is rendered, and refuses them as `patchback fit` does. Over the same holdout, each clip then runs
+four arms: the default patch, the search from it (both as the engine baseline runs them), the
+search from the regressor's prediction for the clip's note (same bounds and fit seed, so only its
+first restart differs), and the prediction alone, rendered once and scored as the default patch
+is. The benchmark records the four median losses and the two searches' median evaluations. It
+computes no reduction and gives no verdict: Milestone B sets no numeric target, so reading the
+exit from the records is the owner's.
 
 It writes into `--out` ([a benchmark run](./files.md#a-benchmark-run)):
 
@@ -341,6 +356,12 @@ bench/examples/0/fit.wav` prints clip 0's best loss as its `loss`, and with `def
 default loss. The same flags write the same files, byte for byte, except the `wall_time_ms`
 record of `benchmark.txt`, unless a fit's wall-time bound stops it.
 
+On `--kind ml-init` each `examples/<k>/` also holds `predicted.wav` (the raw prediction's render,
+scored on) and `seeded.wav` (the seeded fit's best render, scored on); `patchback compare` of
+`reference.wav` with `predicted.wav` prints the clip's `raw_loss`, with `seeded.wav` its
+`seeded_best_loss`. `clips.txt` gains six columns and `benchmark.txt` the input and result
+records of the four arms ([a benchmark run](./files.md#a-benchmark-run)).
+
 It prints the records of `benchmark.txt` from `default_median_loss` on to stdout, in its order:
 
 ```text
@@ -360,12 +381,42 @@ listening_example examples/1/fit.wav
 
 (`--examples 2 --seed 7 --max-renders 12 --max-restarts 1`.)
 
+On `--kind ml-init` the same flags with a test artifact print the four arms' records instead of
+the reduction and the verdict (a debug build; the wall time and the regressor's two medians
+depend on the build and the artifact):
+
+```text
+default_median_loss 0.37281723960683943
+default_search_median_loss 0.24204298323998533
+raw_regressor_median_loss 0.47634461599357275
+regressor_search_median_loss 0.3746431976727592
+default_search_median_evaluations 12
+regressor_search_median_evaluations 12
+clamped_predictions 0 of 2
+wall_time_ms 20821
+listening_example examples/0/reference.wav
+listening_example examples/0/default.wav
+listening_example examples/0/fit.wav
+listening_example examples/0/predicted.wav
+listening_example examples/0/seeded.wav
+listening_example examples/1/reference.wav
+listening_example examples/1/default.wav
+listening_example examples/1/fit.wav
+listening_example examples/1/predicted.wav
+listening_example examples/1/seeded.wav
+```
+
 A refused benchmark writes nothing, not even the directory, and prints one line to stderr:
 
 ```text
 patchback: benchmark refused: patchback.fit.InvalidHoldoutSize: the holdout of 0 examples holds no example; a benchmark needs at least one; no benchmark starts
 patchback: benchmark refused: patchback.fit.TopologyNotFound: no topology named "no-such/1" is known to the renderer; no run starts
 patchback: benchmark refused: cannot write "bench/benchmark.txt": already exists; it is never overwritten
+patchback: benchmark refused: patchback.fit.WeightArtifactRequired: an ML-init benchmark in "subtractive-mono/1" names no weight artifact to predict from; no benchmark starts
+patchback: benchmark refused: patchback.model.UnknownWeightArtifact: no weight artifact at "<path>"
+patchback: benchmark refused: patchback.model.CorruptWeightArtifact: "<path>": <message>
+patchback: benchmark refused: patchback.analysis.NormalizationStatsNotFound: no normalization statistics at "<path>": <message>
+patchback: benchmark refused: patchback.fit.FeatureContractMismatch: <message>
 patchback: benchmark refused: clip <k>: <domain error>: <message>
 ```
 
@@ -374,15 +425,18 @@ They are answered in this order: the holdout size, the topology, the fit bounds,
 `examples` already in it, a symlink counting whether it resolves or not; every file unchanged),
 the holdout (`holdout exhausted: …` when four draws a clip do not fill it), then each clip in
 order (`clip <k>: <error>: <message>` when its reference or default patch cannot be rendered or
-compared, or its fit is refused or finds no valid candidate), then a default median of 0 (no
-reduction is defined). A file that cannot be written at the end is refused
-`cannot write "<path>": <message>`, and every file and directory the run wrote is removed.
+compared, or its fit is refused or finds no valid candidate; on `ml-init` also when its analysis,
+seeded fit or predicted render is refused), then, on the engine baseline only, a default median
+of 0 (no reduction is defined). On `--kind ml-init` the artifact and the statistics are read once
+and refused, as `patchback fit` refuses them, before any clip is rendered. A file that cannot be
+written at the end is refused `cannot write "<path>": <message>`, and every file and directory
+the run wrote is removed.
 
 | Exit status | Meaning |
 | --- | --- |
-| 0 | Benchmarked, `met` or `not-met`, and the files written |
-| 1 | Refused: `--examples 0` (`InvalidHoldoutSize`), an unknown `--topology` (`TopologyNotFound`), a bound of 0 (`InvalidSearchBound`), an `--out` that is not a directory, one of its files that exists or cannot be written, a holdout not drawn within its draws, a clip whose fit is refused or fails, or a default median of 0 |
-| 2 | Usage error: a missing `--out` or `--examples`, a count, seed or bound that is not a non-negative integer, a threshold that is not a finite non-negative decimal, a `--block-size` below 1, or an unknown flag |
+| 0 | Benchmarked: `met` or `not-met` on the engine baseline, the four arms' records on `ml-init`, and the files written |
+| 1 | Refused: `--examples 0` (`InvalidHoldoutSize`), an unknown `--topology` (`TopologyNotFound`), a bound of 0 (`InvalidSearchBound`), an `--out` that is not a directory, one of its files that exists or cannot be written, a holdout not drawn within its draws, a clip whose fit is refused or fails, or a default median of 0; on `--kind ml-init` also a missing `--weights` (`WeightArtifactRequired`), a missing or corrupt artifact (`UnknownWeightArtifact`, `CorruptWeightArtifact`), missing or malformed statistics (`NormalizationStatsNotFound`), an input of another feature contract than `features/1` (`FeatureContractMismatch`), or a clip whose analysis, seeded fit or predicted render is refused |
+| 2 | Usage error: a missing `--out` or `--examples`, a count, seed or bound that is not a non-negative integer, a threshold that is not a finite non-negative decimal, a `--block-size` below 1, a `--kind` other than `engine-baseline` and `ml-init`, `--weights` or `--normalization` without the other, either of them with the engine baseline (by default or named), or an unknown flag |
 
 See [the closed loop](../concepts/closed-loop.md#the-starting-point).
 

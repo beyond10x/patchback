@@ -6,6 +6,85 @@ All notable changes to Patchback are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `patchback benchmark --kind ml-init --weights <path> --normalization <path>` (story
+  ml-init-benchmark): the `RecordMlInitResult` of `spec/domains/fit.yaml`, DESIGN.md § 13 B's
+  "default vs ML-init vs ML-init-plus-search". `--kind engine-baseline|ml-init` defaults to
+  `engine-baseline`, whose files and stdout are the 0.10.0 ones byte for byte. `--weights` and
+  `--normalization` each require the other and are usage errors (exit 2) with the engine
+  baseline; `--kind ml-init` without them is refused `patchback.fit.WeightArtifactRequired`
+  (exit 1). The two files are read once before anything else and refused as `patchback fit`
+  refuses them (`patchback.model.UnknownWeightArtifact`, `patchback.model.CorruptWeightArtifact`,
+  `patchback.analysis.NormalizationStatsNotFound`, `patchback.fit.FeatureContractMismatch`); the
+  benchmark's `weight_artifact_id` is `sha256:<artifact checksum>`. Each clip runs four arms:
+  the default patch, the fit from it, the regressor-seeded fit (`patchback_fit::fit_request`,
+  same bounds and fit seed, so only restart 0 differs) and the raw prediction scored once
+  (`patchback_fit::predicted_arm`). `benchmark.txt` (format version still 1) records
+  `kind ml-init`, `weights sha256`, `modelspec <version> <commit>`, `normalization sha256`,
+  `feature_contract features/1`, the four median losses (`raw_regressor_median_loss`,
+  `regressor_search_median_loss` beside the default two), both median evaluations,
+  `clamped_predictions <n> of <clips>` and no reduction and no verdict; `clips.txt` adds
+  `raw_loss seeded_best_loss seeded_evaluations seeded_restarts seeded_stop_reason clamped`;
+  each example clip adds `predicted.wav` and `seeded.wav`. A clip whose analysis, seeded fit or
+  predicted render is refused ends the benchmark as `clip <k>: …`.
+- `patchback_fit::Benchmark::record_ml_init_result` and `patchback_fit::MlInitResult` (story
+  ml-init-benchmark): `RecordMlInitResult`, refusing `BenchmarkKindMismatch` before
+  `BenchmarkStateConflict`, setting the four median losses, both median evaluations, the wall
+  time and the listening examples, recording no reduction and no verdict.
+- `patchback_fit::predicted_arm` and `patchback_fit::PredictedArmError` (story
+  ml-init-benchmark): the default arm's scoring at any normalized point; at the default point it
+  is `patchback_fit::default_arm` bit for bit.
+- `website/docs/progress.mdx`, the documentation site's Progress page (story
+  docs-progress-and-demos): every milestone of DESIGN.md § 13 with its stories, each story's
+  status and the release that delivered it, the counts per status and the latest release with
+  its date. `patchback-docs generate` writes it from the planning store's files and
+  `CHANGELOG.md` read as text; a story's release is the newest CHANGELOG release whose section,
+  its lines joined, names `(story <slug>)`, `(stories … <slug> …)` or `story:<slug>`, else the
+  first release dated on or after the day of its `implemented` transition, marked "by date";
+  dates compare as numbers. Only `## [Unreleased]` is undated: any other heading whose date is
+  missing or does not read as `YYYY-MM-DD` (a four-digit year; month and day of one or two
+  digits) is refused, naming its version.
+  Stories of no epic are listed under "Outside the milestones". The page names titles and
+  milestones, never a planning id, and `generate --check` fails when a story's status or release
+  changed without regeneration.
+- `website/docs/listen.mdx`, the Listen page (story docs-progress-and-demos): four demo voices
+  (pluck, pad, bass, lead; `demos/<voice>/voice.patch` and `note.events`, one note each), each
+  with four takes to play in the browser (the recording, the default-start fit, the
+  regressor-seeded fit and the clamped prediction with its clamp count), the voice's parameters
+  beside both fits' recovered parameters and the prediction's, and both fits' start and best
+  loss and evaluations.
+- `patchback-docs demos fit` (story docs-progress-and-demos), run in release mode by
+  `task docs-demos`: renders each demo voice, analyses it once and fits it from the default patch
+  (`patchback_fit::fit`) and from the demo model's prediction (`patchback_fit::fit_request`),
+  both with `FitConfig::default()` and a 600,000 ms wall-time bound, and writes
+  `website/data/demos.json` (`patchback-demos/1`, under 64 KiB, no evaluation logs) with the
+  SHA-256 of every input and of every take's 16-bit samples (`pcm16Sha256`, also listed on the
+  Listen page). `patchback-docs generate` and `demos render` refuse a `demos.json` made from
+  other inputs, naming the changed file, and a take that no longer renders to its recorded
+  samples, naming the voice and take. A relative `--out` of `demos fit` and `demos render`
+  resolves against `--root`.
+- `patchback-docs demos render --out <dir>` (story docs-progress-and-demos): the four takes of
+  every voice as 16-bit PCM WAV, 48 kHz, mono, under 2 s each, byte-identical on every run, into
+  the git-ignored `website/demo-audio/`. `task docs-generate` and the "Documentation validation"
+  workflow run it before the site build, and a missing take fails the build.
+- `patchback-docs demos train --modelspec <binary> --dataset <dir> --out <dir>` (story
+  docs-progress-and-demos): retrains the demo model as `models/demo/PROVENANCE` records it
+  (dataset seed 42, splits 50,016 / 4,992 / 4,992, 3,126 steps at batch 16) with a ModelSpec
+  binary the caller supplies, and says whether the artifact's checksum equals the committed one.
+- `models/demo/regressor.weights` (`weights/1`, checksum a17d8104…), its
+  `normalization.stats` and `PROVENANCE` (story docs-progress-and-demos): the demo model the
+  Listen page's seeded fits and predictions use. Whether a retrain reproduces the checksum is
+  `not-verified`.
+
+### Fixed
+
+- Docs, from the site review of 2026-10-25: the `patchback fit` examples on the overview, Getting
+  started and Fit a recording pages carry the required `--notes`; the fit writes six files, with
+  `trace.events`, and `report.txt` holds no confidence record; analysis measures pitch, and onset
+  and gate estimation is Milestone C; the regressor seeds the start only with `--weights`; Getting
+  started names `clap` beside the standard library.
+
 ## [0.10.0] - 2026-10-25
 
 ### Added

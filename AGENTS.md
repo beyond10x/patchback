@@ -6,10 +6,14 @@ at [README.md](README.md); the design is [DESIGN.md](DESIGN.md).
 
 ## State
 
-Milestone A in progress (DESIGN.md revision 0.7): the workspace crates, the clap-derived `patchback` CLI (`patch validate`, `render`, `analyze`, `compare`, `fit` and `benchmark` implemented, and Milestone B's `generate-dataset`), the dependency gate, the ModelSpec pin and check, the parameter contracts, WAV import and export with provenance on external recordings, the `.patch` file format, patch graph validation (including the fixed § 5.2 chain) and compilation, the fixed subtractive voice and its renderer, the analysis core, the frozen `features/1` feature contract, the `notes.events` file, the audio comparison loss, the bounded derivative-free fit and the six files of its run (`patch.patch`, `notes.events`, `reconstructed.wav`, `report.txt`, `run.meta` and `trace.events`; story fit-run-artifacts), the engine baseline benchmark over a seeded holdout (`benchmark.txt`, `clips.txt` and listening examples; story engine-baseline), the seeded dataset generator (`dataset.meta`, `samples.meta`, the training split's `normalization.stats` and each split's dense `x.f32` z-scored under those statistics, `y.f32` and `order.u32`; stories dense-data-files and normalization-stats) and the CPU training run of the pinned ModelSpec as a subprocess (`patchback_model::TrainingRun`, no `patchback` verb yet; story training-run) and the checked weight export of a completed run to a `weights/1` file (`patchback_model::WeightArtifact`, library only; story weight-export) and the native predictor that runs them on one normalized `features/1` vector (`patchback_model::Predictor`, library only; story native-predictor) and the regressor-seeded fit (`patchback fit --weights --normalization`, `patchback_fit::fit_request`; story regressor-seeded-fit) exist; `studio/` holds the patch studio prototype on fixture data. `spec/` holds the ESS domains and
+Milestones A and B implemented (DESIGN.md revision 0.7; the next slice is § 13 Milestone C, phrases of several notes): the workspace crates, the clap-derived `patchback` CLI (`patch validate`, `render`, `analyze`, `compare`, `fit` and `benchmark` implemented, and Milestone B's `generate-dataset`), the dependency gate, the ModelSpec pin and check, the parameter contracts, WAV import and export with provenance on external recordings, the `.patch` file format, patch graph validation (including the fixed § 5.2 chain) and compilation, the fixed subtractive voice and its renderer, the analysis core, the frozen `features/1` feature contract, the `notes.events` file, the audio comparison loss, the bounded derivative-free fit and the six files of its run (`patch.patch`, `notes.events`, `reconstructed.wav`, `report.txt`, `run.meta` and `trace.events`; story fit-run-artifacts), the engine baseline benchmark over a seeded holdout (`benchmark.txt`, `clips.txt` and listening examples; story engine-baseline), the seeded dataset generator (`dataset.meta`, `samples.meta`, the training split's `normalization.stats` and each split's dense `x.f32` z-scored under those statistics, `y.f32` and `order.u32`; stories dense-data-files and normalization-stats) and the CPU training run of the pinned ModelSpec as a subprocess (`patchback_model::TrainingRun`, no `patchback` verb yet; story training-run) and the checked weight export of a completed run to a `weights/1` file (`patchback_model::WeightArtifact`, library only; story weight-export) and the native predictor that runs them on one normalized `features/1` vector (`patchback_model::Predictor`, library only; story native-predictor) and the regressor-seeded fit (`patchback fit --weights --normalization`, `patchback_fit::fit_request`; story regressor-seeded-fit) and the ML-init benchmark (`patchback benchmark --kind ml-init --weights --normalization`: four arms per clip, five listening files, no verdict; `patchback_fit::Benchmark::record_ml_init_result`, `predicted_arm`; story ml-init-benchmark) exist; `studio/` holds the patch studio prototype on fixture data. `spec/` holds the ESS domains and
 the authored conformance scenarios; `.engineering/` holds the AEP planning store with one epic per
-DESIGN.md § 13 milestone and draft stories whose acceptance is a list of named scenarios. The first
-implementation slice is DESIGN.md § 15 (Milestone A, no ML).
+DESIGN.md § 13 milestone and stories whose acceptance is a list of named scenarios (a tooling
+story names its Rust test files on a `Tooling acceptance:` line instead).
+The documentation site has a generated Progress page (milestones, stories, status and release,
+from the planning store and `CHANGELOG.md`) and a Listen page (four demo voices from `demos/`,
+each fitted from the default start and from the demo model `models/demo/`, with its numbers in
+`website/data/demos.json` and its audio rendered when the site is built).
 
 ## Commands
 
@@ -25,8 +29,20 @@ Entry points are the `Taskfile.yml` tasks (go-task):
 - `task acceptance-check`: fails when a story names no acceptance scenario, or names a
   `spec/scenarios/<name>.yaml` that does not exist.
 - `task docs-generate`: `patchback-docs generate` rewrites the generated site pages
-  (`website/docs/reference/ess/`, `website/docs/status.mdx`, `website/data/`) from `spec/` and the
-  capability list in `crates/patchback-docs/src/status.rs`. Run it after every `spec/` change.
+  (`website/docs/reference/ess/`, `website/docs/status.mdx`, `website/docs/progress.mdx`,
+  `website/docs/listen.mdx`, `website/data/`) from `spec/`, the capability list in
+  `crates/patchback-docs/src/status.rs`, the planning store, `CHANGELOG.md` and
+  `website/data/demos.json`, then `patchback-docs demos render` renders the demo audio into the
+  git-ignored `website/demo-audio/`. Run it after every `spec/` change, every story status move
+  and every release commit: `progress.mdx` drifts otherwise and `task check` fails.
+- `task docs-demos`: `patchback-docs demos fit` in release mode (about 1 minute; the eight fits
+  run on their own threads) rewrites `website/data/demos.json` from `demos/` and `models/demo/`,
+  then `task docs-generate`. Run it after any change to a demo voice, the demo model or the
+  fit, render or analysis code; `generate` and `demos render` refuse a `demos.json` made from other
+  inputs or whose recorded take digests no longer match the audio they render.
+- `patchback-docs demos train --modelspec <binary> --dataset <dir> --out <dir>` retrains the
+  demo model as `models/demo/PROVENANCE` records it (dataset generation about 22 minutes);
+  never in `task check`, and ModelSpec is never downloaded for it.
 - `task docs-check`: `generate --check` plus `cargo test -p patchback-docs`.
 - `task rust-test`: `cargo test --locked --workspace`; holds the dependency gate
   (`crates/patchback-cli/tests/dependencies.rs`) and the CLI dispatch tests.
@@ -88,6 +104,8 @@ every crate inherits the workspace version and nothing is on a registry.
 - A release commit on `main` sets `[workspace.package] version` in `Cargo.toml` and `Cargo.lock`,
   turns `## [Unreleased]` into `## [<version>] - <date>` under a new empty `## [Unreleased]`, and
   moves the link references at the bottom. `task release-check TAG=<version>` passes on it.
+- The release commit also carries `task docs-generate`'s regenerated `website/docs/progress.mdx`
+  (its latest release and the release column change with the new heading).
 - `check` and `Shared source gates` are green on that commit before it is tagged.
 - The tag is the bot's, on that commit:
   `b10x-gates bot --repository beyond10x/patchback -- tag -a <version> -m "Patchback <version>" <commit>`,

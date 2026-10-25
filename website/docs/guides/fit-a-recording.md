@@ -2,7 +2,7 @@
 title: Fit a recording
 sidebar_position: 2
 description: Prepare a recording of one synth note, fit a patch to it, and read what the fit run writes.
-lede: "Fit a patch to a recording of one synth note and read the five files the fit writes."
+lede: "Fit a patch to a recording of one synth note and read the six files the fit writes."
 source: "DESIGN.md § 6.1, § 9, § 11"
 ---
 
@@ -26,14 +26,16 @@ explicitly. Use only recordings you are entitled to analyze.
 patchback analyze --input reference.wav --out analysis/
 ```
 
-Analysis estimates the note's onset, pitch and gate from the audio, each with a confidence. If
-the pitch or the gate is too ambiguous to estimate, it stops with a diagnostic. A
-fit on that recording would be built on a guess, so fix the recording first.
+Analysis measures the note's pitch, with a confidence, and its envelopes and spectral
+descriptors. A reference whose pitch cannot be estimated is refused by the fit
+(`PitchAmbiguous`), so fix such a recording first. Estimating the note's onset and gate from the
+audio is [Milestone C](/docs/status) and is not built yet: the fit takes the note's events from
+a `notes.events` file you write (start, end, MIDI note and velocity, in samples at 48 kHz).
 
 ## Fit
 
 ```bash
-patchback fit --input reference.wav --out results/ --max-renders 2000
+patchback fit --input reference.wav --notes notes.events --out results/ --max-renders 2000
 ```
 
 The fit predicts a starting patch with the [regressor](../concepts/regressor.md), or uses the
@@ -67,8 +69,9 @@ is less informed than its other predictions.
 | `results/patch.patch` | The recovered patch, in physical units; edit it and render it again |
 | `results/notes.events` | The note events the patch was played with |
 | `results/reconstructed.wav` | What the recovered patch sounds like; listen to it next to the reference |
-| `results/report.txt` | Each loss term, versions, timings, warnings and confidence |
+| `results/report.txt` | Each loss term, the render count, the stop reason, wall time and warnings |
 | `results/run.meta` | The seed, input digests, ModelSpec version and feature contract, to reproduce the run |
+| `results/trace.events` | One line per render evaluation: the candidate's losses and parameters, and whether it was kept |
 
 Then compare the reconstruction with the reference directly:
 

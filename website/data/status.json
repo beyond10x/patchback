@@ -158,10 +158,10 @@
     },
     {
       "area": "Fit",
-      "detail": "patchback benchmark compares the default patch, the default patch plus search, the raw prediction and the prediction refined by search over one seeded holdout. Milestone B.",
+      "detail": "patchback benchmark --kind ml-init --weights <weights/1> --normalization <normalization.stats> scores four arms on every clip of one seeded holdout: the default patch, the search from it, the raw prediction rendered once, and the search from the prediction with the same bounds and fit seed. benchmark.txt records the artifact's checksum, its ModelSpec pin, the statistics' digest and the feature contract, the lower median loss of each arm, both searches' median render evaluations, how many clips' predictions were clamped, the wall time and five listening files per example clip; it records no reduction and no verdict. The inputs are refused as patchback fit refuses them, and --kind ml-init without them is refused. The engine baseline stays the default kind and is unchanged. Held by test an_ml_init_benchmark_reports_the_four_arms_and_its_files_agree in crates/patchback-cli/tests/ml_init_benchmark.rs.",
       "href": "/docs/reference/cli#patchback-benchmark",
       "label": "Default vs ML-init benchmark",
-      "status": "planned"
+      "status": "shipped"
     },
     {
       "area": "Score",

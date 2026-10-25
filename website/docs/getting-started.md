@@ -16,7 +16,7 @@ The [status page](/docs/status) says which of these commands exist today.
 ## Build
 
 Patchback is one command-line binary, `patchback`, written in Rust with the standard library
-only. It lives in the `patchback-cli` crate of the
+and `clap`, the command-line parser. It lives in the `patchback-cli` crate of the
 [repository](https://github.com/beyond10x/patchback) and builds with Cargo. Offline use needs
 no audio library, no GPU and no Python.
 
@@ -57,19 +57,20 @@ spectra at several resolutions, envelopes, onset proposals and a pitch estimate.
 ## 4. Fit a patch to the audio
 
 ```bash
-patchback fit --input reference.wav --out results/ --max-renders 2000
+patchback fit --input reference.wav --notes notes.events --out results/ --max-renders 2000
 ```
 
 The fit renders candidate patches, compares each with the reference and keeps the best valid
-one, spending at most 2,000 renders on the note. It writes five files:
+one, spending at most 2,000 renders on the note. It writes six files:
 
 ```text
 results/
 ├── patch.patch           the recovered patch
 ├── notes.events          the events it was played with
 ├── reconstructed.wav     the recovered patch's rendering
-├── report.txt            loss terms, versions, timings, warnings, confidence
-└── run.meta              seed, input digests, ModelSpec version, feature spec
+├── report.txt            loss terms, counts, stop reason, wall time, warnings
+├── run.meta              seed, input digests, ModelSpec version, feature spec
+└── trace.events          one line per render evaluation
 ```
 
 ## 5. Compare

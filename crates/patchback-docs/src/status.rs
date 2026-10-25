@@ -36,6 +36,8 @@ const A: Milestone = Milestone {
     name: "Milestone A",
     epic: "sound-engine",
 };
+/// Every Milestone B capability is shipped too; it stays for the next capability planned under it.
+#[allow(dead_code)]
 const B: Milestone = Milestone {
     name: "Milestone B",
     epic: "modelspec-regressor",
@@ -327,13 +329,17 @@ pub const CAPABILITIES: &[Capability] = &[
         milestone: None,
         href: "/docs/guides/fit-a-recording#fit",
     },
-    planned(
-        B,
-        "Fit",
-        "Default vs ML-init benchmark",
-        "patchback benchmark compares the default patch, the default patch plus search, the raw prediction and the prediction refined by search over one seeded holdout.",
-        "/docs/reference/cli#patchback-benchmark",
-    ),
+    Capability {
+        area: "Fit",
+        label: "Default vs ML-init benchmark",
+        detail: "patchback benchmark --kind ml-init --weights <weights/1> --normalization <normalization.stats> scores four arms on every clip of one seeded holdout: the default patch, the search from it, the raw prediction rendered once, and the search from the prediction with the same bounds and fit seed. benchmark.txt records the artifact's checksum, its ModelSpec pin, the statistics' digest and the feature contract, the lower median loss of each arm, both searches' median render evaluations, how many clips' predictions were clamped, the wall time and five listening files per example clip; it records no reduction and no verdict. The inputs are refused as patchback fit refuses them, and --kind ml-init without them is refused. The engine baseline stays the default kind and is unchanged.",
+        status: "shipped",
+        evidence: Some(
+            "crates/patchback-cli/tests/ml_init_benchmark.rs::an_ml_init_benchmark_reports_the_four_arms_and_its_files_agree",
+        ),
+        milestone: None,
+        href: "/docs/reference/cli#patchback-benchmark",
+    },
     planned(
         C,
         "Score",

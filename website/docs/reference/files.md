@@ -374,7 +374,9 @@ bench/
 │   ├── 0/
 │   │   ├── reference.wav the clip
 │   │   ├── default.wav   the default patch's render, as scored
-│   │   └── fit.wav       the fitted patch's render, as scored
+│   │   ├── fit.wav       the fitted patch's render, as scored
+│   │   ├── predicted.wav the raw prediction's render, as scored (ml-init)
+│   │   └── seeded.wav    the seeded fit's best render, as scored (ml-init)
 │   ├── 1/ …
 │   └── 2/ …
 └── benchmark.txt         settings and result
@@ -395,11 +397,17 @@ directory per clip index. Each WAV is mono, 48 kHz, 32-bit float:
   and 100 ms of tail);
 - `default.wav`: the default patch's render of the same note, cut or padded with silence to the
   reference's length, the clip the default loss was computed on;
-- `fit.wav`: the fit's best patch rendered the same way, the clip its best loss was computed on.
+- `fit.wav`: the fit's best patch rendered the same way, the clip its best loss was computed on;
+- `predicted.wav` (`--kind ml-init` only): the render of the regressor's prediction for the
+  clip's note, at the clamped point, cut or padded to the reference's length, the clip its
+  `raw_loss` was computed on;
+- `seeded.wav` (`--kind ml-init` only): the seeded fit's best patch rendered the same way, the
+  clip its `seeded_best_loss` was computed on.
 
 So `patchback compare --reference bench/examples/0/reference.wav --candidate
 bench/examples/0/fit.wav` prints clip 0's `best_loss` from `clips.txt` as its `loss`, and with
-`default.wav` its `default_loss`.
+`default.wav` its `default_loss`; on `ml-init`, with `predicted.wav` its `raw_loss` and with
+`seeded.wav` its `seeded_best_loss`.
 
 ### clips.txt
 
@@ -423,6 +431,26 @@ order:
 | `evaluations` | the fit's render evaluations, valid and rejected |
 | `restarts` | the fit's restarts that began |
 | `stop_reason` | `RenderBudgetExhausted`, `TimeBudgetExhausted`, `RestartsExhausted` or `ImprovementBelowThreshold` |
+
+On `--kind ml-init` the `columns` line and every `clip` line go on with six more fields after
+`stop_reason`; the first eight fields are the engine baseline's, value for value, for the same
+flags:
+
+```text
+columns index patch_seed fit_seed default_loss best_loss evaluations restarts stop_reason raw_loss seeded_best_loss seeded_evaluations seeded_restarts seeded_stop_reason clamped
+clip 0 13524456677075056560 836295751125946591 0.37281723960683943 0.24204298323998533 12 1 RenderBudgetExhausted 0.47634461599357275 0.3746431976727592 12 1 RenderBudgetExhausted 0
+```
+
+(clip 0 of the same flags with a test artifact; the last six fields depend on the artifact.)
+
+| Field | Value |
+| --- | --- |
+| `raw_loss` | the raw prediction's loss on the clip, rendered once, no search |
+| `seeded_best_loss` | the seeded fit's best loss: the fit whose first restart starts at the prediction, with the same bounds and fit seed as the fit from the default patch |
+| `seeded_evaluations` | the seeded fit's render evaluations, valid and rejected |
+| `seeded_restarts` | the seeded fit's restarts that began |
+| `seeded_stop_reason` | as `stop_reason` |
+| `clamped` | how many of the prediction's eight outputs were outside `[0, 1]` and clamped, 0 to 8 |
 
 ### benchmark.txt
 
@@ -461,7 +489,7 @@ This is `patchback benchmark --out bench/ --examples 2 --seed 7 --max-renders 12
 | --- | --- |
 | `patchback-benchmark` | the format version, `1`; first line |
 | `patchback` | the Patchback version that wrote it |
-| `kind` | `engine-baseline` |
+| `kind` | `engine-baseline` or `ml-init` |
 | `topology` | the topology the holdout was synthesized and fitted in |
 | `seed` | the holdout's seed |
 | `example_count` | the holdout's clip count |
@@ -471,16 +499,84 @@ This is `patchback benchmark --out bench/ --examples 2 --seed 7 --max-renders 12
 | `prng` | `xoshiro256**` |
 | `default_median_loss` | the lower median of `clips.txt`'s `default_loss` |
 | `default_search_median_loss` | the lower median of its `best_loss` |
-| `median_loss_reduction_percent` | `(default − search) / default × 100` of the two medians, computed in `f64` with each step rounded; `target_verdict` is decided on this recorded value, so a pair within rounding distance of 20 % may fall on the other side than exact arithmetic would put it |
-| `target_verdict` | `met` when the recorded `median_loss_reduction_percent` is at least 20, else `not-met` |
+| `median_loss_reduction_percent` | engine baseline only: `(default − search) / default × 100` of the two medians, computed in `f64` with each step rounded; `target_verdict` is decided on this recorded value, so a pair within rounding distance of 20 % may fall on the other side than exact arithmetic would put it |
+| `target_verdict` | engine baseline only: `met` when the recorded `median_loss_reduction_percent` is at least 20, else `not-met` |
 | `default_search_median_evaluations` | the lower median of its `evaluations` |
 | `wall_time_ms` | the whole run's wall time in milliseconds; the one record that differs between two runs of the same flags |
-| `listening_example` | zero or more, last: each listening example's path relative to the directory, clip by clip, `reference.wav`, `default.wav`, `fit.wav` |
+| `listening_example` | zero or more, last: each listening example's path relative to the directory, clip by clip, `reference.wav`, `default.wav`, `fit.wav`, and on `ml-init` `predicted.wav` and `seeded.wav` |
 
 The lower median of `n` values is the value at position `(n − 1) / 2`, from 0, of the values in
 ascending order: the middle one, or of an even count the lower of the two middle ones. The
 version, sample rate, block size and bounds are what two compared benchmarks must share; no
-device is recorded. The number of listening examples, three, is provisional.
+device is recorded. The number of listening examples, three, is provisional, and so are an
+ML-init clip's five files.
+
+### benchmark.txt on `--kind ml-init`
+
+The `kind` record reads `ml-init`. After `prng`, four records name the inputs:
+
+| Record | Value |
+| --- | --- |
+| `weights` | `sha256 <hex>`: the artifact's checksum, the SHA-256 of its payload, 64 lowercase hex digits (the benchmark's `weight_artifact_id` is `sha256:<hex>`) |
+| `modelspec` | `<version> <commit>`: the ModelSpec release the artifact names |
+| `normalization` | `sha256 <hex>`: the SHA-256 of the `--normalization` bytes as read |
+| `feature_contract` | `features/1` |
+
+The result records, in this order, replace the engine baseline's:
+
+| Record | Value |
+| --- | --- |
+| `default_median_loss` | the lower median of `default_loss` |
+| `default_search_median_loss` | the lower median of `best_loss` |
+| `raw_regressor_median_loss` | the lower median of `raw_loss` |
+| `regressor_search_median_loss` | the lower median of `seeded_best_loss` |
+| `default_search_median_evaluations` | the lower median of `evaluations` |
+| `regressor_search_median_evaluations` | the lower median of `seeded_evaluations` |
+| `clamped_predictions` | `<n> of <clips>`: the clips whose `clamped` is above 0, of the holdout's clips |
+| `wall_time_ms` | as on the engine baseline |
+| `listening_example` | clip by clip, `reference.wav`, `default.wav`, `fit.wav`, `predicted.wav`, `seeded.wav` |
+
+No `median_loss_reduction_percent` and no `target_verdict`: an ML-init benchmark computes no
+reduction and gives no verdict (Milestone B sets no numeric target). The same flags with
+`--kind ml-init` and a test artifact (wide statistics, every target 0.5), in a debug build:
+
+```text
+patchback-benchmark 1
+patchback 0.10.0
+kind ml-init
+topology subtractive-mono/1
+seed 7
+example_count 2
+sample_rate 48000
+block_size 256
+max_renders 12
+max_wall_time_ms 60000
+max_restarts 1
+improvement_threshold 0.0001
+prng xoshiro256**
+weights sha256 cf0ef494b4ea1e6fc8681a1add9309c2ec61aa4d793a8beea26a9d6fe78da627
+modelspec 0.5.0 7c45c1adaf6e0cc0ba05f18878b31bfdc57cc529
+normalization sha256 25d7a371d1be93ff0bb2af22b2199499bfd2f2fd2abbdf161f7d255880debd4a
+feature_contract features/1
+default_median_loss 0.37281723960683943
+default_search_median_loss 0.24204298323998533
+raw_regressor_median_loss 0.47634461599357275
+regressor_search_median_loss 0.3746431976727592
+default_search_median_evaluations 12
+regressor_search_median_evaluations 12
+clamped_predictions 0 of 2
+wall_time_ms 20821
+listening_example examples/0/reference.wav
+listening_example examples/0/default.wav
+listening_example examples/0/fit.wav
+listening_example examples/0/predicted.wav
+listening_example examples/0/seeded.wav
+listening_example examples/1/reference.wav
+listening_example examples/1/default.wav
+listening_example examples/1/fit.wav
+listening_example examples/1/predicted.wav
+listening_example examples/1/seeded.wav
+```
 
 ## The dataset
 

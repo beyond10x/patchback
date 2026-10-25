@@ -169,6 +169,35 @@ squared error over the 16 evaluation rows was 0.935090715, against ModelSpec's `
 
 ## Did it help
 
-A trained regressor is worth keeping when fits seeded with it beat fits from the default
-patch. Patchback's benchmark over a seeded holdout set compares three results: the default
-patch, the raw prediction, and the prediction refined by search.
+A trained regressor is worth keeping when fits seeded with it beat fits from the default patch.
+Run the benchmark with the artifact and the statistics it was trained with:
+
+```bash
+patchback benchmark --out bench/ --examples 200 --kind ml-init \
+  --weights regressor.weights --normalization dataset/normalization.stats
+```
+
+Over one seeded holdout it scores four arms on every clip: the default patch, the search from the
+default patch, the raw prediction, and the search from the prediction. Both searches take the
+same bounds and the same fit seed, so they differ only in where the first restart starts.
+`benchmark.txt` records the lower median loss of each arm (`default_median_loss`,
+`default_search_median_loss`, `raw_regressor_median_loss`, `regressor_search_median_loss`), the
+two searches' median render evaluations and how many clips' predictions were clamped.
+
+The benchmark gives no verdict: Milestone B sets no numeric target. Read the exit from the
+records:
+
+- the regressor improves the fit when `regressor_search_median_loss` is below
+  `default_search_median_loss`;
+- it reduces matching work when `regressor_search_median_evaluations` is below
+  `default_search_median_evaluations` at a loss no higher; with `--max-renders` as the binding
+  bound both searches spend the whole budget, so compare evaluations with a loose budget and a
+  tight `--improvement-threshold` or `--max-restarts` instead;
+- `raw_regressor_median_loss` below `default_median_loss` says the prediction alone is a better
+  start than the default patch;
+- a high `clamped_predictions` count says the regressor often predicts outside the parameter
+  range; check the artifact and statistics belong together.
+
+`clips.txt` gives the same per clip, and `examples/<k>/predicted.wav` and `seeded.wav` are the
+clips the raw and seeded losses were computed on
+([a benchmark run](../reference/files.md#a-benchmark-run)).

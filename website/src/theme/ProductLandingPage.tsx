@@ -43,9 +43,9 @@ const STEPS = [
 ] as const;
 
 const MILESTONES = [
-  {id: 'A', text: 'Sound engine, no ML', next: true},
-  {id: 'B', text: 'Dataset + ModelSpec regressor'},
-  {id: 'C', text: 'Monophonic phrases'},
+  {id: 'A', text: 'Sound engine, no ML', done: true},
+  {id: 'B', text: 'Dataset + ModelSpec regressor', done: true},
+  {id: 'C', text: 'Monophonic phrases', next: true},
   {id: 'D', text: 'Topologies, modulation'},
   {id: 'E', text: 'Stems and arrangement'},
 ];
@@ -86,9 +86,9 @@ export default function ProductLandingPage({landing}: {landing: Landing}): React
           <div className={styles.heroGrid} aria-hidden="true" />
           <div className={styles.heroInner}>
             <div className={styles.heroCopy}>
-              <Link to="/docs/status" className={styles.statusPill}>
+              <Link to="/docs/progress" className={styles.statusPill}>
                 <span className={styles.statusDot} />
-                In specification · first milestone has no ML
+                Milestones A and B implemented · phrases are next
               </Link>
               <p className={styles.eyebrow}>{product.eyebrow}</p>
               <h1 className={styles.headline}>
@@ -169,21 +169,24 @@ export default function ProductLandingPage({landing}: {landing: Landing}): React
             <div className={styles.status}>
               <div>
                 <p className={styles.kicker}>Status</p>
-                <h2 className={styles.sectionTitle}>Specified, not built yet.</h2>
+                <h2 className={styles.sectionTitle}>Two milestones built. Phrases next.</h2>
                 <p className={styles.sectionLede}>
-                  The design and its ESS specification exist; there is no code yet. Milestone A comes first: WAV I/O, the
-                  fixed subtractive voice, analysis, the audio loss and a bounded search, with no machine learning.
+                  The sound engine recovers one isolated synth note from a recording without machine learning
+                  (Milestone A), and the ModelSpec regressor, trained on a generated dataset, seeds that search from
+                  its prediction (Milestone B). <Link to="/docs/listen">Listen</Link> plays the recordings beside
+                  what each fit recovered. Milestone C, phrases of several notes, comes next.
                 </p>
-                <Link className={styles.secondaryDark} to="/docs/status">
-                  What exists today →
+                <Link className={styles.secondaryDark} to="/docs/progress">
+                  See the progress →
                 </Link>
               </div>
               <ol className={styles.milestones}>
                 {MILESTONES.map((m) => (
-                  <li key={m.id} data-next={m.next ? '' : undefined}>
+                  <li key={m.id} data-next={m.next ? '' : undefined} data-done={m.done ? '' : undefined}>
                     <span>{m.id}</span>
                     {m.text}
-                    {m.next && <em>first</em>}
+                    {m.done && <em>done</em>}
+                    {m.next && <em>next</em>}
                   </li>
                 ))}
               </ol>

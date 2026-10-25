@@ -21,7 +21,7 @@ can run, runs it, and improves it against the reference. The patch is the answer
 open it, read it and change a knob.
 
 ```bash
-patchback fit --input reference.wav --out results/ --max-renders 2000
+patchback fit --input reference.wav --notes notes.events --out results/ --max-renders 2000
 ```
 
 ## How it gets there
@@ -42,10 +42,11 @@ flowchart LR
     S --> O[patch + events + rendering + report]
 ```
 
-The starting patch comes from a small regressor trained with
-ModelSpec on audio Patchback rendered itself. Everything else is native Rust: the
-WAV reader and writer, the DSP engine, the FFT and the analysis, the search and the predictor
-that runs the trained weights. Patchback uses no ML, DSP, maths or serialization crates.
+With trained weights, the starting patch comes from a small regressor trained with ModelSpec on
+audio Patchback rendered itself; without them the fit starts from the default patch. Everything
+else is native Rust: the WAV reader and writer, the DSP engine, the FFT and the analysis, the
+search and the predictor that runs the trained weights. Patchback uses no ML, DSP, maths or
+serialization crates.
 
 ## What it reconstructs
 
