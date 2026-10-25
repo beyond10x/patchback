@@ -8,4 +8,11 @@ publish.workspace = true
 
 [dependencies]
 clap.workspace = true
-serde_json.workspace = true
+patchback-analysis = { path = "../patchback-analysis" }
+patchback-audio = { path = "../patchback-audio" }
+patchback-core = { path = "../patchback-core" }
+patchback-dataset = { path = "../patchback-dataset" }
+patchback-dsp = { path = "../patchback-dsp" }
+patchback-fit = { path = "../patchback-fit" }
+patchback-model = { path = "../patchback-model" }
+serde_json = { workspace = true, features = ["float_roundtrip"] }

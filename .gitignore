@@ -3,6 +3,7 @@ runs/
 .engineering/drafts/
 website/node_modules/
 website/build/
+website/demo-audio/
 website/.docusaurus/
 studio/node_modules/
 studio/dist/

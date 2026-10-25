@@ -66,6 +66,12 @@ tasks:
   docs-generate:
     cmds:
       - cargo run --locked -p patchback-docs -- generate
+      - cargo run --locked -p patchback-docs -- demos render --out website/demo-audio
+
+  docs-demos:
+    cmds:
+      - cargo run --release --locked -p patchback-docs -- demos fit
+      - task: docs-generate
 
   docs-check:
     cmds:
