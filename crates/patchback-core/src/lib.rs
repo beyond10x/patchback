@@ -6,3 +6,4 @@ pub mod parameter;
 pub mod patch;
 pub mod prng;
 pub mod score;
+pub mod split;

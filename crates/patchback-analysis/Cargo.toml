@@ -8,3 +8,4 @@ publish.workspace = true
 
 [dependencies]
 patchback-audio = { path = "../patchback-audio" }
+patchback-core = { path = "../patchback-core" }

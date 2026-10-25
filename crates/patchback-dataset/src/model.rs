@@ -72,53 +72,10 @@ identity!(
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PrngAlgorithm(pub String);
 
-/// `patchback.dataset.SplitRole`: the three splits of § 7.1.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum SplitRole {
-    Train,
-    Validation,
-    Test,
-}
-
-impl SplitRole {
-    /// The roles in the order the generator fills them.
-    pub const ALL: [Self; 3] = [Self::Train, Self::Validation, Self::Test];
-
-    /// The variant name of the model.
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Train => "Train",
-            Self::Validation => "Validation",
-            Self::Test => "Test",
-        }
-    }
-
-    /// The split's record name: its key in `dataset.meta` and in what `patchback generate-dataset`
-    /// prints (`train`, `validation`, `test`). Not its directory: see [`dir`](Self::dir).
-    pub fn key(self) -> &'static str {
-        match self {
-            Self::Train => "train",
-            Self::Validation => "validation",
-            Self::Test => "test",
-        }
-    }
-
-    /// The split's directory under a dataset's output directory (`train`, `val`, `test`; DESIGN.md
-    /// § 7.2, `data/val/x.f32`), where its `samples.meta` and dense files go.
-    pub fn dir(self) -> &'static str {
-        match self {
-            Self::Train => "train",
-            Self::Validation => "val",
-            Self::Test => "test",
-        }
-    }
-}
-
-impl fmt::Display for SplitRole {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.name())
-    }
-}
+/// `patchback.dataset.SplitRole`: the three splits of § 7.1. The type lives in
+/// `patchback_core::split` so that `patchback-analysis`, which this crate depends on, can name
+/// the role of the split its normalization statistics come from (§ 6.3).
+pub use patchback_core::split::SplitRole;
 
 /// The state of a [`DatasetSplit`] (`patchback.dataset.DatasetSplit.State`): `Open` from
 /// `OpenSplit`, `Written` once `FinishSplit` found its x.f32 and y.f32 verified (transition

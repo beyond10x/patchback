@@ -133,6 +133,7 @@ name = "patchback-analysis"
 version = "0.6.0"
 dependencies = [
  "patchback-audio",
+ "patchback-core",
 ]
 
 [[package]]
@@ -196,6 +197,9 @@ dependencies = [
 [[package]]
 name = "patchback-model"
 version = "0.6.0"
+dependencies = [
+ "patchback-dataset",
+]
 
 [[package]]
 name = "proc-macro2"
