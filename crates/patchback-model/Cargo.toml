@@ -7,4 +7,6 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+patchback-analysis = { path = "../patchback-analysis" }
+patchback-core = { path = "../patchback-core" }
 patchback-dataset = { path = "../patchback-dataset" }

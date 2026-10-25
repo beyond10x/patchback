@@ -198,6 +198,8 @@ dependencies = [
 name = "patchback-model"
 version = "0.7.0"
 dependencies = [
+ "patchback-analysis",
+ "patchback-core",
  "patchback-dataset",
 ]
 
