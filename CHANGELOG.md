@@ -6,6 +6,8 @@ All notable changes to Patchback are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-25
+
 ### Added
 
 - `patchback benchmark --kind ml-init --weights <path> --normalization <path>` (story
@@ -612,7 +614,8 @@ All notable changes to Patchback are recorded here. The format follows
   revision 0.4, § 3); help, version and usage errors follow clap (usage errors exit 2), and the
   dependency gate admits `clap` with exactly its reviewed `Cargo.lock` closure.
 
-[Unreleased]: https://github.com/beyond10x/patchback/compare/0.10.0...HEAD
+[Unreleased]: https://github.com/beyond10x/patchback/compare/0.11.0...HEAD
+[0.11.0]: https://github.com/beyond10x/patchback/compare/0.10.0...0.11.0
 [0.10.0]: https://github.com/beyond10x/patchback/compare/0.9.0...0.10.0
 [0.9.0]: https://github.com/beyond10x/patchback/compare/0.8.0...0.9.0
 [0.8.0]: https://github.com/beyond10x/patchback/compare/0.7.0...0.8.0

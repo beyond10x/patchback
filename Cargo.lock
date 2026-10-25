@@ -130,7 +130,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "patchback-analysis"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "patchback-audio",
  "patchback-core",
@@ -138,11 +138,11 @@ dependencies = [
 
 [[package]]
 name = "patchback-audio"
-version = "0.10.0"
+version = "0.11.0"
 
 [[package]]
 name = "patchback-cli"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "clap",
  "patchback-analysis",
@@ -156,11 +156,11 @@ dependencies = [
 
 [[package]]
 name = "patchback-core"
-version = "0.10.0"
+version = "0.11.0"
 
 [[package]]
 name = "patchback-dataset"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "patchback-analysis",
  "patchback-audio",
@@ -170,7 +170,7 @@ dependencies = [
 
 [[package]]
 name = "patchback-docs"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "clap",
  "patchback-analysis",
@@ -185,7 +185,7 @@ dependencies = [
 
 [[package]]
 name = "patchback-dsp"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "patchback-audio",
  "patchback-core",
@@ -193,7 +193,7 @@ dependencies = [
 
 [[package]]
 name = "patchback-fit"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "patchback-analysis",
  "patchback-audio",
@@ -204,7 +204,7 @@ dependencies = [
 
 [[package]]
 name = "patchback-model"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "patchback-analysis",
  "patchback-core",
