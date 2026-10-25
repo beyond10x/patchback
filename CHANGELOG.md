@@ -6,6 +6,8 @@ All notable changes to Patchback are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-25
+
 ### Added
 
 - `patchback_model::Predictor` (story native-predictor): the `Predict` of
@@ -489,7 +491,10 @@ All notable changes to Patchback are recorded here. The format follows
   revision 0.4, § 3); help, version and usage errors follow clap (usage errors exit 2), and the
   dependency gate admits `clap` with exactly its reviewed `Cargo.lock` closure.
 
-[Unreleased]: https://github.com/beyond10x/patchback/compare/0.6.0...HEAD
+[Unreleased]: https://github.com/beyond10x/patchback/compare/0.9.0...HEAD
+[0.9.0]: https://github.com/beyond10x/patchback/compare/0.8.0...0.9.0
+[0.8.0]: https://github.com/beyond10x/patchback/compare/0.7.0...0.8.0
+[0.7.0]: https://github.com/beyond10x/patchback/compare/0.6.0...0.7.0
 [0.6.0]: https://github.com/beyond10x/patchback/compare/0.5.0...0.6.0
 [0.5.0]: https://github.com/beyond10x/patchback/compare/0.4.0...0.5.0
 [0.4.0]: https://github.com/beyond10x/patchback/compare/0.3.0...0.4.0
