@@ -6,6 +6,25 @@ All notable changes to Patchback are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `patchback_model::Predictor` (story native-predictor): the `Predict` of
+  `spec/domains/model.yaml`, a library call with no `patchback` command. `Predictor::load` reads
+  a `weights/1` file through `WeightArtifact::read` and refuses a missing file as
+  `UnknownWeightArtifact` and a file the reader refuses as `CorruptWeightArtifact`;
+  `Predictor::from_artifact` takes an artifact already read. `Predictor::predict` takes one
+  normalized `features/1` vector (`&[f64]`, the output of `NormalizationStats::apply`; the
+  predictor normalizes nothing) and the caller's feature-contract version, and refuses, in this
+  order, a vector of another length than 32 (`WrongFeatureCount`), a contract other than the
+  artifact's (`FeatureContractMismatch`) and a value that is not finite as `f64` or as `f32`
+  (`NonFiniteFeature`). It then runs `relu(x · w1) · w2` in `f32`, no bias, the weights
+  row-major as exported, and returns a `patchback_model::Prediction` (`raw`, `values` clamped to
+  [0, 1], and `clamped`, the number of outputs that were outside it, `±inf` included). A NaN
+  output is refused as `PredictError::NonFinitePrediction`. `Predictor::clamped_predictions`
+  counts the predictions with an output clamped, in memory; nothing is written or printed. On a
+  4-step run of the pinned ModelSpec 0.5.0, the predictor's mean squared error over the 16
+  evaluation rows is ModelSpec's `eval loss` to a relative 7e-8.
+
 ## [0.8.0] - 2026-10-25
 
 ### Added

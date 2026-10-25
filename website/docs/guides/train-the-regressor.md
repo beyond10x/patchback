@@ -126,6 +126,47 @@ dataset. The file is created new and never overwritten; its format is described 
 [Exported weights](../reference/files.md#exported-weights). `WeightArtifact::read` reads it back
 and refuses a file whose header, length or checksum is wrong as `CorruptWeightArtifact`.
 
+## Predict with the weights
+
+`patchback_model::Predictor` runs the exported weights natively, a library call with no
+`patchback` command yet. Load the artifact once, then predict one vector at a time:
+
+```rust
+use patchback_analysis::FEATURES_1_VERSION;
+use patchback_model::{Predictor, RECOMMENDED_FILE_NAME};
+
+let mut predictor = Predictor::load(&out.join(RECOMMENDED_FILE_NAME))?;
+let prediction = predictor.predict(FEATURES_1_VERSION, &normalized)?;
+```
+
+The input is the 32 values of a `features/1` vector already normalized with the training
+split's statistics: the output of `NormalizationStats::apply`. The predictor normalizes nothing
+and reads no `normalization.stats`. Each value is cast to `f32`, as `x.f32` was written, and the
+two dense layers and the ReLU run in `f32`.
+
+`Predictor::load` refuses a path with no file as `UnknownWeightArtifact` and a file
+`WeightArtifact::read` refuses as `CorruptWeightArtifact`; any other read failure, such as a
+directory, is an I/O error. `predict` then refuses, in this order:
+
+| Refusal | When |
+| --- | --- |
+| `WrongFeatureCount` | the vector does not hold exactly 32 values |
+| `FeatureContractMismatch` | the contract you pass is not the one recorded in the artifact |
+| `NonFiniteFeature` | a value is NaN or infinite, or too large for an `f32` (`1e39`) |
+
+A corrupt artifact never loads, so it is refused before any vector is compared with it.
+
+The prediction holds the eight outputs as computed (`raw`), the same clamped to [0, 1]
+(`values`) and how many were outside that range (`clamped`); an infinite output is clamped and
+counted like any other. When `clamped` is above 0, warn: the regression left the parameter
+range. `Predictor::clamped_predictions` counts the predictions that clamped, in memory, for as
+long as the predictor lives; nothing is written to the artifact. An output that is NaN, which
+only weights near the `f32` limit can produce, is refused as `NonFinitePrediction`.
+
+On a 4-step run of the pinned ModelSpec 0.5.0 over 64 generated rows, the predictor's mean
+squared error over the 16 evaluation rows was 0.935090715, against ModelSpec's `eval loss` of
+0.935090780 (a relative difference of 7e-8), so the predictor runs the weights as ModelSpec does.
+
 ## Did it help
 
 A trained regressor is worth keeping when fits seeded with it beat fits from the default

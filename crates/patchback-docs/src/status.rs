@@ -305,13 +305,17 @@ pub const CAPABILITIES: &[Capability] = &[
         milestone: None,
         href: "/docs/reference/files#exported-weights",
     },
-    planned(
-        B,
-        "Model",
-        "A native predictor",
-        "The exported weights are run by a small Rust matmul and ReLU predictor held to golden tests.",
-        "/docs/concepts/regressor#from-training-to-prediction",
-    ),
+    Capability {
+        area: "Model",
+        label: "A native predictor",
+        detail: "patchback_model::Predictor loads a weights/1 file and runs its two dense layers and ReLU in f32 on one normalized features/1 vector. It refuses a missing or corrupt artifact, a vector of another length than 32, another feature contract and non-finite values. Outputs outside [0, 1] are clamped and counted. Golden tests and an f64 reference hold the arithmetic; on the pinned ModelSpec 0.5.0 its error on the evaluation rows is ModelSpec's eval loss. A library call with no patchback command yet.",
+        status: "shipped",
+        evidence: Some(
+            "crates/patchback-model/tests/predictor.rs::sixty_four_seeded_inputs_match_an_f64_reference",
+        ),
+        milestone: None,
+        href: "/docs/guides/train-the-regressor#predict-with-the-weights",
+    },
     planned(
         B,
         "Fit",

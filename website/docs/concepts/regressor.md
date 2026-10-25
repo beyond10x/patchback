@@ -60,8 +60,11 @@ bridge:
    the exit status. Output it does not recognize is refused.
 3. It stores the weights as a checksummed, versioned little-endian `f32` artifact, together
    with the model and feature-contract versions.
-4. A small native predictor runs the two dense layers and the ReLU. Golden tests compare its
-   output with independently computed reference results.
+4. A small native predictor, `patchback_model::Predictor`, runs the two dense layers and the ReLU
+   in `f32` on one normalized `features/1` vector, clamps the outputs to [0, 1] and counts the
+   predictions that needed it. Golden tests compare its output with independently computed
+   reference results, and on a pinned ModelSpec run its error on the evaluation rows matches
+   ModelSpec's own `eval loss`.
 
 When ModelSpec ships its own inference or checkpoint interface and it passes equivalence tests,
 it replaces this bridge. The bridge is not a general neural-network framework, and Patchback
