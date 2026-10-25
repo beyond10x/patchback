@@ -6,6 +6,8 @@ All notable changes to Patchback are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-25
+
 ### Added
 
 - `patchback benchmark --out <dir> --examples <n>` (story engine-baseline): the engine baseline
