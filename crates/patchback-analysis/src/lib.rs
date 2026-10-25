@@ -25,6 +25,11 @@
 //!   contract, refused as a typed [`FeatureError`]; and the check every reader of a vector makes
 //!   ([`FeatureContract::check`]). [`zero_crossing_rate`] and [`attack_envelope_slope`] are the
 //!   two descriptors only the contract uses.
+//! - [`compute_normalization_stats`]: the [`NormalizationStats`] of a training split under a
+//!   published contract (story:normalization-stats), per-feature means and population standard
+//!   deviations, refused as a typed [`NormalizationError`]; [`NormalizationStats::apply`], the
+//!   same `(x − mean) / std` at training and inference; [`write_stats`] and [`read_stats`] of the
+//!   artifact `normalization.stats`, whose line bound [`STATS_MAX_LINE_BYTES`] is provisional.
 //!
 //! Every function refuses a non-finite input value ([`AnalysisError::NonFiniteSamples`]) and
 //! returns finite values or a typed [`AnalysisError`] (DESIGN.md § 2 invariant 4).
@@ -49,6 +54,7 @@ mod descriptors;
 mod error;
 mod features;
 mod fft;
+mod normalization;
 mod pitch;
 mod stft;
 mod window;
@@ -62,7 +68,7 @@ pub use descriptors::{
     BAND_COUNT, attack_envelope_slope, log_band_energies, peak, rms, spectral_centroid,
     spectral_flatness, spectral_flux, spectral_rolloff, zero_crossing_rate,
 };
-pub use error::{AnalysisError, FeatureError, NotComputableReason};
+pub use error::{AnalysisError, FeatureError, NormalizationError, NotComputableReason};
 pub use features::{
     BandWindow, FEATURES_1_BAND_WINDOWS, FEATURES_1_SCALARS, FEATURES_1_VALUE_COUNT,
     FEATURES_1_VERSION, FeatureContract, FeatureContractDefinition, FeatureContractId,
@@ -70,6 +76,11 @@ pub use features::{
     analyze_and_extract, extract_features,
 };
 pub use fft::{fft, ifft};
+pub use normalization::{
+    NORMALIZATION_STATS_FILE, NormalizationStats, NormalizationTable, STATS_FORMAT_VERSION,
+    STATS_HEADER, STATS_MAX_LINE_BYTES, SplitInput, StatsFileError, StatsReason,
+    compute_normalization_stats, read_stats, write_stats,
+};
 pub use pitch::{F0_RANGE_TOLERANCE_CENTS, PitchEstimate, estimate_f0};
 pub use stft::{Stft, log_magnitude, stft};
 pub use window::hann;

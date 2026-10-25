@@ -111,10 +111,11 @@ fn adversary_a_count_past_i64_times_4992_is_a_usage_error() {
     assert!(!out.exists());
 }
 
-/// Da6-19, Da6-27 on disk and on stdout: `<out>` holds exactly `dataset.meta`, `train/`, `val/`
-/// and `test/`, each split directory exactly its `samples.meta`, `x.f32`, `y.f32` and
-/// `order.u32` (story:dense-data-files); the stdout keys are, in order, `out`, `train`,
-/// `validation`, `test` and the three diagnostic counts.
+/// Da6-19, Da6-27 on disk and on stdout: `<out>` holds exactly `dataset.meta`,
+/// `normalization.stats` (story:normalization-stats), `train/`, `val/` and `test/`, each split
+/// directory exactly its `samples.meta`, `x.f32`, `y.f32` and `order.u32`
+/// (story:dense-data-files); the stdout keys are, in order, `out`, `train`, `validation`, `test`
+/// and the three diagnostic counts.
 #[test]
 fn adversary_a_generation_writes_exactly_the_val_layout_and_prints_the_validation_key() {
     let dir = scratch("layout");
@@ -123,9 +124,15 @@ fn adversary_a_generation_writes_exactly_the_val_layout_and_prints_the_validatio
     assert_eq!(output.status.code(), Some(0), "{output:?}");
     assert_eq!(
         names(&out),
-        ["dataset.meta", "test", "train", "val"]
-            .map(str::to_owned)
-            .into(),
+        [
+            "dataset.meta",
+            "normalization.stats",
+            "test",
+            "train",
+            "val"
+        ]
+        .map(str::to_owned)
+        .into(),
     );
     for split in ["train", "val", "test"] {
         assert_eq!(

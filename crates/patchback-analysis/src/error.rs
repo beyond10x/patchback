@@ -1,8 +1,11 @@
 //! The typed refusals of analysis. Each [`AnalysisError`] names one error of
 //! `spec/domains/analysis.yaml` ([`AnalysisError::domain_error`]), and so does each
-//! [`FeatureError`] of the feature contract ([`FeatureError::domain_error`]).
+//! [`FeatureError`] of the feature contract ([`FeatureError::domain_error`]) and each
+//! [`NormalizationError`] of the normalization statistics ([`NormalizationError::domain_error`]).
 
 use std::fmt;
+
+use patchback_core::split::SplitRole;
 
 use crate::{FeatureContractId, FeatureSlot, ScalarFeature};
 
@@ -503,3 +506,172 @@ impl fmt::Display for FeatureError {
 }
 
 impl std::error::Error for FeatureError {}
+
+/// Why normalization statistics were not computed or not applied (`ComputeNormalizationStats`,
+/// `ApplyNormalization`, story:normalization-stats). Each names one error of
+/// `spec/domains/analysis.yaml` ([`NormalizationError::domain_error`]); a refusal produces
+/// nothing.
+///
+/// The two commands declare seven errors; `NormalizationStatsNotFound` has no variant, because
+/// statistics are a value ([`crate::NormalizationStats`]) and no call can name statistics that do
+/// not exist. Two variants go beyond the two commands and are `CheckFeatureVector`'s errors:
+/// [`Self::NonFiniteFeature`] and [`Self::FeatureLengthMismatch`] (DESIGN.md § 2 invariant 4).
+#[derive(Clone, Debug, PartialEq)]
+pub enum NormalizationError {
+    /// `patchback.analysis.DatasetSplitNotFound`: the caller found no split of this identity
+    /// (`patchback_dataset::DatasetSplitId`'s number).
+    DatasetSplitNotFound { dataset_split_id: u64 },
+    /// `patchback.analysis.FeatureContractNotFound`: no contract has this identity.
+    FeatureContractNotFound {
+        feature_contract_id: FeatureContractId,
+    },
+    /// `patchback.analysis.StatsFromNonTrainingSplit`: the split is the validation or test split.
+    StatsFromNonTrainingSplit { split_role: SplitRole },
+    /// `patchback.analysis.FeatureContractNotPublished`: statistics need a published contract.
+    FeatureContractNotPublished {
+        feature_contract_id: FeatureContractId,
+    },
+    /// `patchback.analysis.FeatureVersionMismatch`: the `version` named is not the contract's.
+    FeatureVersionMismatch { version: String },
+    /// `patchback.analysis.NormalizationContractMismatch`: the features to normalize are of
+    /// `feature_contract_version`, not the version the statistics were computed under.
+    NormalizationContractMismatch { feature_contract_version: String },
+    /// `patchback.analysis.NonFiniteFeature`: the value at `index` of a training row or of the
+    /// features to normalize is NaN or infinite, or the mean, standard deviation or normalized
+    /// value at `index` would be.
+    NonFiniteFeature {
+        feature_contract_id: FeatureContractId,
+        index: usize,
+    },
+    /// `patchback.analysis.FeatureLengthMismatch`: a training row holds `value_count` values (32),
+    /// not the contract's count.
+    FeatureLengthMismatch { value_count: usize },
+}
+
+impl NormalizationError {
+    /// Every error of `spec/domains/analysis.yaml` the normalization statistics can emit.
+    pub const DOMAIN_ERRORS: &'static [&'static str] = &[
+        "patchback.analysis.DatasetSplitNotFound",
+        "patchback.analysis.FeatureContractNotFound",
+        "patchback.analysis.StatsFromNonTrainingSplit",
+        "patchback.analysis.FeatureContractNotPublished",
+        "patchback.analysis.FeatureVersionMismatch",
+        "patchback.analysis.NormalizationContractMismatch",
+        "patchback.analysis.NonFiniteFeature",
+        "patchback.analysis.FeatureLengthMismatch",
+    ];
+
+    /// The error of `spec/domains/analysis.yaml` this refusal is.
+    pub fn domain_error(&self) -> &'static str {
+        match self {
+            Self::DatasetSplitNotFound { .. } => "patchback.analysis.DatasetSplitNotFound",
+            Self::FeatureContractNotFound { .. } => "patchback.analysis.FeatureContractNotFound",
+            Self::StatsFromNonTrainingSplit { .. } => {
+                "patchback.analysis.StatsFromNonTrainingSplit"
+            }
+            Self::FeatureContractNotPublished { .. } => {
+                "patchback.analysis.FeatureContractNotPublished"
+            }
+            Self::FeatureVersionMismatch { .. } => "patchback.analysis.FeatureVersionMismatch",
+            Self::NormalizationContractMismatch { .. } => {
+                "patchback.analysis.NormalizationContractMismatch"
+            }
+            Self::NonFiniteFeature { .. } => "patchback.analysis.NonFiniteFeature",
+            Self::FeatureLengthMismatch { .. } => "patchback.analysis.FeatureLengthMismatch",
+        }
+    }
+
+    /// One value of every variant. The `match` below has no wildcard, so a new variant does not
+    /// compile until it is listed here, and the domain test then checks its name.
+    pub fn examples() -> Vec<NormalizationError> {
+        let id = FeatureContractId(1);
+        let examples = vec![
+            Self::DatasetSplitNotFound {
+                dataset_split_id: 99,
+            },
+            Self::FeatureContractNotFound {
+                feature_contract_id: id,
+            },
+            Self::StatsFromNonTrainingSplit {
+                split_role: SplitRole::Test,
+            },
+            Self::FeatureContractNotPublished {
+                feature_contract_id: id,
+            },
+            Self::FeatureVersionMismatch {
+                version: "features/2".to_string(),
+            },
+            Self::NormalizationContractMismatch {
+                feature_contract_version: "features/2".to_string(),
+            },
+            Self::NonFiniteFeature {
+                feature_contract_id: id,
+                index: 3,
+            },
+            Self::FeatureLengthMismatch {
+                value_count: crate::FEATURES_1_VALUE_COUNT,
+            },
+        ];
+        for example in &examples {
+            match example {
+                Self::DatasetSplitNotFound { .. }
+                | Self::FeatureContractNotFound { .. }
+                | Self::StatsFromNonTrainingSplit { .. }
+                | Self::FeatureContractNotPublished { .. }
+                | Self::FeatureVersionMismatch { .. }
+                | Self::NormalizationContractMismatch { .. }
+                | Self::NonFiniteFeature { .. }
+                | Self::FeatureLengthMismatch { .. } => {}
+            }
+        }
+        examples
+    }
+}
+
+impl fmt::Display for NormalizationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::DatasetSplitNotFound { dataset_split_id } => {
+                write!(f, "split #{dataset_split_id} does not exist")
+            }
+            Self::FeatureContractNotFound {
+                feature_contract_id,
+            } => write!(f, "{feature_contract_id} does not exist"),
+            Self::StatsFromNonTrainingSplit { split_role } => write!(
+                f,
+                "normalization statistics come from the training split only, not the {split_role} \
+                 split"
+            ),
+            Self::FeatureContractNotPublished {
+                feature_contract_id,
+            } => write!(
+                f,
+                "{feature_contract_id} is a draft; statistics need a published contract"
+            ),
+            Self::FeatureVersionMismatch { version } => {
+                write!(f, "{version} is not the contract's version")
+            }
+            Self::NormalizationContractMismatch {
+                feature_contract_version,
+            } => write!(
+                f,
+                "the features are of {feature_contract_version}, not the version the statistics \
+                 were computed under"
+            ),
+            Self::NonFiniteFeature {
+                feature_contract_id,
+                index,
+            } => write!(
+                f,
+                "value {index} under {feature_contract_id} is not finite, or its statistic or \
+                 normalized value would not be"
+            ),
+            Self::FeatureLengthMismatch { value_count } => write!(
+                f,
+                "a row holds {value_count} values, not the contract's count"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for NormalizationError {}

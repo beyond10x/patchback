@@ -1,9 +1,10 @@
 //! Every refusal the crate can emit names an error of `spec/domains/analysis.yaml`, so a reader
 //! of the specification can reach each one, and every error the `AnalyzeAudio` command declares
 //! is one the crate can emit. The same holds for [`FeatureError`] and the five feature contract
-//! commands (story:feature-contract).
+//! commands (story:feature-contract), and for [`NormalizationError`] and the two normalization
+//! commands (story:normalization-stats).
 
-use patchback_analysis::{AnalysisError, FeatureError};
+use patchback_analysis::{AnalysisError, FeatureError, NormalizationError};
 
 fn section<'a>(text: &'a str, start: &str, end: &str) -> &'a str {
     text.split_once(start)
@@ -242,6 +243,187 @@ fn feature_error_fields_lead_the_rust_variants() {
             .lines()
             .filter_map(|line| line.strip_prefix("      - name: "))
             .filter(|field| *field != "analysis_id")
+            .collect();
+        assert!(
+            rust_fields.starts_with(&fields),
+            "{name}: domain {fields:?}, Rust {rust_fields:?}"
+        );
+    }
+}
+
+/// The normalization commands, from `ComputeNormalizationStats` to the command after
+/// `ApplyNormalization`.
+fn normalization_commands(text: &str) -> &str {
+    section(
+        text,
+        "  - name: patchback.analysis.ComputeNormalizationStats\n",
+        "\n  - name: patchback.analysis.EstimateNotes\n",
+    )
+}
+
+/// Errors the normalization commands declare that `NormalizationError` has no variant for, each
+/// with the reason.
+const NORMALIZATION_NOT_EMITTED: &[(&str, &str)] = &[(
+    "patchback.analysis.NormalizationStatsNotFound",
+    "statistics are a value (`NormalizationStats`); no call can name statistics that do not exist",
+)];
+
+/// Errors `NormalizationError` emits that the normalization commands do not declare, each with
+/// the command that does and why the crate needs it here.
+const NORMALIZATION_BEYOND_THE_COMMANDS: &[(&str, &str)] = &[
+    (
+        "patchback.analysis.NonFiniteFeature",
+        "CheckFeatureVector's: a non-finite training row or input value, or a mean, standard \
+         deviation or normalized value that would not be finite (DESIGN.md § 2 invariant 4)",
+    ),
+    (
+        "patchback.analysis.FeatureLengthMismatch",
+        "CheckFeatureVector's: a training row under a contract whose value count is not 32, \
+         refused by the contract's own check",
+    ),
+];
+
+#[test]
+fn every_normalization_refusal_names_an_error_of_the_analysis_domain() {
+    let text = domain();
+    let declared: Vec<&str> = section(&text, "\nerrors:\n", "\ncommands:\n")
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("- name: "))
+        .collect();
+    for name in NormalizationError::DOMAIN_ERRORS {
+        assert!(
+            declared.contains(name),
+            "{name} is not an error of spec/domains/analysis.yaml"
+        );
+    }
+}
+
+/// `ComputeNormalizationStats` and `ApplyNormalization` declare seven errors, in this order;
+/// each is emitted by [`NormalizationError`] or listed in [`NORMALIZATION_NOT_EMITTED`], never
+/// both, and every error [`NormalizationError`] names is declared by them or listed in
+/// [`NORMALIZATION_BEYOND_THE_COMMANDS`] with the feature command that declares it.
+#[test]
+fn every_error_of_the_normalization_commands_is_emitted_or_accounted_for() {
+    let text = domain();
+    let commands = normalization_commands(&text);
+    assert!(
+        commands.contains("name: patchback.analysis.ApplyNormalization\n"),
+        "ApplyNormalization lies between ComputeNormalizationStats and EstimateNotes"
+    );
+    let errors: Vec<&str> = commands
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("error: "))
+        .collect();
+    assert_eq!(
+        errors,
+        [
+            "patchback.analysis.DatasetSplitNotFound",
+            "patchback.analysis.FeatureContractNotFound",
+            "patchback.analysis.StatsFromNonTrainingSplit",
+            "patchback.analysis.FeatureContractNotPublished",
+            "patchback.analysis.FeatureVersionMismatch",
+            "patchback.analysis.NormalizationStatsNotFound",
+            "patchback.analysis.NormalizationContractMismatch",
+        ]
+    );
+    for name in &errors {
+        let emitted = NormalizationError::DOMAIN_ERRORS.contains(name);
+        let accounted = NORMALIZATION_NOT_EMITTED.iter().any(|(n, _)| n == name);
+        assert!(
+            emitted != accounted,
+            "{name}: emitted {emitted}, listed as not emitted {accounted}"
+        );
+    }
+    let check = section(
+        &text,
+        "  - name: patchback.analysis.CheckFeatureVector\n",
+        "\n  - name: patchback.analysis.ComputeNormalizationStats\n",
+    );
+    for name in NormalizationError::DOMAIN_ERRORS {
+        let declared = errors.contains(name);
+        let beyond = NORMALIZATION_BEYOND_THE_COMMANDS
+            .iter()
+            .any(|(n, _)| n == name);
+        assert!(
+            declared != beyond,
+            "{name}: declared {declared}, listed as beyond the commands {beyond}"
+        );
+        if beyond {
+            assert!(
+                check.contains(&format!("error: {name}\n")),
+                "{name} is declared by CheckFeatureVector"
+            );
+        }
+    }
+}
+
+#[test]
+fn every_normalization_variant_maps_into_the_declared_list() {
+    let mut seen = Vec::new();
+    for error in NormalizationError::examples() {
+        let name = error.domain_error();
+        assert!(
+            NormalizationError::DOMAIN_ERRORS.contains(&name),
+            "{error:?} maps to {name}"
+        );
+        assert!(!error.to_string().is_empty(), "{error:?}");
+        seen.push(name);
+    }
+    seen.sort_unstable();
+    let mut all = NormalizationError::DOMAIN_ERRORS.to_vec();
+    all.sort_unstable();
+    assert_eq!(seen, all);
+}
+
+/// The fields of each normalization error in the domain lead the fields of its Rust variant, by
+/// name and in order.
+#[test]
+fn normalization_error_fields_lead_the_rust_variants() {
+    let text = domain();
+    let errors = section(&text, "\nerrors:\n", "\ncommands:\n");
+    let rows: [(&str, &[&str]); 8] = [
+        (
+            "patchback.analysis.DatasetSplitNotFound",
+            &["dataset_split_id"],
+        ),
+        (
+            "patchback.analysis.FeatureContractNotFound",
+            &["feature_contract_id"],
+        ),
+        (
+            "patchback.analysis.StatsFromNonTrainingSplit",
+            &["split_role"],
+        ),
+        (
+            "patchback.analysis.FeatureContractNotPublished",
+            &["feature_contract_id"],
+        ),
+        ("patchback.analysis.FeatureVersionMismatch", &["version"]),
+        (
+            "patchback.analysis.NormalizationContractMismatch",
+            &["feature_contract_version"],
+        ),
+        (
+            "patchback.analysis.NonFiniteFeature",
+            &["feature_contract_id", "index"],
+        ),
+        ("patchback.analysis.FeatureLengthMismatch", &["value_count"]),
+    ];
+    let mut listed: Vec<&str> = rows.iter().map(|(name, _)| *name).collect();
+    listed.sort_unstable();
+    let mut all = NormalizationError::DOMAIN_ERRORS.to_vec();
+    all.sort_unstable();
+    assert_eq!(listed, all, "every variant's fields are compared");
+    for (name, rust_fields) in rows {
+        let start = format!("  - name: {name}\n");
+        let body = errors
+            .split_once(start.as_str())
+            .unwrap_or_else(|| panic!("analysis.yaml declares {name}"))
+            .1;
+        let body = body.split_once("\n  - name: ").map_or(body, |(b, _)| b);
+        let fields: Vec<&str> = body
+            .lines()
+            .filter_map(|line| line.strip_prefix("      - name: "))
             .collect();
         assert!(
             rust_fields.starts_with(&fields),
