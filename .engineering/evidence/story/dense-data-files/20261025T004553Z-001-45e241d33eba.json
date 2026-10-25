@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-25T00:45:53Z",
+  "actor": "human:timo",
+  "artifact": "story:dense-data-files",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "patchback generate-dataset --samples 48 --seed 42 in two processes: x.f32 2,048 B, y.f32 512 B, order.u32 64 B a split, all 13 files byte-identical; --samples 4294967296 exit 2 (adversary pass 2 report, scratch dense-data-files/scratch/bin-run.txt)"
+  }
+}

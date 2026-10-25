@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-25T00:45:53Z",
+  "actor": "human:timo",
+  "artifact": "story:dense-data-files",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "pass 2 green; two mutant cases kept, four doc comments reworded by the coordinator (G3)",
+    "review": "review-result:dense-data-files-adversary-2",
+    "outcome": "fixed"
+  }
+}
