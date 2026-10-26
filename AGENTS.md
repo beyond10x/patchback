@@ -4,6 +4,13 @@ Inverse synthesis for electronic music: from a recording, recover an editable DS
 note events that drive it, render it, and compare the rendering with the recording. Humans start
 at [README.md](README.md); the design is [DESIGN.md](DESIGN.md).
 
+## Serves
+
+The objectives of the collection this repository moves, by id from `atlas/ROADMAP.md`:
+
+- **O6 — self-improvement.** Every fit and benchmark run writes its inputs, outputs and numbers
+  to files, so a change to the engine or the regressor is re-measured on the same seeded holdout.
+
 ## State
 
 Milestones A and B implemented (DESIGN.md revision 0.7; the next slice is § 13 Milestone C, phrases of several notes): the workspace crates, the clap-derived `patchback` CLI (`patch validate`, `render`, `analyze`, `compare`, `fit` and `benchmark` implemented, and Milestone B's `generate-dataset`), the dependency gate, the ModelSpec pin and check, the parameter contracts, WAV import and export with provenance on external recordings, the `.patch` file format, patch graph validation (including the fixed § 5.2 chain) and compilation, the fixed subtractive voice and its renderer, the analysis core, the frozen `features/1` feature contract, the `notes.events` file, the audio comparison loss, the bounded derivative-free fit and the six files of its run (`patch.patch`, `notes.events`, `reconstructed.wav`, `report.txt`, `run.meta` and `trace.events`; story fit-run-artifacts), the engine baseline benchmark over a seeded holdout (`benchmark.txt`, `clips.txt` and listening examples; story engine-baseline), the seeded dataset generator (`dataset.meta`, `samples.meta`, the training split's `normalization.stats` and each split's dense `x.f32` z-scored under those statistics, `y.f32` and `order.u32`; stories dense-data-files and normalization-stats) and the CPU training run of the pinned ModelSpec as a subprocess (`patchback_model::TrainingRun`, no `patchback` verb yet; story training-run) and the checked weight export of a completed run to a `weights/1` file (`patchback_model::WeightArtifact`, library only; story weight-export) and the native predictor that runs them on one normalized `features/1` vector (`patchback_model::Predictor`, library only; story native-predictor) and the regressor-seeded fit (`patchback fit --weights --normalization`, `patchback_fit::fit_request`; story regressor-seeded-fit) and the ML-init benchmark (`patchback benchmark --kind ml-init --weights --normalization`: four arms per clip, five listening files, no verdict; `patchback_fit::Benchmark::record_ml_init_result`, `predicted_arm`; story ml-init-benchmark) exist; `studio/` holds the patch studio prototype on fixture data. `spec/` holds the ESS domains and
