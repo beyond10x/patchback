@@ -8,7 +8,7 @@ All notable changes to Patchback are recorded here. The format follows
 
 ### Changed
 
-- `spec/ess-inputs.yaml` requires ESS 0.72.0, and CI installs that release; the studio's generated
+- `spec/ess-inputs.yaml` requires ESS 0.74.0, and CI installs that release; the studio's generated
   wire types in `studio/src/generated/` move to it with no type change.
 
 ## [0.11.0] - 2026-10-25
