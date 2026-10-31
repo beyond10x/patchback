@@ -6,10 +6,14 @@ All notable changes to Patchback are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-10-31
+
 ### Changed
 
 - `spec/ess-inputs.yaml` requires ESS 0.75.0, and CI installs that release; the studio's generated
   wire types in `studio/src/generated/` move to it with no type change.
+- `AGENTS.md` names the collection objective this repository serves (a `## Serves` section); no
+  behaviour change.
 
 ## [0.11.0] - 2026-10-25
 
@@ -619,7 +623,8 @@ All notable changes to Patchback are recorded here. The format follows
   revision 0.4, § 3); help, version and usage errors follow clap (usage errors exit 2), and the
   dependency gate admits `clap` with exactly its reviewed `Cargo.lock` closure.
 
-[Unreleased]: https://github.com/beyond10x/patchback/compare/0.11.0...HEAD
+[Unreleased]: https://github.com/beyond10x/patchback/compare/0.11.1...HEAD
+[0.11.1]: https://github.com/beyond10x/patchback/compare/0.11.0...0.11.1
 [0.11.0]: https://github.com/beyond10x/patchback/compare/0.10.0...0.11.0
 [0.10.0]: https://github.com/beyond10x/patchback/compare/0.9.0...0.10.0
 [0.9.0]: https://github.com/beyond10x/patchback/compare/0.8.0...0.9.0
