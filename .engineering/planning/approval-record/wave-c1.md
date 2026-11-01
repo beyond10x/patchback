@@ -8,7 +8,7 @@ relations:
 - decides: story:note-estimation
 - decides: story:studio-patch-graph
 - decides: story:studio-fit-replay
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-01T15:24:46Z", actor: "human:timo", revision: 2, executor: "agent:wave-c1-coordinator"}
 ---
@@ -224,6 +224,23 @@ results and highest engineering quality"), after the adversary passes.
   evaluated on. If low-note errors survive with a narrow interval, the χ² noise variance is
   recalibrated from the residual's autocorrelation. The 0.90 bound, the MIDI range and the
   fixture do not change.
+- Dc1-19 After `review-result:note-estimation-adversary-2` measured pooled confident-inside at
+  0.900 ± 0.004 per block of 16 unseen seeds, the committed harness measures seeds 1 to 64 and
+  requires pooled confident-inside of at least 0.92, so a fresh block clears Dc1-9's 0.90 with
+  margin. The Dc1-9 bound itself is unchanged.
+- Dc1-20 The stress shapes grow by Gaussian noise at -70 dBFS, dark cutoffs, low sustains, short
+  gaps, high drives and long decays, each measured on seeds 1 to 8 for calibration and polyphony;
+  the quiet threshold derives from a robust statistic of the noise, not an assumed distribution.
+- Dc1-21 The harness's tail truth is the last sample above the silence threshold, as Dc1-9 words
+  it, even before the gate end.
+- Dc1-22 Polyphony is decided first, on each note's steady part: no monophonic phrase is refused
+  as `PolyphonicInput`, and every drawn dyad of Dc1-3's intervals is refused as
+  `PolyphonicInput`.
+- Dc1-23 `frame_count` is covered by the estimation file's check, and `patchback fit` compares
+  every `--estimation` it reads with its `--input`.
+- Dc1-31a Amends Dc1-31 for note estimation only: its defect class is overfitting, which only
+  unseen data can show, so a third adversary pass re-measures on unseen seeds after correction
+  round 2.
 - Dc1-16 A lint-only patch to the adversary's `tests/adversary_1.rs` (a type alias, one hex
   literal regrouped to the same value) is applied, so clippy `-D warnings` passes on all targets;
   no assertion changes.
