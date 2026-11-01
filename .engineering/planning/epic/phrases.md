@@ -2,13 +2,16 @@
 format: aep.planning-md/3
 id: epic:phrases
 kind: epic
-status: draft
+status: active
 title: 'Milestone C: from notes to phrases'
 relations:
 - serves: vision:patchback
 - depends_on: epic:sound-engine
 - informed_by: executable-system-specification:patchback-contracts
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-01T15:25:05Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-11-01T15:25:07Z", actor: "human:timo", revision: 3}
 ---
 # Milestone C: from notes to phrases
 
