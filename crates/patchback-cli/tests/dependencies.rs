@@ -7,10 +7,10 @@
 //! reaches that has a `source` (registry, git) and is not a crates.io package whose exact
 //! `(name, version)` is in `CLAP_CLOSURE`,
 //! a workspace crate that takes a closure member other than `clap` directly, any path package
-//! whose name is not `patchback-*`, and `patchback-docs`, which is tooling and takes
+//! whose name is not `patchback-*`, and a tooling crate (`TOOLING_CRATES`), which takes
 //! third-party crates (its `serde_json` stays refused). A `package =` rename, a
 //! dotted key, a `[target.<cfg>]` table or a comment cannot hide a crate from the lock file.
-//! Every directory under `crates/` is either an application crate or `patchback-docs`, so a
+//! Every directory under `crates/` is either an application crate or a tooling crate, so a
 //! new crate cannot be left out of the walk. Read with `std` only.
 //!
 //! The same walk holds the rest of DESIGN.md § 3 and § 12.2. It judges the full resolved
@@ -45,9 +45,10 @@ const APPLICATION_CRATES: &[&str] = &[
     "patchback-cli",
 ];
 
-/// Documentation tooling: a workspace crate that is not an application crate and that no
-/// application crate may reach.
-const DOCS_CRATE: &str = "patchback-docs";
+/// Tooling: workspace crates that are not application crates and that no application crate may
+/// reach. `patchback-docs` generates the documentation site; `patchback-studio` exports fit runs
+/// for Patchback Studio (DESIGN.md § 3, ADR-011).
+const TOOLING_CRATES: &[&str] = &["patchback-docs", "patchback-studio"];
 
 /// The one reviewed command-line crate (DESIGN.md § 3, "CLI parsing"). A workspace crate may
 /// take it from crates.io directly.
@@ -439,7 +440,7 @@ fn always_enabled(manifests: &Manifests) -> BTreeMap<String, BTreeSet<String>> {
 /// The dependency gate: everything the walk from `roots` through `lock` reaches that is not
 /// admitted, with its reason, one finding per refused package or crate.
 ///
-/// A workspace path crate must be `patchback-*` and not the docs crate. A workspace crate may
+/// A workspace path crate must be `patchback-*` and not a tooling crate. A workspace crate may
 /// take from crates.io only `clap` and an approved audio backend at its approved version; every
 /// package reached through one of them must be in that one's reviewed closure at its exact
 /// version, and a workspace crate that takes a closure member directly is refused. A
@@ -505,8 +506,8 @@ fn audit(
             }
         } else if !root_indices.contains(&index) && !package.name.starts_with("patchback-") {
             push(&mut found, format!("{label}: not a patchback-* crate"));
-        } else if package.name == DOCS_CRATE {
-            push(&mut found, format!("{label}: documentation tooling"));
+        } else if TOOLING_CRATES.contains(&package.name.as_str()) {
+            push(&mut found, format!("{label}: tooling"));
         }
         for entry in &package.dependencies {
             let mut words = entry.split_whitespace();
@@ -624,12 +625,12 @@ fn audit(
     found
 }
 
-/// The directories under `crates/` that are neither an application crate nor the docs crate.
+/// The directories under `crates/` that are neither an application crate nor a tooling crate.
 fn unclassified<'a>(directories: &[&'a str]) -> Vec<&'a str> {
     directories
         .iter()
         .copied()
-        .filter(|name| *name != DOCS_CRATE && !APPLICATION_CRATES.contains(name))
+        .filter(|name| !TOOLING_CRATES.contains(name) && !APPLICATION_CRATES.contains(name))
         .collect()
 }
 
@@ -738,7 +739,7 @@ fn the_clap_allow_list_is_exactly_its_resolved_closure() {
 }
 
 #[test]
-fn every_crate_directory_is_an_application_crate_or_the_docs_crate() {
+fn every_crate_directory_is_an_application_crate_or_a_tooling_crate() {
     let root = repository_root();
     let mut names: Vec<String> = Vec::new();
     for entry in fs::read_dir(root.join("crates")).expect("crates/") {
@@ -748,7 +749,9 @@ fn every_crate_directory_is_an_application_crate_or_the_docs_crate() {
         }
     }
     let names: Vec<&str> = names.iter().map(String::as_str).collect();
-    assert!(names.contains(&DOCS_CRATE), "{names:?}");
+    for name in TOOLING_CRATES {
+        assert!(names.contains(name), "{name} in {names:?}");
+    }
     for name in APPLICATION_CRATES {
         assert!(names.contains(name), "{name} in {names:?}");
     }
@@ -770,7 +773,7 @@ fn the_workspace_lists_every_crate() {
         .map(unquote)
         .filter(|m| !m.is_empty())
         .collect();
-    for name in APPLICATION_CRATES.iter().chain(&[DOCS_CRATE]) {
+    for name in APPLICATION_CRATES.iter().chain(TOOLING_CRATES) {
         let member = format!("crates/{name}");
         assert!(members.contains(&member), "{member} in {members:?}");
     }
@@ -783,6 +786,34 @@ fn a_crate_directory_outside_both_lists_is_refused() {
         ["patchback-extra", "fft"]
     );
     assert!(unclassified(APPLICATION_CRATES).is_empty());
+}
+
+#[test]
+fn the_studio_exporter_is_tooling_that_no_application_crate_may_reach() {
+    // DESIGN.md § 3 and ADR-011: `patchback-studio` is a tooling crate like `patchback-docs`;
+    // it is a crate directory of its own, and an application crate that takes it is refused.
+    assert!(unclassified(&["patchback-studio"]).is_empty());
+    let lock = lock_of(&[
+        ("patchback-fit", "0.0.0", None, &["patchback-studio"]),
+        (
+            "patchback-studio",
+            "0.0.0",
+            None,
+            &["clap", "patchback-core", "serde_json"],
+        ),
+        ("patchback-core", "0.0.0", None, &[]),
+        ("clap", "4.6.7", Some(REGISTRY), &[]),
+        ("serde_json", "1.0.0", Some(REGISTRY), &[]),
+    ]);
+    let found = lock_violations(&lock, &["patchback-fit"]);
+    assert!(
+        found.iter().any(|f| f.starts_with("patchback-studio ")),
+        "{found:?}"
+    );
+    assert!(
+        found.iter().any(|f| f.starts_with("serde_json ")),
+        "{found:?}"
+    );
 }
 
 const REGISTRY: &str = "registry+https://github.com/rust-lang/crates.io-index";

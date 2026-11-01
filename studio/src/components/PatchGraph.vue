@@ -1,13 +1,19 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import type { GraphDrawn, GraphEdge, GraphNode, PortSpec } from "../generated/types";
-import { MODULE_COLOR, RATE_COLOR, RATE_DASH, contractByPath, formatPhysical, moduleByKind } from "../model";
+import type { GraphDrawn, GraphEdge, GraphNode, ModuleSpec, PortSpec } from "../generated/types";
+import { MODULE_COLOR, RATE_COLOR, RATE_DASH, formatPhysical } from "../model";
 
 const props = defineProps<{
   graph: GraphDrawn;
+  modules: ModuleSpec[];
   values?: Record<string, number>;
   highlight?: string;
 }>();
+
+const moduleByKind = computed(() => new Map(props.modules.map((m) => [m.kind, m])));
+const contractByPath = computed(
+  () => new Map(props.modules.flatMap((m) => m.parameters.map((p) => [p.path, p] as const))),
+);
 
 const W = 172;
 const HEAD = 34;
@@ -37,7 +43,7 @@ const placed = computed<Placed[]>(() => {
   for (const [rank, nodes] of [...byRank.entries()].sort((a, b) => a[0] - b[0])) {
     let y = PAD;
     for (const node of nodes) {
-      const spec = moduleByKind.get(node.kind);
+      const spec = moduleByKind.value.get(node.kind);
       const inputs = spec?.ports.filter((p) => p.direction === "Input") ?? [];
       const outputs = spec?.ports.filter((p) => p.direction === "Output") ?? [];
       const params = props.values ? (spec?.parameters.map((p) => p.path) ?? []) : [];
@@ -52,9 +58,10 @@ const placed = computed<Placed[]>(() => {
 
 const byId = computed(() => new Map(placed.value.map((p) => [p.node.node_id, p])));
 const bottom = computed(() => Math.max(...placed.value.map((p) => p.y + p.h)));
-const hasFeedback = computed(() => props.graph.edges.some((e) => e.delayed_feedback));
+// Room under the nodes for every edge routed there: delayed feedback, and a backward edge in a hand-picked file.
+const routedUnder = computed(() => edges.value.some((e) => e.under));
 const width = computed(() => Math.max(...placed.value.map((p) => p.x + W)) + PAD);
-const height = computed(() => bottom.value + (hasFeedback.value ? 70 : PAD));
+const height = computed(() => bottom.value + (routedUnder.value ? 70 : PAD));
 
 function portY(p: Placed, list: PortSpec[], name: string) {
   const i = Math.max(0, list.findIndex((s) => s.name === name));
@@ -65,6 +72,7 @@ interface Drawn {
   edge: GraphEdge;
   d: string;
   label?: { x: number; y: number };
+  under?: true;
 }
 
 const edges = computed<Drawn[]>(() =>
@@ -79,7 +87,8 @@ const edges = computed<Drawn[]>(() =>
     if (edge.delayed_feedback || x2 <= x1) {
       const yb = bottom.value + 36;
       const d = `M ${x1} ${y1} C ${x1 + 60} ${y1}, ${x1 + 60} ${yb}, ${x1} ${yb} L ${x2} ${yb} C ${x2 - 60} ${yb}, ${x2 - 60} ${y2}, ${x2} ${y2}`;
-      return [{ edge, d, label: { x: (x1 + x2) / 2, y: yb - 8 } }];
+      const label = edge.delayed_feedback ? { x: (x1 + x2) / 2, y: yb - 8 } : undefined;
+      return [{ edge, d, label, under: true as const }];
     }
     const between = placed.value.filter((p) => p.node.rank > a.node.rank && p.node.rank < b.node.rank);
     const lane = between.length ? Math.max(...between.map((p) => p.y + p.h)) + 16 : -Infinity;
@@ -102,7 +111,7 @@ function show(ev: MouseEvent, lines: string[]) {
 }
 
 function nodeLines(p: Placed): string[] {
-  const spec = moduleByKind.get(p.node.kind);
+  const spec = moduleByKind.value.get(p.node.kind);
   const ports = spec?.ports.map((s) => `${s.direction === "Input" ? "in " : "out"} ${s.name} · ${s.rate}`) ?? [];
   return [`${p.node.kind} #${p.node.node_id}`, `rank ${p.node.rank}`, ...ports];
 }
@@ -118,7 +127,7 @@ function edgeLines(e: GraphEdge): string[] {
 }
 
 function paramLabel(path: string) {
-  const c = contractByPath.get(path);
+  const c = contractByPath.value.get(path);
   const v = props.values?.[path] ?? 0;
   return c ? formatPhysical(c, v) : v.toFixed(3);
 }
@@ -160,7 +169,15 @@ function level(path: string) {
         </linearGradient>
       </defs>
       <g class="edges">
-        <g v-for="(e, i) in edges" :key="i" class="cable" :class="'r-' + e.edge.rate" :style="{ '--c': RATE_COLOR[e.edge.rate] }">
+        <g
+          v-for="(e, i) in edges"
+          :key="i"
+          class="cable"
+          :class="'r-' + e.edge.rate"
+          :data-from="e.edge.from_node"
+          :data-to="e.edge.to_node"
+          :style="{ '--c': RATE_COLOR[e.edge.rate] }"
+        >
           <path :d="e.d" class="cable-glow" />
           <path :d="e.d" class="cable-core" :stroke-dasharray="RATE_DASH[e.edge.rate] || undefined" />
           <path v-if="e.edge.rate === 'Audio'" :d="e.d" class="cable-pulse" />

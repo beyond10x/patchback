@@ -1,0 +1,60 @@
+# epic:patch-studio, fit evolution view, replay. A completed fit run names why it stopped
+# (DESIGN.md 9.2 step 4) and trace.events closes with that reason; a failed run has none. A close
+# that contradicts this is refused and the trace stays open; the consistent close then lands.
+type: ess-scenario/1
+domain: patchback.studio
+scenario: studio-fit-replay-inconsistent-end
+summary: A completed close without a stop reason and a failed close with one are refused; a completed close with its reason is not.
+
+timeline:
+  - at: 2026-10-22T13:55:00Z
+    command: patchback.studio.OpenTrace
+    actor: patchback.studio.Studio
+    input:
+      trace_id: 5a0d0000-0000-4000-8000-000000000405
+      fit_run_id: 5a0d0000-0000-4000-8000-000000000505
+      source: Replay
+      topology_id: 5a0d0000-0000-4000-8000-000000000101
+      topology_name: subtractive-mono/1
+      parameter_paths: [cutoff]
+    outcome: opened
+
+  - at: 2026-10-22T13:55:01Z
+    command: patchback.studio.CloseTrace
+    actor: patchback.studio.Studio
+    input:
+      trace_id: 5a0d0000-0000-4000-8000-000000000405
+      ended: Completed
+    outcome: completed-without-reason
+    error:
+      name: patchback.studio.InconsistentEnd
+    no_events: [patchback.studio.TraceClosedEvent]
+
+  - at: 2026-10-22T13:55:02Z
+    command: patchback.studio.CloseTrace
+    actor: patchback.studio.Studio
+    input:
+      trace_id: 5a0d0000-0000-4000-8000-000000000405
+      ended: Failed
+      stop_reason: RenderBudgetExhausted
+    outcome: failed-with-reason
+    error:
+      name: patchback.studio.InconsistentEnd
+    no_events: [patchback.studio.TraceClosedEvent]
+
+  - at: 2026-10-22T13:55:03Z
+    command: patchback.studio.CloseTrace
+    actor: patchback.studio.Studio
+    input:
+      trace_id: 5a0d0000-0000-4000-8000-000000000405
+      ended: Completed
+      stop_reason: ImprovementBelowThreshold
+    outcome: closed
+
+assert:
+  - view: patchback.studio.Traces
+    contains:
+      trace_id: 5a0d0000-0000-4000-8000-000000000405
+      state: Closed
+      ended: Completed
+      stop_reason: ImprovementBelowThreshold

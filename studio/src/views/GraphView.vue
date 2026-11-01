@@ -2,19 +2,22 @@
 import { computed, ref } from "vue";
 import PatchGraph from "../components/PatchGraph.vue";
 import RateLegend from "../components/RateLegend.vue";
-import { graphs, moduleByKind } from "../model";
+import { feedbackExample } from "../model";
+import { loaded } from "../store";
 
+const choices = computed(() => [
+  {
+    label: loaded.value.document.topology,
+    note: `The retained patch of the fit run in ${loaded.value.label}.`,
+    graph: loaded.value.document.graph,
+    modules: loaded.value.document.modules,
+  },
+  { label: "delayed feedback", ...feedbackExample },
+]);
 const wanted = Number(new URLSearchParams(window.location.search).get("graph") ?? 0);
-const selected = ref(graphs[wanted] ? wanted : 0);
-const current = computed(() => graphs[selected.value] ?? graphs[0]!);
-const kindOf = (id: number) => current.value.fixture.event.nodes.find((n) => n.node_id === id)?.kind ?? "?";
-const defaults = computed(() =>
-  Object.fromEntries(
-    current.value.fixture.event.nodes.flatMap((n) =>
-      (moduleByKind.get(n.kind)?.parameters ?? []).map((p) => [p.path, Number(p.default_normalized)] as const),
-    ),
-  ),
-);
+const selected = ref(wanted === 1 ? 1 : 0);
+const current = computed(() => choices.value[selected.value] ?? choices.value[0]!);
+const kindOf = (id: number) => current.value.graph.nodes.find((n) => n.node_id === id)?.kind ?? "?";
 </script>
 
 <template>
@@ -27,7 +30,7 @@ const defaults = computed(() =>
       <div class="controls">
         <div class="segmented" role="tablist">
           <button
-            v-for="(g, i) in graphs"
+            v-for="(g, i) in choices"
             :key="g.label"
             :class="{ on: i === selected }"
             role="tab"
@@ -38,9 +41,9 @@ const defaults = computed(() =>
         <RateLegend />
       </div>
     </header>
-    <p class="fixture-note">{{ current.fixture.note }}</p>
+    <p class="fixture-note">{{ current.note }}</p>
     <div class="panel">
-      <PatchGraph :graph="current.fixture.event" :values="defaults" />
+      <PatchGraph :graph="current.graph" :modules="current.modules" />
     </div>
     <details class="panel table-view">
       <summary>Edge table</summary>
@@ -49,7 +52,7 @@ const defaults = computed(() =>
           <tr><th>from</th><th>to</th><th>rate</th><th>delayed feedback</th></tr>
         </thead>
         <tbody>
-          <tr v-for="(e, i) in current.fixture.event.edges" :key="i">
+          <tr v-for="(e, i) in current.graph.edges" :key="i">
             <td class="mono">{{ kindOf(e.from_node) }}#{{ e.from_node }}.{{ e.from_port }}</td>
             <td class="mono">{{ kindOf(e.to_node) }}#{{ e.to_node }}.{{ e.to_port }}</td>
             <td>{{ e.rate }}</td>

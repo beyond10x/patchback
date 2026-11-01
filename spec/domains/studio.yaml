@@ -12,10 +12,16 @@ summary: >-
 # Dependency policy: DESIGN.md 0.3 ADR-011 and section 16 place the studio (Vue 3, TypeScript,
 # Vite, pnpm, under studio/) outside the section 3 runtime policy as a developer tool the Rust
 # application never depends on; its live server is Rust std only.
-# Trace artifact: DESIGN.md 0.3 section 11 adds results/trace.events, a versioned line-oriented
-# per-evaluation trace written per fit run; a replay reads it, and TraceFrame types its records.
-# UNMAPPED: its exact grammar, and whether a failed run keeps its trace, are open (DESIGN.md
-# section 17, OQ-12).
+# Trace artifact: DESIGN.md section 11 results/trace.events, the grammar `patchback-fit-trace 1`
+# of crates/patchback-fit/src/trace.rs; TraceFrame types its evaluation lines. A replay reads a
+# fit run's patch.patch, run.meta and trace.events through `patchback-studio export`, which
+# writes these events as one document (approval-record:wave-c1, Dc1-21). The model follows the
+# shipped trace (Dc1-24): a frame's sequence is the evaluation's number from 1 and it carries its
+# restart; topologies are named (topology_name) beside the identity a relation needs, which the
+# exporter derives from the name; a completed run writes its trace and a failed run writes none
+# (story:fit-run-artifacts, Da7-2), so a replay always closes Completed with the run's stop
+# reason. Failed stays for a live stream (story:studio-fit-live). Every identity of a replay is a
+# version-8 UUID from the SHA-256 of the run's files, so two exports of one run are equal bytes.
 
 types:
   - name: patchback.studio.CatalogueId
@@ -242,11 +248,17 @@ entities:
       - name: topology_id
         type: patchback.patch.TopologyId
         summary: The topology the run starts in.
+      - name: topology_name
+        type: patchback.patch.TopologyName
+        summary: The name of that topology, as trace.events and the .patch file write it.
       - name: parameter_paths
         type: List<patchback.patch.ParameterPath>
         summary: The parameters whose trajectories the trace carries, in display order.
       - name: ended
         type: Optional<patchback.studio.TraceEnd>
+      - name: stop_reason
+        type: Optional<patchback.fit.StopReason>
+        summary: Why the run stopped; present exactly when it ended Completed (DESIGN.md 9.2 step 4).
     relations:
       - name: fit_run
         kind: references
@@ -281,14 +293,19 @@ entities:
         type: patchback.studio.TraceId
       - name: sequence
         type: Integer
-        summary: Position in the trace from 0; strictly increasing.
+        summary: The evaluation's number in the run, from 1; strictly increasing.
       - name: evaluation
         type: Integer
         summary: The fit run's evaluation count after this candidate (patchback.fit.FitRun.evaluations).
+      - name: restart
+        type: Integer
+        summary: The restart of the coordinate search the evaluation belongs to, from 0 (DESIGN.md 9.2).
       - name: outcome
         type: patchback.studio.FrameOutcome
       - name: topology_id
         type: patchback.patch.TopologyId
+      - name: topology_name
+        type: patchback.patch.TopologyName
       - name: patch_id
         type: Optional<patchback.patch.PatchId>
       - name: total_loss
@@ -302,8 +319,9 @@ entities:
       - name: parameters
         type: List<patchback.studio.ParameterSample>
     invariants:
-      - sequence >= 0
+      - sequence >= 1
       - evaluation >= 1
+      - restart >= 0
     relations:
       - name: trace
         kind: references
@@ -471,6 +489,14 @@ errors:
       - name: sequence
         type: Integer
 
+  - name: patchback.studio.InconsistentEnd
+    summary: >-
+      A trace's end disagrees with its stop reason: a completed run without one, or a failed run
+      with one (DESIGN.md 9.2 steps 4 and 5).
+    fields:
+      - name: trace_id
+        type: patchback.studio.TraceId
+
   - name: patchback.studio.TraceStateConflict
     fields:
       - name: trace_id
@@ -621,6 +647,8 @@ commands:
         type: patchback.studio.TraceSource
       - name: topology_id
         type: patchback.patch.TopologyId
+      - name: topology_name
+        type: patchback.patch.TopologyName
       - name: parameter_paths
         type: List<patchback.patch.ParameterPath>
     outcomes:
@@ -637,6 +665,7 @@ commands:
           fit_run_id: input.fit_run_id
           source: input.source
           topology_id: input.topology_id
+          topology_name: input.topology_name
           parameter_paths: input.parameter_paths
         emits: [patchback.studio.TraceOpened]
         payload:
@@ -645,6 +674,7 @@ commands:
             fit_run_id: input.fit_run_id
             source: input.source
             topology_id: input.topology_id
+            topology_name: input.topology_name
             parameter_paths: input.parameter_paths
 
   - name: patchback.studio.AppendFrame
@@ -661,10 +691,14 @@ commands:
         type: Integer
       - name: evaluation
         type: Integer
+      - name: restart
+        type: Integer
       - name: outcome
         type: patchback.studio.FrameOutcome
       - name: topology_id
         type: patchback.patch.TopologyId
+      - name: topology_name
+        type: patchback.patch.TopologyName
       - name: patch_id
         type: Optional<patchback.patch.PatchId>
       - name: total_loss
@@ -743,8 +777,10 @@ commands:
           trace_id: input.trace_id
           sequence: input.sequence
           evaluation: input.evaluation
+          restart: input.restart
           outcome: input.outcome
           topology_id: input.topology_id
+          topology_name: input.topology_name
           patch_id: input.patch_id
           total_loss: input.total_loss
           components: input.components
@@ -758,7 +794,9 @@ commands:
             sequence: input.sequence
             outcome: input.outcome
             evaluation: input.evaluation
+            restart: input.restart
             topology_id: input.topology_id
+            topology_name: input.topology_name
             patch_id: input.patch_id
             total_loss: input.total_loss
             components: input.components
@@ -767,13 +805,29 @@ commands:
 
   - name: patchback.studio.CloseTrace
     naming:
-      summary: Close a trace with its fit run's end; the trace takes no further frame.
+      summary: >-
+        Close a trace with its fit run's end; the trace takes no further frame. A completed run
+        names why it stopped (DESIGN.md 9.2 step 4); a failed run has no stop reason.
     input:
       - name: trace_id
         type: patchback.studio.TraceId
       - name: ended
         type: patchback.studio.TraceEnd
+      - name: stop_reason
+        type: Optional<patchback.fit.StopReason>
     outcomes:
+      - name: completed-without-reason
+        when: {all: [ended == Completed, not defined(stop_reason)]}
+        error: patchback.studio.InconsistentEnd
+        payload:
+          patchback.studio.InconsistentEnd:
+            trace_id: input.trace_id
+      - name: failed-with-reason
+        when: {all: [ended == Failed, defined(stop_reason)]}
+        error: patchback.studio.InconsistentEnd
+        payload:
+          patchback.studio.InconsistentEnd:
+            trace_id: input.trace_id
       - name: no-such-trace
         unknown_instance: true
         error: patchback.studio.TraceNotFound
@@ -785,11 +839,13 @@ commands:
         instance: trace_id
         sets:
           ended: input.ended
+          stop_reason: input.stop_reason
         emits: [patchback.studio.TraceClosedEvent]
         payload:
           patchback.studio.TraceClosedEvent:
             trace_id: input.trace_id
             ended: input.ended
+            stop_reason: input.stop_reason
       - name: already-closed
         wrong_state: true
         error: patchback.studio.TraceStateConflict
@@ -892,6 +948,8 @@ events:
         type: patchback.studio.TraceSource
       - name: topology_id
         type: patchback.patch.TopologyId
+      - name: topology_name
+        type: patchback.patch.TopologyName
       - name: parameter_paths
         type: List<patchback.patch.ParameterPath>
 
@@ -907,8 +965,12 @@ events:
         type: patchback.studio.FrameOutcome
       - name: evaluation
         type: Integer
+      - name: restart
+        type: Integer
       - name: topology_id
         type: patchback.patch.TopologyId
+      - name: topology_name
+        type: patchback.patch.TopologyName
       - name: patch_id
         type: Optional<patchback.patch.PatchId>
       - name: total_loss
@@ -928,6 +990,8 @@ events:
         type: patchback.studio.TraceId
       - name: ended
         type: patchback.studio.TraceEnd
+      - name: stop_reason
+        type: Optional<patchback.fit.StopReason>
 
   - name: patchback.studio.ResultComposed
     fields:
@@ -987,12 +1051,16 @@ views:
         type: patchback.studio.TraceSource
       - name: topology_id
         type: patchback.patch.TopologyId
+      - name: topology_name
+        type: patchback.patch.TopologyName
       # DESIGN.md section 16, fit evolution view: it draws the parameter trajectories, one per path
       # in this order.
       - name: parameter_paths
         type: List<patchback.patch.ParameterPath>
       - name: ended
         type: Optional<patchback.studio.TraceEnd>
+      - name: stop_reason
+        type: Optional<patchback.fit.StopReason>
 
   - name: patchback.studio.TraceFrames
     source: patchback.studio.TraceFrame
@@ -1007,6 +1075,8 @@ views:
       - name: sequence
         type: Integer
       - name: evaluation
+        type: Integer
+      - name: restart
         type: Integer
       - name: outcome
         type: patchback.studio.FrameOutcome

@@ -1,46 +1,71 @@
 <script setup lang="ts">
+// The fit replay (DESIGN.md 16): a scrubber and play control over the frames of the loaded export.
+// Play runs the whole trace in a chosen time, so a run of 400 evaluations plays as long as one of
+// 20 (approval-record:wave-c1 Dc1-26); the frame table shows a window around the cursor.
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import LossChart from "../components/LossChart.vue";
 import PatchGraph from "../components/PatchGraph.vue";
 import RateLegend from "../components/RateLegend.vue";
 import Trajectories from "../components/Trajectories.vue";
-import { changedPath, graphs, retainedAt, samplesOf, trace } from "../model";
+import { changedPath, retainedAt, samplesOf } from "../model";
+import { loaded } from "../store";
 
-const frames = trace.frames;
-const last = frames.length - 1;
+const trace = computed(() => loaded.value.document.trace);
+const frames = computed(() => trace.value.frames);
+const last = computed(() => frames.value.length - 1);
 const start = Number(new URLSearchParams(window.location.search).get("frame") ?? 0);
-const index = ref(Number.isInteger(start) ? Math.min(last, Math.max(0, start)) : 0);
+const index = ref(Number.isInteger(start) ? Math.max(0, Math.min(last.value, start)) : 0);
 const playing = ref(false);
-const speed = ref(700);
+/** The time one play of the whole trace takes, in milliseconds. */
+const duration = ref(20_000);
 const showCandidate = ref(false);
 let timer: number | undefined;
 
-const frame = computed(() => frames[index.value]!);
-const kept = computed(() => retainedAt(frames, index.value));
+const MIN_TICK_MS = 16;
+const tickMs = computed(() => Math.max(MIN_TICK_MS, duration.value / Math.max(1, frames.value.length)));
+const stride = computed(() => Math.max(1, Math.round((frames.value.length * tickMs.value) / duration.value)));
+const restarts = computed(() => (frames.value.at(-1)?.restart ?? 0) + 1);
+
+const frame = computed(() => frames.value[index.value]!);
+const kept = computed(() => retainedAt(frames.value, index.value));
 const values = computed(() => samplesOf(showCandidate.value ? frame.value : (kept.value ?? frame.value)));
-const changed = computed(() => changedPath(frames, index.value));
-const graph = graphs[0]!.fixture.event;
+const changed = computed(() => changedPath(frames.value, index.value));
+const graph = computed(() => loaded.value.document.graph);
+const modules = computed(() => loaded.value.document.modules);
+
+const WINDOW = 21;
+const windowStart = computed(() =>
+  Math.max(0, Math.min(frames.value.length - WINDOW, index.value - Math.floor(WINDOW / 2))),
+);
+const windowRows = computed(() =>
+  frames.value.slice(windowStart.value, windowStart.value + WINDOW).map((f, k) => ({ f, i: windowStart.value + k })),
+);
 
 function tick() {
-  if (index.value >= last) {
+  if (index.value >= last.value) {
     playing.value = false;
     return;
   }
-  index.value += 1;
+  index.value = Math.min(last.value, index.value + stride.value);
 }
 
-watch([playing, speed], ([on]) => {
+watch([playing, duration], ([on]) => {
   window.clearInterval(timer);
   if (on) {
-    if (index.value >= last) index.value = 0;
-    timer = window.setInterval(tick, speed.value);
+    if (index.value >= last.value) index.value = 0;
+    timer = window.setInterval(tick, tickMs.value);
   }
+});
+watch(loaded, () => {
+  playing.value = false;
+  index.value = 0;
 });
 onBeforeUnmount(() => window.clearInterval(timer));
 
 function step(d: number) {
+  if (last.value < 0) return;
   playing.value = false;
-  index.value = Math.min(last, Math.max(0, index.value + d));
+  index.value = Math.min(last.value, Math.max(0, index.value + d));
 }
 
 function onKey(ev: KeyboardEvent) {
@@ -67,13 +92,15 @@ const OUTCOME_LABEL: Record<string, string> = {
         <h2>Fit evolution</h2>
         <p class="sub">
           Replay of fit run <span class="mono">{{ trace.opened.fit_run_id.slice(-4) }}</span>,
-          {{ frames.length }} evaluations, source {{ trace.opened.source }}, ended {{ trace.closed.ended }}.
+          <template v-if="frames.length">{{ frames.length }} evaluations over {{ restarts }} restart{{ restarts === 1 ? "" : "s" }}</template><template v-else>no evaluations</template>, source
+          {{ trace.opened.source }}, ended {{ trace.closed.ended }}{{ trace.closed.stop_reason ? ` (${trace.closed.stop_reason})` : "" }}.
         </p>
       </div>
       <RateLegend />
     </header>
-    <p class="fixture-note">{{ trace.note }}</p>
+    <p class="fixture-note">From {{ loaded.label }}.</p>
 
+    <template v-if="frames.length">
     <div class="transport panel">
       <button class="btn primary" :aria-label="playing ? 'Pause' : 'Play'" @click="playing = !playing">
         {{ playing ? "❚❚ Pause" : "▶ Play" }}
@@ -92,11 +119,11 @@ const OUTCOME_LABEL: Record<string, string> = {
       />
       <span class="pos mono">{{ frame.evaluation }} / {{ frames[last]!.evaluation }}</span>
       <label class="small">
-        speed
-        <select v-model.number="speed">
-          <option :value="1200">slow</option>
-          <option :value="700">normal</option>
-          <option :value="300">fast</option>
+        play the run in
+        <select v-model.number="duration">
+          <option :value="60000">60 s</option>
+          <option :value="20000">20 s</option>
+          <option :value="6000">6 s</option>
         </select>
       </label>
       <label class="small check">
@@ -122,8 +149,12 @@ const OUTCOME_LABEL: Record<string, string> = {
         <span class="value mono">{{ changed ?? "none" }}</span>
       </div>
       <div class="stat">
+        <span class="label">restart</span>
+        <span class="value mono">{{ frame.restart }}</span>
+      </div>
+      <div class="stat">
         <span class="label">topology</span>
-        <span class="value mono">{{ frame.topology_id.slice(-4) }}</span>
+        <span class="value mono">{{ frame.topology_name }}</span>
       </div>
     </div>
 
@@ -131,7 +162,7 @@ const OUTCOME_LABEL: Record<string, string> = {
       <div class="panel-title">
         {{ showCandidate ? "Candidate patch" : "Retained patch" }} at evaluation {{ frame.evaluation }}
       </div>
-      <PatchGraph :graph="graph" :values="values" :highlight="changed" />
+      <PatchGraph :graph="graph" :modules="modules" :values="values" :highlight="changed" />
     </div>
 
     <div class="cols">
@@ -144,23 +175,26 @@ const OUTCOME_LABEL: Record<string, string> = {
     </div>
 
     <details class="panel table-view">
-      <summary>Frame table</summary>
+      <summary>
+        Frame table: evaluations {{ windowStart + 1 }} to {{ windowStart + windowRows.length }} of {{ frames.length }}
+      </summary>
       <table>
         <thead>
           <tr>
-            <th>seq</th><th>eval</th><th>outcome</th><th>candidate</th><th>best</th>
+            <th>seq</th><th>eval</th><th>restart</th><th>outcome</th><th>candidate</th><th>best</th>
             <th>log_spectral</th><th>envelope</th><th>transient</th><th>band_energy</th>
           </tr>
         </thead>
         <tbody>
           <tr
-            v-for="(f, i) in frames"
+            v-for="{ f, i } in windowRows"
             :key="f.frame_id"
             :class="{ current: i === index }"
             @click="playing = false; index = i"
           >
             <td class="num">{{ f.sequence }}</td>
             <td class="num">{{ f.evaluation }}</td>
+            <td class="num">{{ f.restart }}</td>
             <td>{{ OUTCOME_LABEL[f.outcome] }}</td>
             <td class="num">{{ f.total_loss ?? "–" }}</td>
             <td class="num">{{ f.best_loss ?? "–" }}</td>
@@ -172,6 +206,8 @@ const OUTCOME_LABEL: Record<string, string> = {
         </tbody>
       </table>
     </details>
+    </template>
+    <p v-else class="panel empty">The trace closed with no evaluations: there is no frame to replay.</p>
   </section>
 </template>
 
@@ -230,7 +266,8 @@ const OUTCOME_LABEL: Record<string, string> = {
 .stat:nth-child(2) { --c: var(--series-candidate); }
 .stat:nth-child(3) { --c: var(--series-best); }
 .stat:nth-child(4) { --c: var(--pb-amber); }
-.stat:nth-child(5) { --c: var(--pb-cyan); }
+.stat:nth-child(5) { --c: var(--pb-purple); }
+.stat:nth-child(6) { --c: var(--pb-cyan); }
 .stat .label {
   font: 600 10px var(--font-mono);
   letter-spacing: 0.12em;

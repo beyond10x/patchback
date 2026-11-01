@@ -1,7 +1,11 @@
 <script setup lang="ts">
+// The loss over a fit run's evaluations. Each series is one SVG path, whatever the number of
+// frames (approval-record:wave-c1 Dc1-26): retained candidates, candidates that did not improve,
+// rejected candidates (a cross on the axis, no loss), the best retained loss, and the topology
+// changes, each split at the cursor into what has been replayed and what is still ahead.
 import { computed, ref } from "vue";
 import type { FrameAppended } from "../generated/types";
-import { decimal } from "../model";
+import { decimal, ticks } from "../model";
 
 const props = defineProps<{ frames: FrameAppended[]; index: number }>();
 const emit = defineEmits<{ seek: [index: number] }>();
@@ -13,8 +17,10 @@ const iw = W - M.l - M.r;
 const ih = H - M.t - M.b;
 
 const yMax = computed(() => {
-  const m = Math.max(...props.frames.map((f) => decimal(f.total_loss) ?? 0));
-  return Math.ceil(m * 10) / 10;
+  // one pass: a spread of every frame overflows the call stack at about 130 000 frames
+  let m = 0;
+  for (const f of props.frames) m = Math.max(m, decimal(f.total_loss) ?? 0);
+  return m > 0 ? Math.ceil(m * 10) / 10 : 1;
 });
 const n = computed(() => props.frames.length);
 const x = (i: number) => M.l + (n.value <= 1 ? 0 : (i / (n.value - 1)) * iw);
@@ -24,6 +30,35 @@ const yTicks = computed(() => {
   const out: number[] = [];
   for (let v = 0; v <= yMax.value + 1e-9; v += step) out.push(Math.round(v * 10) / 10);
   return out;
+});
+const xTicks = computed(() => ticks(n.value, 8));
+
+/** A dot as a zero-length segment, drawn by a round line cap. */
+const dot = (i: number, v: number) => `M ${x(i)} ${y(v)} h 0`;
+const cross = (i: number) =>
+  `M ${x(i) - 4} ${M.t + ih - 10} l 8 8 M ${x(i) + 4} ${M.t + ih - 10} l -8 8`;
+
+interface Series {
+  past: string;
+  ahead: string;
+}
+
+const series = computed(() => {
+  const kept: Series = { past: "", ahead: "" };
+  const tried: Series = { past: "", ahead: "" };
+  const rejected: Series = { past: "", ahead: "" };
+  const topology: Series = { past: "", ahead: "" };
+  props.frames.forEach((f, i) => {
+    const side: keyof Series = i <= props.index ? "past" : "ahead";
+    const total = decimal(f.total_loss);
+    if (f.outcome === "Rejected") rejected[side] += cross(i);
+    else if (total === undefined) return;
+    else if (f.outcome === "NotImproved") tried[side] += dot(i, total);
+    else kept[side] += dot(i, total);
+    if (i > 0 && f.topology_id !== props.frames[i - 1]?.topology_id)
+      topology[side] += `M ${x(i) - 0.5} ${M.t} V ${M.t + ih}`;
+  });
+  return { kept, tried, rejected, topology };
 });
 
 const bestPath = computed(() => {
@@ -35,21 +70,16 @@ const bestPath = computed(() => {
   });
   return d;
 });
-const lastBest = computed(() => {
-  const f = props.frames[props.frames.length - 1];
-  return decimal(f?.best_loss);
-});
-
-const topologyChanges = computed(() =>
-  props.frames.flatMap((f, i) => (i > 0 && f.topology_id !== props.frames[i - 1]?.topology_id ? [i] : [])),
-);
+const lastBest = computed(() => decimal(props.frames[props.frames.length - 1]?.best_loss));
+const current = computed(() => props.frames[props.index]);
+const currentLoss = computed(() => decimal(current.value?.total_loss));
 
 const hover = ref<number | null>(null);
 const svg = ref<SVGSVGElement | null>(null);
 
 function nearest(ev: MouseEvent): number {
   const r = svg.value?.getBoundingClientRect();
-  if (!r) return 0;
+  if (!r || r.width === 0) return 0;
   const px = ((ev.clientX - r.left) / r.width) * W;
   const i = Math.round(((px - M.l) / iw) * (n.value - 1));
   return Math.min(n.value - 1, Math.max(0, i));
@@ -64,7 +94,8 @@ const tipLeft = computed(() => (hover.value === null ? 0 : (x(hover.value) / W) 
     <figcaption>
       <span class="title">Loss over evaluations</span>
       <span class="legend">
-        <span class="key"><svg width="14" height="10"><circle cx="7" cy="5" r="4" class="cand" /></svg>candidate loss</span>
+        <span class="key"><svg width="14" height="10"><path d="M7 5 h 0" class="kept" /></svg>retained candidate</span>
+        <span class="key"><svg width="14" height="10"><path d="M7 5 h 0" class="tried" /></svg>not improved</span>
         <span class="key"><svg width="18" height="10"><path d="M1 5 H17" class="best" /></svg>best retained</span>
         <span class="key"><svg width="14" height="10"><path d="M3 1 L11 9 M11 1 L3 9" class="rej" /></svg>rejected (no loss)</span>
       </span>
@@ -84,50 +115,35 @@ const tipLeft = computed(() => (hover.value === null ? 0 : (x(hover.value) / W) 
         </g>
         <g class="axis">
           <text v-for="t in yTicks" :key="t" :x="M.l - 8" :y="y(t) + 4" text-anchor="end">{{ t.toFixed(1) }}</text>
-          <text
-            v-for="(f, i) in frames"
-            v-show="i % 2 === 0 || i === frames.length - 1"
-            :key="f.frame_id"
-            :x="x(i)"
-            :y="H - 12"
-            text-anchor="middle"
-          >{{ f.evaluation }}</text>
+          <text v-for="i in xTicks" :key="'x' + i" :x="x(i)" :y="H - 12" text-anchor="middle">
+            {{ frames[i]?.evaluation }}
+          </text>
           <text :x="M.l + iw / 2" :y="H" text-anchor="middle" class="axis-title">evaluation</text>
         </g>
-        <line
-          v-for="i in topologyChanges"
-          :key="'t' + i"
-          :x1="x(i) - 6"
-          :x2="x(i) - 6"
-          :y1="M.t"
-          :y2="M.t + ih"
-          class="topo"
-        />
+        <path :d="series.topology.past" class="topo" />
+        <path :d="series.topology.ahead" class="topo future" />
         <line :x1="x(index)" :x2="x(index)" :y1="M.t" :y2="M.t + ih" class="cursor" />
         <path :d="bestPath" class="best" fill="none" />
         <text v-if="lastBest !== undefined" :x="x(n - 1) + 8" :y="y(lastBest) + 4" class="direct">
           best {{ lastBest.toFixed(4) }}
         </text>
-        <g v-for="(f, i) in frames" :key="f.frame_id">
-          <circle
-            v-if="f.total_loss !== undefined"
-            :cx="x(i)"
-            :cy="y(Number(f.total_loss))"
-            :r="i === index ? 6 : 4.5"
-            class="cand"
-            :class="{ hollow: f.outcome === 'NotImproved', future: i > index }"
-          />
-          <path
-            v-else
-            :d="`M ${x(i) - 4} ${M.t + ih - 10} L ${x(i) + 4} ${M.t + ih - 2} M ${x(i) + 4} ${M.t + ih - 10} L ${x(i) - 4} ${M.t + ih - 2}`"
-            class="rej"
-            :class="{ future: i > index }"
-          />
-        </g>
+        <path :d="series.tried.ahead" class="tried future" />
+        <path :d="series.kept.ahead" class="kept future" />
+        <path :d="series.rejected.ahead" class="rej future" />
+        <path :d="series.tried.past" class="tried" />
+        <path :d="series.kept.past" class="kept" />
+        <path :d="series.rejected.past" class="rej" />
+        <circle
+          :cx="x(index)"
+          :cy="y(currentLoss ?? 0)"
+          r="6"
+          class="now"
+          :visibility="currentLoss === undefined ? 'hidden' : 'visible'"
+        />
         <line v-if="hover !== null" :x1="x(hover)" :x2="x(hover)" :y1="M.t" :y2="M.t + ih" class="crosshair" />
       </svg>
       <div v-if="hovered" class="tooltip" :class="{ flip: tipLeft > 60 }" :style="{ left: tipLeft + '%', top: '8px' }">
-        <div class="strong">evaluation {{ hovered.evaluation }} · {{ hovered.outcome }}</div>
+        <div class="strong">evaluation {{ hovered.evaluation }} · restart {{ hovered.restart }} · {{ hovered.outcome }}</div>
         <div>candidate {{ hovered.total_loss ?? "none (rejected)" }}</div>
         <div>best {{ hovered.best_loss ?? "none" }}</div>
         <template v-if="hovered.components">
@@ -137,6 +153,7 @@ const tipLeft = computed(() => (hover.value === null ? 0 : (x(hover.value) / W) 
     </div>
   </figure>
 </template>
+
 
 <style scoped>
 .chart {
@@ -189,15 +206,23 @@ figcaption {
 .axis-title {
   fill: var(--text-muted);
 }
-.cand {
-  fill: var(--series-candidate);
-  stroke: var(--surface-1);
-  stroke-width: 2;
-  transition: r 200ms ease;
+.kept,
+.tried {
+  fill: none;
+  stroke-linecap: round;
 }
-.cand.hollow {
-  fill: var(--surface-1);
+.kept {
   stroke: var(--series-candidate);
+  stroke-width: 7;
+}
+.tried {
+  stroke: color-mix(in srgb, var(--series-candidate) 45%, transparent);
+  stroke-width: 5;
+}
+.now {
+  fill: none;
+  stroke: var(--pb-amber);
+  stroke-width: 2;
 }
 .future {
   opacity: 0.25;

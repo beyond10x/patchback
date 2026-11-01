@@ -10,6 +10,7 @@ vars:
     --root patchback.studio.FrameAppended
     --root patchback.studio.TraceClosedEvent
     --root patchback.studio.ResultComposed
+  STUDIO_SAMPLE_RENDERS: "400"
 
 tasks:
   spec-validate:
@@ -138,6 +139,48 @@ tasks:
     cmds:
       - pnpm --dir studio build
 
+  studio-test:
+    deps: [studio-install]
+    cmds:
+      - pnpm --dir studio test
+
+  studio-sample:
+    internal: true
+    requires:
+      vars: [OUT]
+    cmds:
+      - cargo build --locked -p patchback-cli -p patchback-studio
+      - mkdir "{{.OUT}}/run"
+      - target/debug/patchback render --patch demos/pluck/voice.patch --notes demos/pluck/note.events --out "{{.OUT}}/reference.wav"
+      - target/debug/patchback fit --input "{{.OUT}}/reference.wav" --notes demos/pluck/note.events --out "{{.OUT}}/run" --max-renders {{.STUDIO_SAMPLE_RENDERS}} --max-wall-time-ms 3600000
+      - target/debug/patchback-studio export --run "{{.OUT}}/run" --out "{{.OUT}}/sample-run.json"
+
+  studio-fixtures:
+    vars:
+      WORK:
+        sh: mktemp -d "$HOME/.cache/patchback-studio-fixtures.XXXXXX"
+    cmds:
+      - defer: rm -rf "{{.WORK}}"
+      - task: studio-sample
+        vars: { OUT: "{{.WORK}}" }
+      - cp "{{.WORK}}/sample-run.json" studio/fixtures/sample-run.json
+      - PATCHBACK_STUDIO_BLESS=1 cargo test --locked -p patchback-studio --test fit_replay the_rejected_frame_fixture_is_the_export_of_the_replayed_lines
+
+  studio-fixtures-check:
+    vars:
+      WORK:
+        sh: mktemp -d "$HOME/.cache/patchback-studio-fixtures.XXXXXX"
+    cmds:
+      - defer: rm -rf "{{.WORK}}"
+      - task: studio-sample
+        vars: { OUT: "{{.WORK}}" }
+      - cmd: |
+          if ! cmp -s "{{.WORK}}/sample-run.json" studio/fixtures/sample-run.json; then
+            echo "studio-fixtures-check: studio/fixtures/sample-run.json is not the export of a fresh fit of demos/pluck; run task studio-fixtures" >&2
+            exit 1
+          fi
+      - cargo test --locked -p patchback-studio --test fit_replay the_rejected_frame_fixture_is_the_export_of_the_replayed_lines
+
   check:
     cmds:
       - task: spec-validate
@@ -147,3 +190,7 @@ tasks:
       - task: docs-check
       - task: dependency-audit
       - task: rust-test
+      - task: studio-types-check
+      - task: studio-fixtures-check
+      - task: studio-test
+      - task: studio-build

@@ -29,6 +29,31 @@ jobs:
         with:
           toolchain: stable
 
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: "22"
+
+      - name: Install pnpm
+        env:
+          COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+          COREPACK_DEFAULT_TO_LATEST: "0"
+        run: |
+          set -euo pipefail
+          SPEC=$(sed -n 's/^  "packageManager": "\(pnpm@[0-9.]*+sha512\.[0-9a-f]\{128\}\)",$/\1/p' studio/package.json)
+          if [ -z "$SPEC" ]; then
+            echo "studio/package.json packageManager is not pnpm@<version>+sha512.<hex>" >&2
+            exit 1
+          fi
+          PINNED=${SPEC#pnpm@}
+          PINNED=${PINNED%%+*}
+          corepack enable pnpm
+          corepack prepare --activate "$SPEC"
+          REPORTED=$(pnpm --version)
+          if [ "$REPORTED" != "$PINNED" ]; then
+            echo "pnpm reports '$REPORTED'; studio/package.json pins $PINNED" >&2
+            exit 1
+          fi
+
       - name: Install go-task
         env:
           TASK_VERSION: "3.52.0"

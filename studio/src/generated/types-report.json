@@ -1,12 +1,12 @@
 {
   "format": "ess-types-report/3",
-  "source_digest": "dfed68c2b32d82d33aace116ff4c1b275e7bafd1959ccbb6011eb10a8efadb0a",
+  "source_digest": "be5e67b66c286afc07a12d4e42b1d3ab0db1a056fd72603858ef31af1e812ba9",
   "input": {
     "kind": "model",
     "system": "patchback",
     "specification_version": "v1",
-    "contract_digest": "slice-sha256/2:bb2354e9aa24d23c2cfeef824b220609c2cac273710372efd73a85117506893d",
-    "projection_digest": "cb064bc9ecf151095bc199d65d393e8ba451975a831263659467984161ccc11f"
+    "contract_digest": "slice-sha256/2:8ee29f2b121e2d9df3dac9edd8d25a7c14cca5c3e6cb7ed0fb80ba632fff8855",
+    "projection_digest": "172b8069ef73fb28b8c0a44f3b5a89f4ee078dd40782af09ab32234d05f82013"
   },
   "generator_version": "0.80.0",
   "target": "typescript",
@@ -26,6 +26,7 @@
     "patchback.audio.RenderId": "RenderId",
     "patchback.fit.FitRunId": "FitRunId",
     "patchback.fit.LossComponents": "LossComponents",
+    "patchback.fit.StopReason": "StopReason",
     "patchback.patch.ClampPolicy": "ClampPolicy",
     "patchback.patch.ModuleFamily": "ModuleFamily",
     "patchback.patch.NodeKind": "NodeKind",
@@ -37,6 +38,7 @@
     "patchback.patch.PortName": "PortName",
     "patchback.patch.PortRate": "PortRate",
     "patchback.patch.TopologyId": "TopologyId",
+    "patchback.patch.TopologyName": "TopologyName",
     "patchback.studio.CatalogueId": "CatalogueId",
     "patchback.studio.CataloguePublished": "CataloguePublished",
     "patchback.studio.FrameAppended": "FrameAppended",
@@ -158,6 +160,21 @@
     },
     {
       "pointer": "/$defs/patchback.fit.LossComponents/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.fit.StopReason/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.fit.StopReason/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.fit.StopReason/x-ess-name",
       "rule": "x-ess-name",
       "detail": "model identity and wire mapping retained in source.schema.json"
     },
@@ -388,6 +405,26 @@
     },
     {
       "pointer": "/$defs/patchback.patch.TopologyId/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.TopologyName/description",
+      "rule": "description",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.TopologyName/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.TopologyName/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/patchback.patch.TopologyName/x-ess-name",
       "rule": "x-ess-name",
       "detail": "model identity and wire mapping retained in source.schema.json"
     },
@@ -929,6 +966,11 @@
       "detail": "validate this constraint against the source schema at runtime"
     },
     {
+      "pointer": "/$defs/patchback.patch.TopologyName",
+      "rule": "typescript_nominal_identity",
+      "detail": "structural TypeScript aliases do not enforce distinct model newtype identities"
+    },
+    {
       "pointer": "/$defs/patchback.studio.CatalogueId",
       "rule": "typescript_nominal_identity",
       "detail": "structural TypeScript aliases do not enforce distinct model newtype identities"
@@ -960,6 +1002,16 @@
     },
     {
       "pointer": "/$defs/patchback.studio.FrameAppended/properties/evaluation",
+      "rule": "json_number_precision",
+      "detail": "TypeScript number cannot retain arbitrary JSON numeric precision; validate representability before decoding"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.FrameAppended/properties/restart",
+      "rule": "integer",
+      "detail": "TypeScript number does not enforce integrality"
+    },
+    {
+      "pointer": "/$defs/patchback.studio.FrameAppended/properties/restart",
       "rule": "json_number_precision",
       "detail": "TypeScript number cannot retain arbitrary JSON numeric precision; validate representability before decoding"
     },
