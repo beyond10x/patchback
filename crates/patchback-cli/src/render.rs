@@ -162,7 +162,7 @@ pub fn run(
         .map_err(|error| sequence_not_found(notes, &error))
         .and_then(|sequence| {
             crate::estimate::bind(&sequence, notes, estimation)
-                .map(|()| sequence)
+                .map(|_| sequence)
                 .map_err(|message| Refusal::domain("patchback.audio.NoteSequenceNotFound", message))
         });
 

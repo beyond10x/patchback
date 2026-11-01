@@ -9,33 +9,42 @@
 //! other than 48 kHz, more than [`crate::MAX_DURATION_FRAMES`] samples, a non-finite sample, a
 //! clip below [`crate::SILENCE_THRESHOLD_DBFS`]), in that order, and then:
 //!
-//! 1. **Sounding regions.** A run of at least [`QUIET_RUN_FRAMES`] samples no louder than
-//!    [`QUIET_AMPLITUDE`] is silence; each stretch between silences is a sounding region, and its
-//!    first sample is an onset *from silence*.
+//! 1. **Sounding regions.** A run of at least [`QUIET_RUN_FRAMES`] quiet samples is silence; each
+//!    stretch between silences is a sounding region, and its first sample is an onset *from
+//!    silence*. A sample is quiet when no louder than [`QUIET_AMPLITUDE`] or, over a noise floor,
+//!    [`NOISE_FLOOR_FACTOR`] times the floor's RMS when that is louder. The floor is the median
+//!    RMS of the windows of [`NOISE_FLOOR_WINDOW_FRAMES`] samples, each above zero and below
+//!    [`crate::SILENCE_THRESHOLD_DBFS`], that lie in runs of at least [`NOISE_FLOOR_MIN_FRAMES`]
+//!    samples, or half that for the run the clip starts with (no release reaches back there).
 //! 2. **Onset candidates.** Within a region, the normalized spectral flux
 //!    `sum max(0, |X_k| - |X_{k-1}|) / sum |X_k|` of Hann-windowed frames of
 //!    [`NOVELTY_FFT_LENGTH`] samples centred every [`NOVELTY_HOP_FRAMES`] samples, over the bins
 //!    below [`NOVELTY_MAX_HZ`], is the novelty. A frame whose novelty is at least
 //!    [`NOVELTY_THRESHOLD`] and the largest within [`NOVELTY_PEAK_HALF_WIDTH`] frames either side
 //!    is a candidate, unless it lies within [`REGION_ONSET_GUARD_FRAMES`] of the region's start.
+//!    The hidden onsets of step 6 are candidates too.
 //! 3. **Candidates kept.** The stretch between two neighbouring onsets, [`COARSE_MARGIN_FRAMES`]
 //!    in from each candidate, has its pitch estimated as a note's is (step 5). A candidate is an onset
 //!    *by pitch* when both sides have a pitch and they differ by [`PITCH_CHANGE_CENTS`] or more,
 //!    or when one side's pitch is ambiguous (not too short to measure) and the other's period
 //!    predicts it no better than
-//!    [`PERIOD_MISMATCH`] (the power of `x[n] - x[n - P]` over that of `x[n]`),
-//!    and an onset *by level* when the level, the RMS over whole periods, rises by
-//!    [`LEVEL_RISE_DB`] or more across it; otherwise it is dropped and the two stretches are one.
-//!    This repeats until no candidate is dropped.
+//!    [`PERIOD_MISMATCH`] (the power of `x[n] - x[n - P]` over that of `x[n]`); an onset *by
+//!    step* when a hidden step of step 6 lies near it and the level falls across it by [`STEP_DB`]
+//!    or more; and an onset *by level* when the level, the RMS over whole periods, rises by
+//!    [`LEVEL_RISE_DB`] or more across it ([`REBOUND_RISE_DB`] near a hidden rebound); otherwise
+//!    the weakest is dropped and the two stretches are one. This repeats until none is dropped.
 //! 4. **Onsets refined.** An onset from silence is the region's first sample. An onset by pitch
 //!    is the change point `t` that minimizes the periodic prediction error
 //!    `C(t) = (sum_{t-W <= n < t} (x[n] - x[n - P1])^2 + sum_{t <= n < t+W} (x[n] - x[n + P2])^2)
 //!    / sum_{t-W <= n < t+W} x[n]^2`, `P1` and `P2` the periods before and after,
 //!    `W` [`CHANGE_POINT_WINDOW_FRAMES`], fractional delays read by linear interpolation, searched
-//!    [`ONSET_SEARCH_FRAMES`] either side of the candidate. An onset by level is the vertex of the
-//!    dip in the level (the RMS over whole periods, at least [`LEVEL_WINDOW_MIN_FRAMES`] long):
-//!    the minimum, moved towards the steeper side by half the window times
-//!    `(b - a) / (a + b)`, `a` and `b` the level's slopes before and after it.
+//!    [`ONSET_SEARCH_FRAMES`] either side of the candidate; when the cost is flat towards one end
+//!    (one period predicts both notes), the other prediction's error alone. An onset by level is
+//!    the knee where the level (at least [`LEVEL_WINDOW_MIN_FRAMES`] long, sampled every
+//!    [`KNEE_STEP_FRAMES`] samples) starts to rise, read from a fit of three lines (before,
+//!    rising, after); a rise no longer than [`KNEE_SHORT_RISE`] level kernels is moved
+//!    [`KNEE_SHIFT`] of the kernel later. An onset by step is where the level falls most across a
+//!    sample within [`STEP_REACH_FRAMES`] of the candidate.
 //! 5. **Notes.** Each onset starts a note, which ends at the next onset or at the region's end.
 //!    Its pitch is [`estimate_f0`] of the note's samples. Where that refuses it as ambiguous
 //!    (an octave the subharmonic test leaves undecided, as for a driven saw), the spans of
@@ -50,47 +59,113 @@
 //!    note, through its release into the quiet after the region (at most [`TAIL_WINDOW_FRAMES`]
 //!    past its end, never into the next region), is fitted by one to three straight lines (least
 //!    squares, each extra line costing [`SEGMENT_PENALTY`] times the squared peak level whatever
-//!    the note's length, a line at least [`MIN_SEGMENT_POINTS`] points long). A last line that
-//!    falls by at least [`DESCENT_MIN_FRACTION`] of the peak level is the release, and the gate
-//!    ends where it meets the line before it. A last line of a note cut by the next onset that
-//!    rises by [`DESCENT_MIN_FRACTION`] of the peak level after a falling one is that onset's
+//!    the note's length, a line at least [`MIN_SEGMENT_POINTS`] points long). When the first line
+//!    after the highest point rises, the note's own attack from the level the note before it left,
+//!    the peak is that line's top. A last line that falls by at least [`DESCENT_MIN_FRACTION`] of
+//!    the peak level is the release, and the gate ends where it meets the line before it. A last
+//!    line of a note cut by the next onset that rises by [`REBOUND_FRACTION`] of the peak level
+//!    within two level windows after a line falling by [`DESCENT_MIN_FRACTION`] is that onset's
 //!    attack read early and is dropped. A note cut by the next onset whose last line does not
-//!    fall held its gate to that onset. A note whose only falling line starts at its peak is
-//!    ambiguous: cut by the next onset, a decay cut by a legato note or a release from the peak,
-//!    and its gate is taken to end at that onset; ending its region, a release from the peak or a
-//!    decay running into a release of the same slope, and its gate is taken to end at the peak.
+//!    fall held its gate to that onset. A note whose only falling line starts at its peak, or
+//!    whose falling line follows a rise, is ambiguous: cut by the next onset, a decay cut by a
+//!    legato note or a release from the peak, and its gate is taken to end at that onset; ending
+//!    its region, a release from the peak or a decay running into a release of the same slope,
+//!    and its gate is taken to end at the knee.
+//!
+//!    The level also tells of onsets the novelty missed (*hidden* onsets, candidates of a second
+//!    pass of steps 2 to 8): a rise of at least [`REBOUND_FRACTION`] of the peak above the lowest
+//!    level since the highest point (before the peak, after a fall of [`DESCENT_MIN_FRACTION`]),
+//!    a *rebound*; and two lines of the body, decay and sustain, that do not meet within a
+//!    window of their knee by [`STEP_FRACTION`] of the peak, a *step* (a line too short to clear
+//!    the gate's slack is read from the points clear of its knees, if they span a window).
 //! 7. **Tail end.** The first sample from the gate end at which the RMS of the
 //!    [`TAIL_WINDOW_FRAMES`] samples centred on it falls below the silence threshold, or the next
 //!    note's onset when that comes first, or the clip's end.
 //! 8. **Velocity** (Dc1-2). The note's peak level over its gate relative to the loudest note's,
 //!    linear, the loudest note 1: the inverse of the renderer's linear velocity scaling.
+//! 9. **Polyphony** (Dc1-3), below.
 //!
 //! # Confidence (Dc1-1, DESIGN.md § 10)
+//!
+//! A confidence falls wherever another explanation of the same level or waveform competes.
 //!
 //! - **Onset.** From silence: the rise of the RMS from the [`ONSET_CONTRAST_FRAMES`] samples
 //!   before the onset to as many after it, in dB, over [`ONSET_CONTRAST_FULL_DB`], clamped to
 //!   `[0, 1]`; 0 for a region that starts at the clip's first sample (the note may have begun
-//!   before the clip). By pitch: the prominence of the change point,
-//!   `1 - C(t) / min(C(t - 256), C(t + 256))`, clamped: 1 when moving the onset by the tolerance
-//!   of 256 samples clearly worsens the prediction, 0 when it does not. By level: the level's rise
-//!   in dB over [`LEVEL_RISE_FULL_DB`], clamped.
+//!   before the clip). By pitch or by level, the onset's localisation (Dc1-15, Dc1-18): the
+//!   half-width `h` of its interval gives `1 - (h / 256)^p`, clamped, `p` [`LOCALISATION_POWER`],
+//!   so 0 once the interval reaches the tolerance of 256 samples; and no more than the
+//!   prominence of the best position of the onset's cost, one minus its cost over the least cost
+//!   of a position more than the tolerance away. The interval is never narrower than the grid the
+//!   evidence was read on: one sample by pitch, [`KNEE_STEP_FRAMES`] by level. By pitch the cost
+//!   is the periodic prediction error `C(t)` over the change point's span, and its interval every
+//!   split whose cost lies within [`LOCALISATION_CHI2`] noise variances of the least, the
+//!   variance the least cost over the residual's independent observations: the residual's length
+//!   at the best split over `1 + 2 Σ ρ_k`, `ρ_k` its autocorrelation at lag `k`, summed while
+//!   positive. `C(t)` steps at the waveform's edges, a period apart, so inside that interval the
+//!   onset is refined on the sample grid (`refine`) from the residuals of the old note's
+//!   continuation `x[n - T_old]` and the new note's backward continuation `x[n + T_new]`, each
+//!   read as its median over [`REFINE_WINDOW_FRAMES`] samples: the onset is where the new
+//!   prediction's residual stops being above the old one's for good (the last crossing when the
+//!   old period is the longer, the first crossing that holds for a window otherwise, because the
+//!   shorter lag also continues the smoother note of the longer period), and its interval spans
+//!   the first and the last crossing. A prediction that does not tell the notes apart (its
+//!   residual on the other note alone less than [`LOCALISATION_CHI2`] times that on its own
+//!   note) leaves the onset unrefined, with the cost's interval. The same residuals read over a
+//!   period either side of the cost's onset place it as well: the interval holds that placement,
+//!   and where the refinement failed every crossing of that wider search too. Where one period
+//!   predicts both notes, the cost is the one-sided error ratio and its interval is read the
+//!   same way, unrefined (one independent observation a period of the longer period). Where the
+//!   RMS rises by
+//!   [`TAIL_FULL_DB`] or more across the change point (the old note faded almost to silence and
+//!   predicts nothing), no more than the level onset's confidence when that lies more than the
+//!   tolerance away. By level the cost is the error of the three-line fit for each knee, its
+//!   interval every knee whose cost lies within [`LOCALISATION_CHI2`] noise variances of the least
+//!   (one independent observation a level window), and it also holds the best knee when the onset is moved off it (a short attack) and the
+//!   first point where the level falls below the line before the knee by more than the noise (a
+//!   note that began with a lower velocity); no more than the rise in dB
+//!   over [`LEVEL_RISE_FULL_DB`], than [`KNEE_ATTACK_FULL_FRAMES`] over the attack's length beyond
+//!   the level kernel, or than how little the level dips below its two lines at the knee. By step:
+//!   the fall in dB over [`LEVEL_RISE_FULL_DB`], less the rise of the level out of the fall (a
+//!   release into the next note's attack), and at most [`AMBIGUOUS_GATE_CONFIDENCE`] when the
+//!   fall lies more than a level window from the step the body's lines placed (a decay's fall).
 //! - **Pitch.** `1 - d'` of [`estimate_f0`] (its confidence), 0 when it refuses for length or
-//!   range.
+//!   range; no more than `1 - (m - F) / F`, clamped, `F` [`FOREIGN_MISMATCH`] and `m` the largest
+//!   period mismatch of the gate's windows of [`PITCH_COVER_FRAMES`] samples (at least two
+//!   periods, at least a tenth of the loudest window's RMS): a stretch the note's period does not
+//!   predict is another note in it. The same bound holds the gate and the tail.
 //! - **Gate.** The visibility of the knee where the release begins: the change of slope between
-//!   the release line and the line before it, `|s2 - s1| / max(|s1|, |s2|)`, clamped. For a gate
-//!   held to the next onset, how steady the level stays to the end: 1 minus the larger of the
+//!   the release line and the line before it, `|s2 - s1| / max(|s1|, |s2|)`; no more than its
+//!   sharpness, the change of slope over [`GATE_SLACK_FRAMES`] samples over
+//!   [`KNEE_SHARP_FULL_FRACTION`] of the peak level, nor than the release's straightness (1 minus
+//!   the largest deviation of the release from its line, beyond a window of the knee and the
+//!   slack of the end, over [`REBOUND_FRACTION`] of the peak, scaled by how nearly the points of
+//!   the window after that reach hold the slope of the line before the knee: a release that
+//!   already falls as steeply as its line there bends by the drive's curve, not at a later
+//!   knee), all clamped. For a note cut by
+//!   the next onset, at most [`AMBIGUOUS_GATE_CONFIDENCE`] when the release line falls less
+//!   steeply than the line before it (a decay still running at the onset), or when a short last
+//!   line follows a line falling from a flatter one (a release begun at the earlier knee and the
+//!   next note's attack falling to a lower velocity). For a gate held to the next onset, how
+//!   steady the level stays to the end: 1 minus the larger of the
 //!   last line's fall over its span and the mean drop of its last [`MIN_SEGMENT_POINTS`] points
 //!   below it, over [`HOLD_DROP_FULL_FRACTION`] of the peak level, clamped (a slow release, or one
 //!   begun just before the onset, bends the level down), and
 //!   never more than that onset's confidence (a level held to a spurious or misplaced onset is
-//!   not a gate end). [`AMBIGUOUS_GATE_CONFIDENCE`] for the ambiguous cases of step 6 (for one
-//!   cut by the next onset, at most that onset's confidence); 0 for a note too short to fit or
-//!   whose level never falls.
+//!   not a gate end). [`AMBIGUOUS_GATE_CONFIDENCE`] for the ambiguous cases of step 6; 0 for a
+//!   note too short to fit or whose level never falls. No more than `1 - u / REBOUND_FRACTION`,
+//!   clamped, `u` the largest rebound of the level (before the peak, after any fall of
+//!   [`REBOUND_FRACTION`]), step or residual of the body's two lines, over the peak: an onset the
+//!   note does not know of.
 //! - **Tail.** At a crossing of the silence threshold: how far the level stands above the
 //!   threshold [`TAIL_CONTEXT_FRAMES`] samples before it, in dB, over [`TAIL_FULL_DB`], clamped
 //!   (a release that falls steeply through the threshold is certain, one that hovers about it is
-//!   not). A tail cut by the next onset inherits that onset's confidence; a tail that reaches the
-//!   clip's end without falling below the threshold has confidence 0.
+//!   not). A tail cut by the next onset inherits that onset's confidence; one cut by the next
+//!   region is 1; a tail that reaches the clip's end without falling below the threshold has
+//!   confidence 0. No more than `1 - b / REBOUND_FRACTION`, clamped, `b` how far the level from
+//!   the gate end to the tail strays from one falling line over the level at the gate end (and,
+//!   for a cut tail, how far that line misses the line before the gate): a level that bends or
+//!   stays on the way is another note. The gate's rebound bound holds the tail too.
 //!
 //! The estimation is refused as [`EstimationError::LowConfidenceNotes`] when any note has any
 //! confidence below its quantity's threshold ([`ONSET_CONFIDENCE_THRESHOLD`],
@@ -99,16 +174,25 @@
 //!
 //! # Polyphony (Dc1-3)
 //!
-//! Every note with at least [`POLYPHONY_MIN_FFT_LENGTH`] samples of gate is checked on one
-//! Blackman-windowed spectrum of the largest power of two up to [`POLYPHONY_MAX_FFT_LENGTH`]
-//! samples that fits its gate after its attack. Its peaks below [`POLYPHONY_MAX_HZ`] within
-//! [`POLYPHONY_PEAK_FLOOR_DB`] of the largest are found. The input is polyphonic when the lowest
-//! peak is not the note's fundamental (more than [`POLYPHONY_HARMONIC_TOLERANCE`] of a harmonic
-//! away from `f0_hz`), as for two tones whose common period lies below both, or when the peaks
-//! that are not near a whole multiple of the fundamental hold more than
-//! [`POLYPHONY_INHARMONIC_SHARE`] of the peaks' power, as for two tones a minor second, a major
-//! third, a tritone or a fifth apart. A note whose pitch is unknown takes its lowest peak as its
-//! fundamental for the second test. One polyphonic note refuses the clip as
+//! The notes of a region are checked in *pitch spans*: runs of neighbouring notes that share a
+//! MIDI number or have none, which may be one sustained tone the onsets cut. A span with at
+//! least [`POLYPHONY_MIN_FFT_LENGTH`] samples of gate is read on Blackman-windowed spectra of the
+//! largest power of two up to [`POLYPHONY_MAX_FFT_LENGTH`] samples that fits it after its attack.
+//! A span whose two halves' spectra have a cosine similarity below [`POLYPHONY_STATIONARY`]
+//! changes tone and is read note by note instead. Its peaks below [`POLYPHONY_MAX_HZ`] within
+//! [`POLYPHONY_PEAK_FLOOR_DB`] of the largest are found; without a pitch, only a spectrum whose
+//! largest peak stands [`POLYPHONY_TONAL_DB`] above the median is read (noise has peaks that are
+//! no harmonics). A pair of inharmonic peaks mirrored within [`POLYPHONY_SIDEBAND_BINS`] bins
+//! about a harmonic at least 6 dB stronger is a modulation of one tone and is dropped. A peak is
+//! a harmonic when within [`POLYPHONY_HARMONIC_TOLERANCE`] of the fundamental, or
+//! [`POLYPHONY_LOBE_BINS`] bins when that is wider, of a whole multiple of it. The lowest peak
+//! within [`POLYPHONY_LOWEST_FLOOR_DB`] of the largest that is not the fundamental marks two
+//! tones (or a change of tone) when the peaks that are no harmonics of it hold more than
+//! [`POLYPHONY_INHARMONIC_SHARE`] of the peaks' power; otherwise the input is polyphonic when the
+//! peaks that are no harmonics of the fundamental hold more than that share, as for two tones a
+//! minor second, a major third, a tritone or a fifth apart, unless the two halves have clear
+//! pitches [`PITCH_CHANGE_CENTS`] apart (a change of tone). A note whose pitch is unknown takes
+//! its lowest peak as its fundamental. One polyphonic span refuses the clip as
 //! [`EstimationError::PolyphonicInput`], before low confidence is considered.
 //!
 //! Two tones an octave apart are not detected: every partial of the upper tone is a harmonic of
@@ -130,6 +214,18 @@ pub const QUIET_AMPLITUDE: f64 = 1e-4;
 
 /// A run of this many quiet samples is silence between sounding regions. Provisional.
 pub const QUIET_RUN_FRAMES: usize = 64;
+
+/// The noise floor is measured over windows of this many samples. Provisional.
+pub const NOISE_FLOOR_WINDOW_FRAMES: usize = 1_024;
+
+/// A run of windows at least this many samples long, each with an RMS above zero and below
+/// [`crate::SILENCE_THRESHOLD_DBFS`], is a noise floor; a release falls through that range in far
+/// less. Half of it for the run the clip starts with, which no release reaches. Provisional.
+pub const NOISE_FLOOR_MIN_FRAMES: usize = 4_096;
+
+/// Over a noise floor, a sample is quiet when no louder than this many times the floor's RMS
+/// (or [`QUIET_AMPLITUDE`], if that is louder). Provisional: 12 dB.
+pub const NOISE_FLOOR_FACTOR: f64 = 4.0;
 
 /// The FFT length of the novelty frames. Provisional.
 pub const NOVELTY_FFT_LENGTH: usize = 2_048;
@@ -166,14 +262,86 @@ pub const PERIOD_MISMATCH: f64 = 0.5;
 /// samples, every half span. Provisional.
 pub const PITCH_SPAN_FRAMES: usize = 4_096;
 
+/// The window over which a note's pitch is checked against every part of its gate (step 5).
+/// Provisional.
+pub const PITCH_COVER_FRAMES: usize = 1_024;
+
+/// The [`period_mismatch`] of a window of the gate above which a note's pitch is contested: at
+/// this its confidences start to fall, at twice it they are 0 (step 5). Provisional.
+pub const FOREIGN_MISMATCH: f64 = 1.0;
+
 /// A rise of the level by at least this many dB across a candidate starts a note. Provisional.
 pub const LEVEL_RISE_DB: f64 = 1.0;
 
 /// An onset by level whose level rises by this many dB has onset confidence 1. Provisional.
-pub const LEVEL_RISE_FULL_DB: f64 = 3.0;
+pub const LEVEL_RISE_FULL_DB: f64 = 6.0;
+
+/// The rise in dB that confirms an onset candidate at a rebound of the level inside a note (step 6).
+pub const REBOUND_RISE_DB: f64 = 0.25;
+
+/// How far before an estimated gate end the release may already have begun: the body test of
+/// step 6 ignores it.
+pub const GATE_SLACK_FRAMES: f64 = 1_024.0;
+
+/// A knee between two lines is located within [`GATE_SLACK_FRAMES`] only as far as moving it that
+/// far changes the level: a change of slope that moves the level by this share of the peak over
+/// that span gives full confidence, a smaller one proportionally less. Provisional.
+pub const KNEE_SHARP_FULL_FRACTION: f64 = 0.04;
+
+/// The gap, as a fraction of the peak level, between a body's two lines at their knee that
+/// marks a step of the level (step 6).
+pub const STEP_FRACTION: f64 = 0.02;
+
+/// The fall in dB across a step that confirms it as an onset (step 3).
+pub const STEP_DB: f64 = 0.3;
+
+/// How far from a step candidate its sample is searched (step 4).
+pub const STEP_REACH_FRAMES: usize = 1_024;
+
+/// The share of the level kernel's width a short rise's knee is moved later (step 4).
+pub const KNEE_SHIFT: f64 = 0.25;
+
+/// The attack length, beyond the level kernel, up to which a level knee can be fully confident;
+/// a longer attack scales its confidence down (step 4).
+pub const KNEE_ATTACK_FULL_FRAMES: f64 = 384.0;
 
 /// The level window is a whole number of periods at least this long. Provisional.
 pub const LEVEL_WINDOW_MIN_FRAMES: usize = 256;
+
+/// The level is averaged over this many shifts of its window across one period ([`Signal::level`]).
+pub const LEVEL_PHASES: usize = 8;
+
+/// The spacing of the level's points in the knee fit of an onset by level, in samples.
+/// Provisional.
+pub const KNEE_STEP_FRAMES: usize = 16;
+
+/// The knee fit of an onset by level reads the level this many samples past its search range, so
+/// a slow attack and the decay after it are inside the fit. Provisional.
+pub const KNEE_REACH_FRAMES: usize = 3_072;
+
+/// A rise no longer than this many level windows is an attack shorter than the window
+/// ([`level_onset`]). Provisional.
+pub const KNEE_SHORT_RISE: f64 = 1.25;
+
+/// The onset tolerance of Dc1-9 in samples: an onset whose localisation interval reaches this
+/// half-width has confidence 0 (Dc1-15).
+pub const ONSET_TOLERANCE_FRAMES: usize = 256;
+
+/// The localisation margin of an onset (Dc1-15), in units of the cost's noise per independent
+/// observation: the 95 % point of the chi-squared distribution with one degree of freedom. A
+/// position whose cost lies within this many noise variances of the least cost is as likely an
+/// onset as the best one. Provisional.
+pub const LOCALISATION_CHI2: f64 = 3.84;
+
+/// The onset confidence of a localisation interval of half-width `h` samples is
+/// `1 - (h / ONSET_TOLERANCE_FRAMES)^LOCALISATION_POWER`, clamped (Dc1-15): 0 once the interval
+/// reaches the tolerance. Provisional.
+pub const LOCALISATION_POWER: f64 = 8.0;
+
+/// The window over which a pitch-change onset's prediction residuals are read on the sample grid
+/// (Dc1-18), in samples: their median, so a waveform edge of a few samples does not decide.
+/// Provisional.
+pub const REFINE_WINDOW_FRAMES: usize = 64;
 
 /// The window either side of a change point, in samples. Provisional.
 pub const CHANGE_POINT_WINDOW_FRAMES: usize = 1_024;
@@ -211,7 +379,12 @@ pub const AMBIGUOUS_GATE_CONFIDENCE: f64 = 0.3;
 
 /// A gate held to the next onset whose last points have fallen this share of the peak level
 /// below its last line has confidence 0 (a release begun just before the onset). Provisional.
-pub const HOLD_DROP_FULL_FRACTION: f64 = 0.02;
+pub const HOLD_DROP_FULL_FRACTION: f64 = 0.005;
+
+/// A level that rises by this share of its peak after the peak holds an onset the note does not
+/// know of (step 6): a candidate, and the note's gate and tail confidences fall to 0 as the rise
+/// reaches it. Provisional.
+pub const REBOUND_FRACTION: f64 = 0.01;
 
 /// The tail end is read from the RMS of this many samples centred on each sample. Provisional.
 pub const TAIL_WINDOW_FRAMES: usize = 1_024;
@@ -227,7 +400,7 @@ pub const TAIL_FULL_DB: f64 = 12.0;
 pub const POLYPHONY_MIN_FFT_LENGTH: usize = 2_048;
 
 /// The largest polyphony spectrum. Provisional.
-pub const POLYPHONY_MAX_FFT_LENGTH: usize = 8_192;
+pub const POLYPHONY_MAX_FFT_LENGTH: usize = 16_384;
 
 /// The polyphony check reads the peaks below this frequency, in Hz. Provisional.
 pub const POLYPHONY_MAX_HZ: f64 = 5_000.0;
@@ -240,9 +413,28 @@ pub const POLYPHONY_PEAK_FLOOR_DB: f64 = -30.0;
 /// A peak within this share of a harmonic of the fundamental is that harmonic. Provisional.
 pub const POLYPHONY_HARMONIC_TOLERANCE: f64 = 0.1;
 
+/// A run of notes without a pitch is checked only when its largest peak stands this many dB
+/// above the median of its spectrum: a tone, not noise. Provisional.
+pub const POLYPHONY_TONAL_DB: f64 = 30.0;
+
+/// A peak within this many bins of a harmonic is that harmonic, however near the fundamental
+/// allows: the half-width of the Blackman window's main lobe. Provisional.
+pub const POLYPHONY_LOBE_BINS: f64 = 3.0;
+
+/// A spectrum is read only when the magnitude spectra of its two halves have at least this cosine
+/// similarity: one sound throughout, not a change from one tone to another. Provisional.
+pub const POLYPHONY_STATIONARY: f64 = 0.8;
+
+/// The lowest-peak test reads the peaks within this many dB of the largest. Provisional.
+pub const POLYPHONY_LOWEST_FLOOR_DB: f64 = -20.0;
+
+/// Two inharmonic peaks within this many bins of mirror images about one harmonic are the
+/// sidebands of an envelope that changes within the spectrum, and are left out. Provisional.
+pub const POLYPHONY_SIDEBAND_BINS: f64 = 2.0;
+
 /// A note whose inharmonic peaks hold more than this share of the peaks' power is polyphonic.
 /// Provisional, set on the Dc1-3 cases.
-pub const POLYPHONY_INHARMONIC_SHARE: f64 = 0.02;
+pub const POLYPHONY_INHARMONIC_SHARE: f64 = 0.008;
 
 /// The onset confidence below which an estimation is refused (Dc1-4). Provisional, set by the
 /// calibration on the reference set (Dc1-9).
@@ -393,10 +585,21 @@ pub fn clip_sha256(samples: &[f32]) -> [u8; 32] {
     digest.finalize()
 }
 
+/// The MIDI number nearest to `f0_hz` (A4 = 440 Hz = 69), clamped to 0 to 127; 0 for no pitch.
+pub(crate) fn nearest_midi(f0_hz: f64) -> u8 {
+    if f0_hz > 0.0 {
+        (69.0 + 12.0 * (f0_hz / 440.0).log2())
+            .round()
+            .clamp(0.0, 127.0) as u8
+    } else {
+        0
+    }
+}
+
 /// The estimator's configuration as `(name, value)`: [`ESTIMATOR`], then every constant that
 /// decides its result, in a fixed order, each value as Rust prints it.
 pub fn configuration() -> Vec<(String, String)> {
-    let entries: [(&str, String); 40] = [
+    let entries: [(&str, String); 62] = [
         ("estimator", ESTIMATOR.to_owned()),
         ("sample_rate_hz", SAMPLE_RATE_HZ.to_string()),
         ("silence_threshold_dbfs", SILENCE_THRESHOLD_DBFS.to_string()),
@@ -409,6 +612,12 @@ pub fn configuration() -> Vec<(String, String)> {
         ("f0_window", F0_WINDOW.to_string()),
         ("quiet_amplitude", QUIET_AMPLITUDE.to_string()),
         ("quiet_run_frames", QUIET_RUN_FRAMES.to_string()),
+        (
+            "noise_floor_window_frames",
+            NOISE_FLOOR_WINDOW_FRAMES.to_string(),
+        ),
+        ("noise_floor_min_frames", NOISE_FLOOR_MIN_FRAMES.to_string()),
+        ("noise_floor_factor", NOISE_FLOOR_FACTOR.to_string()),
         ("novelty_fft_length", NOVELTY_FFT_LENGTH.to_string()),
         ("novelty_hop_frames", NOVELTY_HOP_FRAMES.to_string()),
         ("novelty_max_hz", NOVELTY_MAX_HZ.to_string()),
@@ -424,13 +633,37 @@ pub fn configuration() -> Vec<(String, String)> {
         ("coarse_margin_frames", COARSE_MARGIN_FRAMES.to_string()),
         ("pitch_change_cents", PITCH_CHANGE_CENTS.to_string()),
         ("pitch_span_frames", PITCH_SPAN_FRAMES.to_string()),
+        ("pitch_cover_frames", PITCH_COVER_FRAMES.to_string()),
+        ("foreign_mismatch", FOREIGN_MISMATCH.to_string()),
         ("period_mismatch", PERIOD_MISMATCH.to_string()),
         ("level_rise_db", LEVEL_RISE_DB.to_string()),
         ("level_rise_full_db", LEVEL_RISE_FULL_DB.to_string()),
+        ("rebound_rise_db", REBOUND_RISE_DB.to_string()),
+        ("gate_slack_frames", GATE_SLACK_FRAMES.to_string()),
+        (
+            "knee_sharp_full_fraction",
+            KNEE_SHARP_FULL_FRACTION.to_string(),
+        ),
+        ("step_fraction", STEP_FRACTION.to_string()),
+        ("step_db", STEP_DB.to_string()),
+        ("step_reach_frames", STEP_REACH_FRAMES.to_string()),
+        ("knee_shift", KNEE_SHIFT.to_string()),
+        (
+            "knee_attack_full_frames",
+            KNEE_ATTACK_FULL_FRAMES.to_string(),
+        ),
         (
             "level_window_min_frames",
             LEVEL_WINDOW_MIN_FRAMES.to_string(),
         ),
+        ("level_phases", LEVEL_PHASES.to_string()),
+        ("knee_step_frames", KNEE_STEP_FRAMES.to_string()),
+        ("knee_reach_frames", KNEE_REACH_FRAMES.to_string()),
+        ("knee_short_rise", KNEE_SHORT_RISE.to_string()),
+        ("onset_tolerance_frames", ONSET_TOLERANCE_FRAMES.to_string()),
+        ("localisation_chi2", LOCALISATION_CHI2.to_string()),
+        ("localisation_power", LOCALISATION_POWER.to_string()),
+        ("refine_window_frames", REFINE_WINDOW_FRAMES.to_string()),
         (
             "change_point_window_frames",
             CHANGE_POINT_WINDOW_FRAMES.to_string(),
@@ -454,6 +687,7 @@ pub fn configuration() -> Vec<(String, String)> {
             "hold_drop_full_fraction",
             HOLD_DROP_FULL_FRACTION.to_string(),
         ),
+        ("rebound_fraction", REBOUND_FRACTION.to_string()),
         ("tail_window_frames", TAIL_WINDOW_FRAMES.to_string()),
         ("tail_context_frames", TAIL_CONTEXT_FRAMES.to_string()),
         ("tail_full_db", TAIL_FULL_DB.to_string()),
@@ -477,15 +711,22 @@ pub fn configuration() -> Vec<(String, String)> {
         .collect()
 }
 
-/// The polyphony constants as one value: `min_fft/max_fft/max_hz/floor_db/tolerance/share`.
+/// The polyphony constants as one value:
+/// `min_fft/max_fft/max_hz/floor_db/tolerance/tonal_db/lobe_bins/stationary/lowest_floor_db/
+/// sideband_bins/share`.
 fn polyphony_configuration() -> String {
     format!(
-        "{}/{}/{}/{}/{}/{}",
+        "{}/{}/{}/{}/{}/{}/{}/{}/{}/{}/{}",
         POLYPHONY_MIN_FFT_LENGTH,
         POLYPHONY_MAX_FFT_LENGTH,
         POLYPHONY_MAX_HZ,
         POLYPHONY_PEAK_FLOOR_DB,
         POLYPHONY_HARMONIC_TOLERANCE,
+        POLYPHONY_TONAL_DB,
+        POLYPHONY_LOBE_BINS,
+        POLYPHONY_STATIONARY,
+        POLYPHONY_LOWEST_FLOOR_DB,
+        POLYPHONY_SIDEBAND_BINS,
         POLYPHONY_INHARMONIC_SHARE
     )
 }
@@ -550,17 +791,59 @@ pub fn estimate_notes(
     let mut notes = Vec::new();
     let mut levels = Vec::new();
     let mut polyphonic = false;
-    let regions = sounding_regions(&signal.x);
+    let regions = sounding_regions(&signal.x, quiet_amplitude(&signal));
     for (index, region) in regions.iter().enumerate() {
-        let onsets = region_onsets(&signal, samples, &novelty, *region);
-        for (i, onset) in onsets.iter().enumerate() {
-            let next = onsets.get(i + 1);
-            let end = next.map_or(region.1, |n| n.sample);
-            let after_region = regions.get(index + 1).map(|r| r.0);
-            let built = build_note(&signal, samples, onset, end, next, after_region);
-            polyphonic |= built.polyphonic;
-            levels.push(built.level);
-            notes.push(built.note);
+        let after_region = regions.get(index + 1).map(|r| r.0);
+        let build = |extra: &[Hidden]| -> Vec<Built> {
+            let onsets = region_onsets(&signal, samples, &novelty, *region, extra);
+            onsets
+                .iter()
+                .enumerate()
+                .map(|(i, onset)| {
+                    let next = onsets.get(i + 1);
+                    let end = next.map_or(region.1, |n| n.sample);
+                    build_note(&signal, samples, onset, end, next, after_region)
+                })
+                .collect()
+        };
+        let mut built = build(&[]);
+        // Step 6: a note whose level rebounds or steps hides an onset there; each is a candidate.
+        let hidden: Vec<Hidden> = built
+            .iter()
+            .flat_map(|b| b.hidden.iter().copied())
+            .collect();
+        if !hidden.is_empty() {
+            built = build(&hidden);
+        }
+        // Step 9: polyphony, over each run of notes that may be one tone.
+        for (first, last) in pitch_spans(&built) {
+            let f0_hz = built[first..=last]
+                .iter()
+                .filter(|b| b.note.f0_hz > 0.0)
+                .max_by(|a, b| a.note.pitch_confidence.total_cmp(&b.note.pitch_confidence))
+                .map_or(0.0, |b| b.note.f0_hz);
+            let start = built[first].note.start_sample as usize;
+            let end = built[last].note.end_sample as usize;
+            // A run that changes tone is read note by note.
+            polyphonic |= match polyphony(&signal, samples, (start, end), f0_hz) {
+                Some(found) => found,
+                None => {
+                    first < last
+                        && built[first..=last].iter().any(|b| {
+                            let n = &b.note;
+                            polyphony(
+                                &signal,
+                                samples,
+                                (n.start_sample as usize, n.end_sample as usize),
+                                n.f0_hz,
+                            ) == Some(true)
+                        })
+                }
+            };
+        }
+        for b in built {
+            levels.push(b.level);
+            notes.push(b.note);
         }
     }
     if polyphonic {
@@ -603,19 +886,29 @@ struct Signal {
     x: Vec<f64>,
     /// `energy[i]` is the sum of `x[j]^2` for `j < i`.
     energy: Vec<f64>,
+    /// `magnitude[i]` is the sum of `|x[j]|` for `j < i`.
+    magnitude: Vec<f64>,
 }
 
 impl Signal {
     fn new(samples: &[f32]) -> Self {
         let x: Vec<f64> = samples.iter().map(|s| f64::from(*s)).collect();
         let mut energy = Vec::with_capacity(x.len() + 1);
-        let mut sum = 0.0;
+        let mut magnitude = Vec::with_capacity(x.len() + 1);
+        let (mut sum, mut abs) = (0.0, 0.0);
         energy.push(0.0);
+        magnitude.push(0.0);
         for v in &x {
             sum += v * v;
+            abs += v.abs();
             energy.push(sum);
+            magnitude.push(abs);
         }
-        Self { x, energy }
+        Self {
+            x,
+            energy,
+            magnitude,
+        }
     }
 
     fn len(&self) -> usize {
@@ -648,6 +941,38 @@ impl Signal {
         self.rms(t - half, t - half + window as isize)
     }
 
+    /// The sum of `|x|` over `[start, end)`, samples outside the clip zero.
+    fn sum_magnitudes(&self, start: isize, end: isize) -> f64 {
+        let n = self.len() as isize;
+        let a = start.clamp(0, n) as usize;
+        let b = end.clamp(0, n) as usize;
+        if b <= a {
+            0.0
+        } else {
+            (self.magnitude[b] - self.magnitude[a]).max(0.0)
+        }
+    }
+
+    /// The level at `t`: the mean magnitude of the `window` samples centred on `t` (a whole
+    /// number of periods when `period` is known), averaged over [`LEVEL_PHASES`] shifts spread
+    /// over one period. The mean magnitude of a tone is proportional to its amplitude, so an
+    /// amplitude that changes linearly gives a level that does too (an RMS would bend); a
+    /// whole-period window of a changing amplitude ripples with where its periods fall, and the
+    /// average over the shifts cancels that ripple.
+    fn level(&self, t: isize, window: usize, period: Option<f64>) -> f64 {
+        let half = (window / 2) as isize;
+        let Some(p) = period else {
+            return self.sum_magnitudes(t - half, t - half + window as isize) / window as f64;
+        };
+        let mut sum = 0.0;
+        for k in 0..LEVEL_PHASES {
+            let shift = ((k as f64 + 0.5) / LEVEL_PHASES as f64 - 0.5) * p;
+            let a = t - half + shift.round() as isize;
+            sum += self.sum_magnitudes(a, a + window as isize);
+        }
+        sum / (LEVEL_PHASES * window) as f64
+    }
+
     /// `x` at a fractional position, by linear interpolation; zero outside the clip.
     fn at(&self, position: f64) -> f64 {
         if position < 0.0 {
@@ -661,9 +986,49 @@ impl Signal {
     }
 }
 
-/// The sounding regions `[start, end)` of `x` (step 1 of the method).
-fn sounding_regions(x: &[f64]) -> Vec<(usize, usize)> {
-    let quiet = |v: f64| v.abs() <= QUIET_AMPLITUDE;
+/// The amplitude at or below which a sample is quiet (step 1): [`QUIET_AMPLITUDE`], or
+/// [`NOISE_FLOOR_FACTOR`] times the noise floor's RMS when the clip has one and that is louder.
+/// The floor is the median RMS of the windows of [`NOISE_FLOOR_WINDOW_FRAMES`] samples that lie
+/// in runs of at least [`NOISE_FLOOR_MIN_FRAMES`] samples (half that for the run the clip starts
+/// with) of windows each above zero and below [`crate::SILENCE_THRESHOLD_DBFS`].
+fn quiet_amplitude(signal: &Signal) -> f64 {
+    let ceiling = 10f64.powf(SILENCE_THRESHOLD_DBFS / 20.0);
+    let w = NOISE_FLOOR_WINDOW_FRAMES;
+    let rms: Vec<f64> = (0..signal.len() / w)
+        .map(|k| signal.rms((k * w) as isize, ((k + 1) * w) as isize))
+        .collect();
+    let mut floor = Vec::new();
+    let mut run = Vec::new();
+    // Whether the run began with the clip: no release reaches back there, so half the length
+    // does.
+    let mut leading = true;
+    for value in rms.iter().copied().chain(std::iter::once(0.0)) {
+        if value > 0.0 && value < ceiling {
+            run.push(value);
+        } else {
+            let needed = if leading {
+                NOISE_FLOOR_MIN_FRAMES / 2
+            } else {
+                NOISE_FLOOR_MIN_FRAMES
+            };
+            leading = false;
+            if run.len() * w >= needed {
+                floor.append(&mut run);
+            }
+            run.clear();
+        }
+    }
+    if floor.is_empty() {
+        return QUIET_AMPLITUDE;
+    }
+    floor.sort_by(f64::total_cmp);
+    QUIET_AMPLITUDE.max(NOISE_FLOOR_FACTOR * floor[floor.len() / 2])
+}
+
+/// The sounding regions `[start, end)` of `x` (step 1 of the method), a sample being quiet at or
+/// below `quiet_amplitude`.
+fn sounding_regions(x: &[f64], quiet_amplitude: f64) -> Vec<(usize, usize)> {
+    let quiet = |v: f64| v.abs() <= quiet_amplitude;
     let mut regions = Vec::new();
     let mut i = 0;
     while i < x.len() {
@@ -743,6 +1108,15 @@ fn novelty(x: &[f64]) -> Result<Vec<f64>, AnalysisError> {
 enum OnsetKind {
     Pitch,
     Level,
+    /// A step of the level inside a note: the velocity changed without a rise (step 6).
+    Step,
+}
+
+/// Where a built note's level shows another onset (step 6): a rebound, or a step (`step`).
+#[derive(Clone, Copy, Debug)]
+struct Hidden {
+    at: usize,
+    step: bool,
 }
 
 /// A refined onset with its confidence.
@@ -817,6 +1191,7 @@ fn region_onsets(
     samples: &[f32],
     novelty: &[f64],
     (start, end): (usize, usize),
+    extra: &[Hidden],
 ) -> Vec<Onset> {
     let mut candidates: Vec<usize> = Vec::new();
     for k in 0..novelty.len() {
@@ -836,6 +1211,18 @@ fn region_onsets(
             candidates.push(centre);
         }
     }
+    // A rebound of the level inside a note (step 6) is a candidate too, unless one is near it.
+    for e in extra.iter().map(|h| h.at) {
+        if e >= start + REGION_ONSET_GUARD_FRAMES
+            && e + 512 < end
+            && candidates
+                .iter()
+                .all(|c| c.abs_diff(e) > 2 * NOVELTY_HOP_FRAMES)
+        {
+            candidates.push(e);
+        }
+    }
+    candidates.sort_unstable();
 
     // Step 3: keep candidates whose two sides differ in pitch or which the level rises across.
     let mut kinds: Vec<OnsetKind>;
@@ -894,8 +1281,24 @@ fn region_onsets(
                         (Some(b), _) | (None, Some(b)) => Some(f64::from(SAMPLE_RATE_HZ) / b.f0_hz),
                         (None, None) => None,
                     };
+                    let near = |step: bool| {
+                        extra
+                            .iter()
+                            .any(|h| h.step == step && h.at.abs_diff(c) <= 2 * NOVELTY_HOP_FRAMES)
+                    };
                     let rise = level_rise(signal, c, bounds[j], bounds[j + 2], period).0;
-                    if rise >= LEVEL_RISE_DB {
+                    // A rebound of the level (step 6) is an onset the window has smeared: a smaller
+                    // rise confirms it.
+                    let needed = if near(false) {
+                        REBOUND_RISE_DB
+                    } else {
+                        LEVEL_RISE_DB
+                    };
+                    if near(true)
+                        && level_step(signal, c, (bounds[j], bounds[j + 2]), period).0 >= STEP_DB
+                    {
+                        Some(OnsetKind::Step)
+                    } else if rise >= needed {
                         Some(OnsetKind::Level)
                     } else {
                         if weakest.is_none_or(|(_, r)| rise < r) {
@@ -927,21 +1330,74 @@ fn region_onsets(
         let hi = (c + ONSET_SEARCH_FRAMES)
             .min(next.saturating_sub(512))
             .max(c);
+        let bounds = (previous + 256, next);
         let onset = match kinds[j] {
             OnsetKind::Pitch => {
                 let before = pitches[j].map(|p| f64::from(SAMPLE_RATE_HZ) / p.f0_hz);
                 let after = pitches[j + 1].map(|p| f64::from(SAMPLE_RATE_HZ) / p.f0_hz);
                 match (before, after) {
-                    (Some(p1), Some(p2)) => change_point(signal, lo, hi, p1, p2),
-                    (Some(p), None) | (None, Some(p)) => level_onset(signal, lo, hi, Some(p)),
-                    (None, None) => level_onset(signal, lo, hi, None),
+                    (Some(p1), Some(p2)) => {
+                        let pitch = change_point(signal, lo, hi, p1, p2);
+                        // An old note faded almost to silence predicts nothing: the onset is the new
+                        // note's attack, and a change point away from it is not confident.
+                        let t = pitch.sample as isize;
+                        let w = ONSET_CONTRAST_FRAMES as isize;
+                        let contrast = db(signal.rms(t, t + w)) - db(signal.rms(t - w, t));
+                        if contrast >= TAIL_FULL_DB {
+                            let level = level_onset(signal, (lo, hi), bounds, Some(p2));
+                            if level.sample.abs_diff(pitch.sample) > ONSET_TOLERANCE_FRAMES {
+                                Onset {
+                                    confidence: pitch.confidence.min(level.confidence),
+                                    ..pitch
+                                }
+                            } else {
+                                pitch
+                            }
+                        } else {
+                            pitch
+                        }
+                    }
+                    (Some(p), None) | (None, Some(p)) => {
+                        level_onset(signal, (lo, hi), bounds, Some(p))
+                    }
+                    (None, None) => level_onset(signal, (lo, hi), bounds, None),
                 }
             }
-            _ => {
+            OnsetKind::Step => {
                 let period = pitches[j + 1]
                     .or(pitches[j])
                     .map(|p| f64::from(SAMPLE_RATE_HZ) / p.f0_hz);
-                level_onset(signal, lo, hi, period)
+                let (drop, at) = level_step(signal, c, (previous, next), period);
+                // A level that rises again out of the fall was a release into the next note's
+                // attack, whose onset is that rise: the fall does not place it.
+                let (again, _) = level_rise(signal, at + 512, previous, end, period);
+                // The level's two lines placed the step; a fall a window away from there is a
+                // decay's, and either may be the onset.
+                let window = level_window(period, LEVEL_WINDOW_MIN_FRAMES, 1_024);
+                let placed = extra
+                    .iter()
+                    .filter(|h| h.step)
+                    .map(|h| h.at)
+                    .min_by_key(|h| h.abs_diff(c))
+                    .unwrap_or(at);
+                let agree = if placed.abs_diff(at) > window {
+                    AMBIGUOUS_GATE_CONFIDENCE
+                } else {
+                    1.0
+                };
+                Onset {
+                    sample: at,
+                    confidence: (drop / LEVEL_RISE_FULL_DB)
+                        .min(1.0 - again / LEVEL_RISE_FULL_DB)
+                        .min(agree)
+                        .clamp(0.0, 1.0),
+                }
+            }
+            OnsetKind::Level => {
+                let period = pitches[j + 1]
+                    .or(pitches[j])
+                    .map(|p| f64::from(SAMPLE_RATE_HZ) / p.f0_hz);
+                level_onset(signal, (lo, hi), bounds, period)
             }
         };
         if onset.sample > previous + 256 && onset.sample + 256 < end {
@@ -1003,7 +1459,7 @@ fn level_rise(
     let mut dip = (f64::INFINITY, lo);
     let mut t = lo;
     while t <= hi {
-        let level = signal.centred(t as isize, window);
+        let level = signal.level(t as isize, window, period);
         if level < dip.0 {
             dip = (level, t);
         }
@@ -1013,74 +1469,231 @@ fn level_rise(
     let top = (dip.1.max(c) + 2_048).min(next.saturating_sub(half));
     let mut t = dip.1;
     while t <= top {
-        peak = peak.max(signal.centred(t as isize, window));
+        peak = peak.max(signal.level(t as isize, window, period));
         t += 16;
     }
     (db(peak) - db(dip.0), dip.1)
 }
 
-/// The onset by level within `[lo, hi]` (step 4 of the method).
-fn level_onset(signal: &Signal, lo: usize, hi: usize, period: Option<f64>) -> Onset {
+/// The largest fall of the level, in dB, across a sample within [`STEP_REACH_FRAMES`] of `c`, and
+/// that sample: the level of the window before it over the level of the window after it, both
+/// whole periods and inside `(previous, next)`.
+fn level_step(
+    signal: &Signal,
+    c: usize,
+    (previous, next): (usize, usize),
+    period: Option<f64>,
+) -> (f64, usize) {
     let window = level_window(period, LEVEL_WINDOW_MIN_FRAMES, 1_024);
     let half = window / 2;
-    let mut dip = (f64::INFINITY, lo);
+    let lo = c.saturating_sub(STEP_REACH_FRAMES).max(previous + window);
+    let hi = (c + STEP_REACH_FRAMES).min(next.saturating_sub(window));
+    let mut best = (f64::NEG_INFINITY, c);
     let mut t = lo;
     while t <= hi {
-        let level = signal.centred(t as isize, window);
-        if level < dip.0 {
-            dip = (level, t);
+        let before = signal.level(t as isize - half as isize, window, period);
+        let after = signal.level((t + half) as isize, window, period);
+        let drop = db(before) - db(after);
+        if drop > best.0 {
+            best = (drop, t);
         }
-        t += 4;
+        t += 8;
     }
-    let m = dip.1 as isize;
-    let w = window as isize;
-    let left = (signal.centred(m - w, window) - dip.0).max(0.0) / w as f64;
-    let right = (signal.centred(m + w, window) - dip.0).max(0.0) / w as f64;
-    let shift = if left + right > 0.0 {
-        half as f64 * (right - left) / (left + right)
-    } else {
-        0.0
+    best
+}
+
+/// The onset by level within `[lo, hi]` (step 4 of the method): the knee where the level starts
+/// to rise, read from the level over `[from, to)` (the neighbouring onsets' side of it excluded).
+///
+/// The level (the RMS over whole periods, at least [`LEVEL_WINDOW_MIN_FRAMES`] samples, sampled
+/// every [`KNEE_STEP_FRAMES`]) is fitted by three lines, before, rising and after; the onset is
+/// where the first two meet. The window smears an attack shorter than itself into a rise one
+/// window long whose lines meet up to a window early; a rise no longer than
+/// [`KNEE_SHORT_RISE`] windows is moved a quarter window later, half the possible error.
+/// Its confidence is the prominence of the knee: one minus the fit's error over the least
+/// error of a fit whose knee lies more than the onset tolerance away from it, and no more than the
+/// level's rise allows ([`LEVEL_RISE_FULL_DB`]).
+fn level_onset(
+    signal: &Signal,
+    (lo, hi): (usize, usize),
+    (from, to): (usize, usize),
+    period: Option<f64>,
+) -> Onset {
+    let window = level_window(period, LEVEL_WINDOW_MIN_FRAMES, 1_024);
+    let half = window / 2;
+    let first = lo.saturating_sub(window).max(from + half);
+    let last = (hi + KNEE_REACH_FRAMES).min(to.saturating_sub(half));
+    let mut points = Vec::new();
+    let mut t = first;
+    while t <= last {
+        points.push((t as f64, signal.level(t as isize, window, period)));
+        t += KNEE_STEP_FRAMES;
+    }
+    let m = MIN_SEGMENT_POINTS;
+    let n = points.len();
+    if n < 3 * m {
+        return Onset {
+            sample: (lo + hi) / 2,
+            confidence: 0.0,
+        };
+    }
+    let sums = Sums::new(&points);
+    // (cost, knee, rise end, lines) of the best fit, and every fit's knee and cost for the
+    // localisation.
+    let mut best: Option<(f64, f64, f64, Line, Line)> = None;
+    let mut fits: Vec<(f64, f64)> = Vec::new();
+    for i in m..=n - 2 * m {
+        let before = sums.line(0, i);
+        for (j, point) in points.iter().enumerate().take(n - m + 1).skip(i + m) {
+            let rise = sums.line(i, j);
+            if rise.b <= before.b || rise.b <= 0.0 {
+                continue;
+            }
+            let after = sums.line(j, n);
+            let cost = before.error + rise.error + after.error;
+            let Some(knee) = intersection(before, rise) else {
+                continue;
+            };
+            if knee < lo as f64 || knee > hi as f64 {
+                continue;
+            }
+            let end = intersection(rise, after).unwrap_or(point.0);
+            fits.push((knee, cost));
+            if best.is_none_or(|b| cost < b.0) {
+                best = Some((cost, knee, end, before, rise));
+            }
+        }
+    }
+    let Some((cost, knee, end, before, rise_line)) = best else {
+        return Onset {
+            sample: (lo + hi) / 2,
+            confidence: 0.0,
+        };
     };
-    let sample = (m as f64 + shift).round().max(0.0) as usize;
-    let mut peak = 0.0f64;
-    let mut t = dip.1;
-    while t <= dip.1 + 2_048 {
-        peak = peak.max(signal.centred(t as isize, window));
-        t += 16;
-    }
-    let rise = db(peak) - db(dip.0);
+    // The phases spread the window over one more period: the level's kernel is that wide.
+    let spread =
+        window as f64 + period.unwrap_or(0.0) * (LEVEL_PHASES - 1) as f64 / LEVEL_PHASES as f64;
+    let sample = if end - knee <= KNEE_SHORT_RISE * spread {
+        knee + spread * KNEE_SHIFT
+    } else {
+        knee
+    };
+    // The onset lies among the knees of the fits as good as the best, within the noise of its
+    // error (the points hold one independent observation a window), the best knee itself when
+    // the onset is moved off it, and where the level first leaves the line before the knee by
+    // more than that noise: a level that falls before it rises began its note there.
+    let observations = (n * KNEE_STEP_FRAMES) as f64 / window as f64;
+    let noise = LOCALISATION_CHI2.sqrt() * (cost.max(0.0) / n as f64).sqrt();
+    let departure = points
+        .iter()
+        .filter(|p| p.0 >= knee - 2.0 * spread && p.0 <= knee)
+        .find(|p| before.a + before.b * p.0 - p.1 > noise)
+        .map_or(knee, |p| p.0);
+    let localised = localisation(
+        fits.iter()
+            .copied()
+            .chain([(knee, cost), (departure, cost)]),
+        (sample, cost),
+        observations,
+        KNEE_STEP_FRAMES as f64,
+    );
+    // A smoothed corner lies above its two lines; a level below them at the knee dipped first,
+    // a velocity that fell as the note began: the knee need not be its onset.
+    let top = signal
+        .level(end.round() as isize, window, period)
+        .max(1e-12);
+    let dip = points
+        .iter()
+        .filter(|p| p.0 >= knee - 2.0 * spread && p.0 <= knee + spread)
+        .map(|p| {
+            let line = if p.0 < knee { before } else { rise_line };
+            (line.a + line.b * p.0 - p.1) / top
+        })
+        .fold(0.0, f64::max);
+    let plain = (1.0 - dip / (4.0 * STEP_FRACTION)).clamp(0.0, 1.0);
+    // A slow attack bends into its top over its own length: its knee is no sharper than that.
+    let attack = (end - knee - spread).max(0.0);
+    let slow = if attack > 0.0 {
+        (KNEE_ATTACK_FULL_FRAMES / attack).min(1.0)
+    } else {
+        1.0
+    };
+    let level_at = |t: f64| signal.level(t.round() as isize, window, period);
+    let rise = db(level_at(end)) - db(level_at(knee - half as f64));
     Onset {
-        sample,
-        confidence: (rise / LEVEL_RISE_FULL_DB).clamp(0.0, 1.0),
+        sample: sample.round().max(0.0) as usize,
+        confidence: localised
+            .min((rise / LEVEL_RISE_FULL_DB).clamp(0.0, 1.0))
+            .min(slow)
+            .min(plain),
     }
 }
 
 /// The onset by pitch: the change point of the periodic prediction within `[lo, hi]` (step 4).
+/// The number of independent observations in a residual series: its length over
+/// `1 + 2 Σ ρ_k`, `ρ_k` its autocorrelation at lag `k`, summed while positive.
+fn independent_observations(residual: &[f64]) -> f64 {
+    let n = residual.len();
+    let energy: f64 = residual.iter().map(|v| v * v).sum();
+    if energy <= 0.0 {
+        return n.max(1) as f64;
+    }
+    let mut sum = 0.0;
+    for k in 1..n / 2 {
+        let r = residual[..n - k]
+            .iter()
+            .zip(&residual[k..])
+            .map(|(a, b)| a * b)
+            .sum::<f64>()
+            / energy;
+        if r <= 0.0 {
+            break;
+        }
+        sum += r;
+    }
+    (n as f64 / (1.0 + 2.0 * sum)).max(1.0)
+}
+
 fn change_point(signal: &Signal, lo: usize, hi: usize, p1: f64, p2: f64) -> Onset {
     let w = CHANGE_POINT_WINDOW_FRAMES;
     let margin = 256;
+    let longer = p1.max(p2);
     let first = lo.saturating_sub(w + margin);
     let last = (hi + w + margin).min(signal.len());
     let len = last - first;
     let mut back = vec![0.0; len + 1];
     let mut forward = vec![0.0; len + 1];
     let mut power = vec![0.0; len + 1];
+    let mut signed = vec![(0.0, 0.0); len];
     for i in 0..len {
         let n = first + i;
         let v = signal.x[n];
-        let b = v - signal.at(n as f64 - p1);
-        let f = v - signal.at(n as f64 + p2);
+        // Each prediction scaled by the level a period away: an attack or a release changes
+        // the amplitude, not the period.
+        let gain = |p: f64, shifted: f64| {
+            let w = p.round().max(1.0) as isize;
+            let level = |c: f64| {
+                signal.sum_magnitudes(c.round() as isize - w / 2, c.round() as isize - w / 2 + w)
+            };
+            let there = level(shifted);
+            if there > 0.0 {
+                (level(n as f64) / there).clamp(0.25, 4.0)
+            } else {
+                1.0
+            }
+        };
+        let b = v - gain(p1, n as f64 - p1) * signal.at(n as f64 - p1);
+        let f = v - gain(p2, n as f64 + p2) * signal.at(n as f64 + p2);
         back[i + 1] = back[i] + b * b;
         forward[i + 1] = forward[i] + f * f;
         power[i + 1] = power[i] + v * v;
+        signed[i] = (b, f);
     }
+    // The whole span split at `t`: the old period predicts before it, the new one after it.
     let cost = |t: usize| -> f64 {
-        let a = t.saturating_sub(w).max(first) - first;
         let m = t.clamp(first, last) - first;
-        let b = (t + w).min(last) - first;
-        let numerator = (back[m] - back[a]) + (forward[b] - forward[m]);
-        let denominator = power[b] - power[a];
-        numerator / (denominator + 1e-12)
+        let numerator = back[m] + (forward[len] - forward[m]);
+        numerator / (power[len] + 1e-12)
     };
     let mut best = (f64::INFINITY, lo);
     for t in lo..=hi {
@@ -1102,24 +1715,18 @@ fn change_point(signal: &Signal, lo: usize, hi: usize, p1: f64, p2: f64) -> Onse
             (prefix[m] - prefix[a], prefix[b] - prefix[m])
         };
         let floor = 1e-12 * (power[len] + 1.0);
-        let (one_sided, sharp): (Box<dyn Fn(usize) -> f64>, isize) = if t <= lo + edge {
+        let one_sided: Box<dyn Fn(usize) -> f64> = if t <= lo + edge {
             // The new period predicts the old note: the old period's error rises at the onset.
-            (
-                Box::new(|t| {
-                    let (before, after) = sums(&back, t);
-                    before / (after + floor)
-                }),
-                margin as isize,
-            )
+            Box::new(|t| {
+                let (before, after) = sums(&back, t);
+                before / (after + floor)
+            })
         } else {
             // The old period predicts the new note: the new period's error falls at the onset.
-            (
-                Box::new(|t| {
-                    let (before, after) = sums(&forward, t);
-                    after / (before + floor)
-                }),
-                -(margin as isize),
-            )
+            Box::new(|t| {
+                let (before, after) = sums(&forward, t);
+                after / (before + floor)
+            })
         };
         let mut best = (f64::INFINITY, lo);
         for t in lo..=hi {
@@ -1129,27 +1736,214 @@ fn change_point(signal: &Signal, lo: usize, hi: usize, p1: f64, p2: f64) -> Onse
             }
         }
         let t = best.1;
-        let neighbour = (t as isize + sharp).clamp(first as isize, last as isize) as usize;
-        let side = one_sided(neighbour);
-        let confidence = if side > 0.0 {
-            (1.0 - best.0 / side).clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
+        // The two windows hold one independent observation a period of the longer one.
+        let confidence = localisation(
+            (lo..=hi).map(|u| (u as f64, one_sided(u))),
+            (t as f64, best.0),
+            2.0 * w as f64 / longer,
+            1.0,
+        );
         return Onset {
             sample: t,
             confidence,
         };
     }
-    let side = cost(t.saturating_sub(margin).max(first)).min(cost((t + margin).min(last)));
-    let confidence = if side > 0.0 {
-        (1.0 - best.0 / side).clamp(0.0, 1.0)
-    } else {
-        0.0
+    // The span's cost steps at the waveform's edges, a period apart: it places the onset to a
+    // period. The residuals themselves place it to the sample.
+    let prominence = prominence((lo..=hi).map(|u| (u as f64, cost(u))), (t as f64, best.0));
+    // The cost's interval: every split within LOCALISATION_CHI2 noise variances of the least,
+    // the variance the least over the residual's independent observations (Dc1-18).
+    let split = t.clamp(first, last) - first;
+    let residual: Vec<f64> = signed
+        .iter()
+        .enumerate()
+        .map(|(i, (b, f))| if i < split { *b } else { *f })
+        .collect();
+    let observations = independent_observations(&residual);
+    let margin = LOCALISATION_CHI2 * best.0.max(0.0) / observations;
+    let interval = (lo..=hi)
+        .filter(|&u| cost(u) <= best.0 + margin)
+        .fold((t, t), |(a, b), u| (a.min(u), b.max(u)));
+    // Refined on the sample grid inside that interval; unrefined, the cost's own interval.
+    let refined = refine(signal, interval, p1, p2);
+    let (sample, localised) = match refined {
+        Some((sample, reach)) => (sample, interval_confidence(reach + 1.0)),
+        None => (
+            t,
+            localisation(
+                (lo..=hi).map(|u| (u as f64, cost(u))),
+                (t as f64, best.0),
+                observations,
+                1.0,
+            ),
+        ),
     };
+    // The residuals over a period either side of the cost's onset place it too, and the
+    // interval holds that placement; where the refinement inside the cost's interval failed,
+    // it holds every crossing of that wider search as well.
+    let wide = (
+        t.saturating_sub(longer.ceil() as usize).max(lo),
+        (t + longer.ceil() as usize).min(hi),
+    );
+    let agreement = refine(signal, wide, p1, p2).map_or(1.0, |(at, reach)| {
+        let spread = if refined.is_some() { 0.0 } else { reach };
+        interval_confidence(at.abs_diff(sample) as f64 + spread + 1.0)
+    });
     Onset {
-        sample: t,
-        confidence,
+        sample,
+        confidence: localised.min(prominence).min(agreement),
+    }
+}
+
+/// The confidence of an onset whose interval has half-width `h` samples (Dc1-15):
+/// `1 - (h / ONSET_TOLERANCE_FRAMES)^LOCALISATION_POWER`, clamped.
+fn interval_confidence(h: f64) -> f64 {
+    (1.0 - (h / ONSET_TOLERANCE_FRAMES as f64).powf(LOCALISATION_POWER)).clamp(0.0, 1.0)
+}
+
+/// The onset by pitch on the sample grid (Dc1-18), searched over `[from, to]`, and the
+/// half-width of its interval; `None` when a prediction does not tell the two notes apart or the
+/// residuals do not cross for good inside the span.
+///
+/// Two predictions, each scaled by the level over the period on its own side only, so neither
+/// reads across the onset: the old note's periodic continuation `x[n] ≈ g x[n - T_old]`, `g` the
+/// level over the period before `n` over the level over the period before that, and the new
+/// note's backward continuation `x[n] ≈ g x[n + T_new]`, `g` the level over the period from `n`
+/// over the level over the period after that. Each residual `|x[n] - g x[n ∓ T]|` is read as its
+/// median over the [`REFINE_WINDOW_FRAMES`] samples from `n` (a median, so the waveform's edges,
+/// a few samples a period, do not decide).
+///
+/// Each prediction must tell the notes apart: relative to the signal's median magnitude, its
+/// residual where the note it does not continue sounds alone (a period beyond the span) is at
+/// least [`LOCALISATION_CHI2`] times its residual where its own note sounds alone. The residuals
+/// cross where the new prediction's is no longer above the old one's for a whole window. The
+/// shorter lag also continues the longer period's smoother note between its edges, so its
+/// prediction can win early (a lower old note) or lose late (a lower new note): with the old
+/// period the longer the onset is the start of the last crossing, from which the new prediction
+/// holds to the end of the span; otherwise the first crossing that holds for a window. The
+/// interval spans both crossings.
+fn refine(signal: &Signal, (from, to): (usize, usize), p1: f64, p2: f64) -> Option<(usize, f64)> {
+    let s = REFINE_WINDOW_FRAMES;
+    let t1 = p1.round().max(1.0) as isize;
+    let t2 = p2.round().max(1.0) as isize;
+    let alone = (4 * s).max(p1.max(p2).ceil() as usize);
+    let start = from.checked_sub(alone)?;
+    let end = to + 1 + alone + s;
+    if (start as isize) < 2 * t1 || end as isize + 2 * t2 > signal.len() as isize {
+        return None;
+    }
+    let mags = |a: isize, b: isize| signal.sum_magnitudes(a, b);
+    let gain = |now: f64, then: f64| {
+        if then > 0.0 {
+            (now / then).clamp(0.25, 4.0)
+        } else {
+            1.0
+        }
+    };
+    // The residuals and magnitudes over [start, end).
+    let samples: Vec<(f64, f64, f64)> = (start..end)
+        .map(|n| {
+            let i = n as isize;
+            let v = signal.x[n];
+            let old = gain(mags(i - t1, i), mags(i - 2 * t1, i - t1));
+            let new = gain(mags(i, i + t2), mags(i + t2, i + 2 * t2));
+            (
+                (v - old * signal.x[(i - t1) as usize]).abs(),
+                (v - new * signal.x[(i + t2) as usize]).abs(),
+                v.abs(),
+            )
+        })
+        .collect();
+    let median = |mut values: Vec<f64>| -> f64 {
+        values.sort_by(f64::total_cmp);
+        values[values.len() / 2]
+    };
+    let floor = 1e-9;
+    let first = from - start;
+    let last = to - start;
+    // The relative residuals of the windows where each note sounds alone.
+    let relative = |k: usize| {
+        let window = &samples[k..k + s];
+        let level = median(window.iter().map(|r| r.2).collect()) + floor;
+        (
+            median(window.iter().map(|r| r.0).collect()) / level,
+            median(window.iter().map(|r| r.1).collect()) / level,
+        )
+    };
+    let before: Vec<(f64, f64)> = (0..first).map(relative).collect();
+    let after: Vec<(f64, f64)> = (last + 1..last + 1 + alone).map(relative).collect();
+    let tells = |pick: fn(&(f64, f64)) -> f64, fails_on_new: bool| {
+        let on_old = median(before.iter().map(pick).collect()) + floor;
+        let on_new = median(after.iter().map(pick).collect()) + floor;
+        let (fail, hold) = if fails_on_new {
+            (on_new, on_old)
+        } else {
+            (on_old, on_new)
+        };
+        fail >= LOCALISATION_CHI2 * hold
+    };
+    if !tells(|r| r.0, true) || !tells(|r| r.1, false) {
+        return None;
+    }
+    // Whether the new prediction's window from each sample of [from, to + s] is no worse.
+    let window = |k: usize, pick: fn(&(f64, f64, f64)) -> f64| {
+        median(samples[k..k + s].iter().map(pick).collect())
+    };
+    let crossed: Vec<bool> = (first..=last + s)
+        .map(|k| window(k, |r| r.1) <= window(k, |r| r.0))
+        .collect();
+    let early = (0..=last - first).find(|&k| crossed[k..=k + s].iter().all(|c| *c))?;
+    let mut late = crossed.len();
+    while late > 0 && crossed[late - 1] {
+        late -= 1;
+    }
+    if late > last - first {
+        return None;
+    }
+    let at = if p1 >= p2 { late } else { early };
+    Some((from + at, (late - early) as f64))
+}
+
+/// The onset confidence of a localisation interval (Dc1-15): `positions` are the candidate onsets
+/// with their costs, `best` the least of them at `at`, `observations` the number of independent
+/// observations the cost sums and `resolution` the evidence's own resolution in samples. The
+/// interval is every position whose cost lies within [`LOCALISATION_CHI2`] noise variances
+/// (`best / observations`) of the least; its half-width about `at`, widened by `resolution`,
+/// gives `1 - (h / ONSET_TOLERANCE_FRAMES)^LOCALISATION_POWER`, clamped; no more than the
+/// prominence `1 - best / c`, `c` the least cost of a position further than the tolerance from
+/// `at` (a competing onset).
+fn localisation(
+    positions: impl Iterator<Item = (f64, f64)>,
+    (at, best): (f64, f64),
+    observations: f64,
+    resolution: f64,
+) -> f64 {
+    let margin = LOCALISATION_CHI2 * best.max(0.0) / observations.max(1.0);
+    let positions: Vec<(f64, f64)> = positions.collect();
+    let prominence = prominence(positions.iter().copied(), (at, best));
+    let reach = positions
+        .iter()
+        .filter(|(_, cost)| *cost <= best + margin)
+        .map(|(t, _)| (t - at).abs())
+        .fold(0.0f64, f64::max);
+    let h = reach + resolution;
+    (1.0 - (h / ONSET_TOLERANCE_FRAMES as f64).powf(LOCALISATION_POWER))
+        .clamp(0.0, 1.0)
+        .min(prominence)
+}
+
+/// The prominence of the best of `positions` (candidate onsets with their costs), `best` at `at`:
+/// `1 - best / c`, clamped, `c` the least cost of a position more than the onset tolerance away
+/// (a competing onset); 1 when there is none.
+fn prominence(positions: impl Iterator<Item = (f64, f64)>, (at, best): (f64, f64)) -> f64 {
+    let competing = positions
+        .filter(|(t, _)| (t - at).abs() > ONSET_TOLERANCE_FRAMES as f64)
+        .map(|(_, cost)| cost)
+        .fold(f64::INFINITY, f64::min);
+    if competing.is_finite() && competing > 0.0 {
+        (1.0 - best / competing).clamp(0.0, 1.0)
+    } else {
+        1.0
     }
 }
 
@@ -1157,7 +1951,9 @@ fn change_point(signal: &Signal, lo: usize, hi: usize, p1: f64, p2: f64) -> Onse
 struct Built {
     note: EstimatedNote,
     level: f64,
-    polyphonic: bool,
+    /// Where the level rebounds by at least [`REBOUND_FRACTION`] of its peak, or steps by
+    /// [`STEP_FRACTION`]: hidden onsets.
+    hidden: Vec<Hidden>,
 }
 
 /// The note starting at `onset` and ending at `end`, the next onset in its region (`next`) or
@@ -1179,13 +1975,7 @@ fn build_note(
         Err(_) => (0.0, 0.0),
     };
     let period = (f0_hz > 0.0).then(|| f64::from(SAMPLE_RATE_HZ) / f0_hz);
-    let midi_note = if f0_hz > 0.0 {
-        (69.0 + 12.0 * (f0_hz / 440.0).log2())
-            .round()
-            .clamp(0.0, 127.0) as u8
-    } else {
-        0
-    };
+    let midi_note = nearest_midi(f0_hz);
 
     let reach = match next {
         Some(_) => end,
@@ -1200,6 +1990,10 @@ fn build_note(
         Some(n) if end_sample == end => gate.confidence.min(n.confidence),
         _ => gate.confidence,
     };
+    // A level that rises again after its peak holds an onset the note does not know of: its gate
+    // and tail may belong to the note after it.
+    let unexplained = (1.0 - gate.rebound.0 / REBOUND_FRACTION).clamp(0.0, 1.0);
+    let gate_confidence = gate_confidence.min(unexplained);
 
     // Tail: the first crossing of the silence threshold from the gate end, capped at the next
     // onset (in this region or the next).
@@ -1226,8 +2020,22 @@ fn build_note(
             None => (cap, 0.0),
         },
     };
+    // A release cut by the next onset is one falling line; a level that bends on the way, or
+    // stays, is another note between them.
+    let bend = match (crossing, next) {
+        (None, Some(_)) => release_bend(signal, end_sample, cap, period, true),
+        (None, None) if after_region.is_some() => {
+            release_bend(signal, end_sample, cap, period, true)
+        }
+        (Some(t), _) => release_bend(signal, end_sample, t, period, false),
+        (None, None) => 0.0,
+    };
+    let tail_confidence = tail_confidence.min((1.0 - bend / REBOUND_FRACTION).clamp(0.0, 1.0));
+    let cover = period.map_or(0.0, |p| pitch_cover(signal, (start, end_sample), p));
+    // A stretch of the gate the note's period does not predict is another note in it: the pitch,
+    // gate and tail may be either's.
+    let foreign = (1.0 - (cover - FOREIGN_MISMATCH) / FOREIGN_MISMATCH).clamp(0.0, 1.0);
 
-    let polyphonic = polyphony(signal, start, end_sample, f0_hz);
     Built {
         note: EstimatedNote {
             start_sample: start as u64,
@@ -1237,13 +2045,95 @@ fn build_note(
             f0_hz,
             velocity: 0.0,
             onset_confidence: onset.confidence,
-            pitch_confidence,
-            gate_confidence,
-            tail_confidence,
+            pitch_confidence: pitch_confidence.min(foreign),
+            gate_confidence: gate_confidence.min(foreign),
+            tail_confidence: tail_confidence.min(unexplained).min(foreign),
         },
         level: gate.level,
-        polyphonic,
+        hidden: [
+            (gate.rebound.2 >= REBOUND_FRACTION).then_some(Hidden {
+                at: gate.rebound.1,
+                step: false,
+            }),
+            (gate.step.0 >= STEP_FRACTION).then_some(Hidden {
+                at: gate.step.1,
+                step: true,
+            }),
+        ]
+        .into_iter()
+        .flatten()
+        .collect(),
     }
+}
+
+/// How badly the note's period predicts its worst window (step 5): the largest
+/// [`period_mismatch`] of the windows of [`PITCH_COVER_FRAMES`] samples (at least two periods)
+/// every half window over `[start, gate)` whose RMS is at least a tenth of the loudest one's.
+fn pitch_cover(signal: &Signal, (start, gate): (usize, usize), period: f64) -> f64 {
+    let w = PITCH_COVER_FRAMES.max((2.0 * period).ceil() as usize + 1);
+    let mut windows = Vec::new();
+    let mut a = start;
+    while a + w <= gate {
+        windows.push((a, signal.rms(a as isize, (a + w) as isize)));
+        a += w / 2;
+    }
+    let loudest = windows.iter().map(|x| x.1).fold(0.0, f64::max);
+    windows
+        .iter()
+        .filter(|x| x.1 >= 0.1 * loudest && x.1 > 0.0)
+        .map(|&(a, _)| period_mismatch(signal, (a, a + w), period))
+        .fold(0.0, f64::max)
+}
+
+/// How far the level between a gate end and the next onset strays from one line, over the
+/// level where the release starts: 0 for a release (a linear fall) or too short a stretch to
+/// tell. The gate's slack and the window's reach of either end are left out.
+fn release_bend(signal: &Signal, gate: usize, next: usize, period: Option<f64>, meet: bool) -> f64 {
+    let window = level_window(period, ENVELOPE_WINDOW_MIN_FRAMES, 1_024);
+    let half = window / 2;
+    let from = gate + GATE_SLACK_FRAMES as usize + half;
+    let to = next.saturating_sub(window + half);
+    let mut points = Vec::new();
+    let mut t = from;
+    while t <= to {
+        points.push((t as f64, signal.level(t as isize, window, period)));
+        t += ENVELOPE_STEP_FRAMES;
+    }
+    if points.len() < MIN_SEGMENT_POINTS {
+        return 0.0;
+    }
+    let reference = signal.level(gate as isize, window, period);
+    if reference <= 0.0 {
+        return 0.0;
+    }
+    let line = Sums::new(&points).line(0, points.len());
+    let mut worst = points
+        .iter()
+        .map(|p| (p.1 - line.a - line.b * p.0).abs())
+        .fold(0.0, f64::max);
+    // The release starts where the level before the gate ends: the line before it and the
+    // release line meet within the slack and the window's reach of the gate.
+    let reach = GATE_SLACK_FRAMES as usize + window;
+    let mut before = Vec::new();
+    let mut t = gate.saturating_sub(reach + 3 * window);
+    while t + reach <= gate {
+        if t >= half {
+            before.push((t as f64, signal.level(t as isize, window, period)));
+        }
+        t += ENVELOPE_STEP_FRAMES;
+    }
+    if meet && before.len() >= MIN_SEGMENT_POINTS {
+        let held = Sums::new(&before).line(0, before.len());
+        let gap = |t: f64| held.a + held.b * t - line.a - line.b * t;
+        let (g1, g2) = (
+            gap(gate.saturating_sub(reach) as f64),
+            gap((gate + reach) as f64),
+        );
+        if g1.signum() == g2.signum() {
+            worst = worst.max(g1.abs().min(g2.abs()));
+        }
+    }
+    worst / reference
 }
 
 /// A gate end with its confidence and the note's peak level over its gate.
@@ -1251,6 +2141,14 @@ struct Gate {
     sample: usize,
     confidence: f64,
     level: f64,
+    /// The largest rise of the level above its lowest point since the peak, over the peak level,
+    /// and the sample of that lowest point.
+    /// The share of it a single envelope leaves unexplained (the rebound or the body's
+    /// residual), and the rebound alone.
+    rebound: (f64, usize, f64),
+    /// The largest gap between the body's two lines at their knee, over the peak level, and
+    /// the knee.
+    step: (f64, usize),
 }
 
 /// A least-squares line `y = a + b t` over points `[i, j)` and its squared error.
@@ -1324,24 +2222,82 @@ fn gate_end(
     let mut points = Vec::new();
     let mut t = start + half;
     while t + half <= reach && t <= end {
-        points.push((t as f64, signal.centred(t as isize, window)));
+        points.push((t as f64, signal.level(t as isize, window, period)));
         t += ENVELOPE_STEP_FRAMES;
     }
     let fallback = |level: f64| Gate {
         sample: end,
         confidence: 0.0,
         level,
+        rebound: (0.0, end, 0.0),
+        step: (0.0, end),
     };
     if points.len() < 2 * MIN_SEGMENT_POINTS {
         let level = signal.centred(((start + end) / 2) as isize, (end - start).max(1));
         return fallback(level);
     }
-    let (peak_index, peak) =
-        points.iter().enumerate().fold(
-            (0, 0.0f64),
-            |best, (i, p)| if p.1 > best.1 { (i, p.1) } else { best },
-        );
+    let highest = |from: usize, to: usize| {
+        (from..to).fold((from, 0.0f64), |best, i| {
+            if points[i].1 > best.1 {
+                (i, points[i].1)
+            } else {
+                best
+            }
+        })
+    };
+    let (mut peak_index, mut peak) = highest(0, points.len());
+    // A first line that rises after the highest point is the note's own attack from the level
+    // the note before it left (a retrigger, or the onset's smear of it): its top is the peak.
+    if points.len() - peak_index >= 2 * MIN_SEGMENT_POINTS
+        && let [(_, i, first), (_, j, _), ..] = fit_segments(&points[peak_index..], peak)[..]
+        && first.b > 0.0
+    {
+        (peak_index, peak) = highest(peak_index + i - 1, peak_index + j);
+    }
     let descent = &points[peak_index..];
+    // The largest rise of the level after its lowest point since the peak; before the peak (from
+    // beyond the onset's tolerance, where the window may still hold the note before), a rise after
+    // a fall of at least [`DESCENT_MIN_FRACTION`] of the peak.
+    let settled = start as f64 + half as f64 + ONSET_TOLERANCE_FRAMES as f64;
+    let rebound_over = |upto: f64| {
+        // The highest level so far and the lowest since it.
+        let mut highest = f64::NEG_INFINITY;
+        let mut lowest = (f64::INFINITY, 0usize);
+        let mut rebound = (0.0f64, 0usize);
+        // Any rise after a fall before the peak, for the confidence alone: a retrigger at the
+        // velocity the note sustains at moves the level too little to be an onset.
+        let mut doubt = 0.0f64;
+        for (k, p) in points
+            .iter()
+            .enumerate()
+            .skip_while(|(_, p)| p.0 < settled)
+            .take_while(|(_, p)| p.0 <= upto)
+        {
+            if k == peak_index {
+                highest = p.1;
+                lowest = (p.1, k);
+            }
+            let fell = k > peak_index || highest - lowest.0 >= DESCENT_MIN_FRACTION * peak;
+            if fell && p.1 - lowest.0 > rebound.0 {
+                rebound = (p.1 - lowest.0, lowest.1);
+            }
+            if highest - lowest.0 >= REBOUND_FRACTION * peak {
+                doubt = doubt.max(p.1 - lowest.0);
+            }
+            if k < peak_index && p.1 >= highest {
+                highest = p.1;
+                lowest = (p.1, k);
+            } else if p.1 < lowest.0 {
+                lowest = (p.1, k);
+            }
+        }
+        (
+            rebound.0.max(doubt) / peak,
+            points[rebound.1].0 as usize,
+            rebound.0 / peak,
+        )
+    };
+    let rebound = rebound_over(f64::INFINITY);
     if descent.len() < MIN_SEGMENT_POINTS {
         return Gate {
             sample: if cut {
@@ -1350,14 +2306,17 @@ fn gate_end(
                 points[peak_index].0 as usize
             },
             confidence: if cut { 1.0 } else { 0.0 },
-            level: peak,
+            level: signal.centred(points[peak_index].0 as isize, window),
+            rebound,
+            step: (0.0, end),
         };
     }
     let mut segments = fit_segments(descent, peak);
-    if let [.., (_, _, before), (i, j, rising)] = segments[..]
+    if let [.., (bi, bj, before), (ri, rj, rising)] = segments[..]
         && cut
-        && before.b < 0.0
-        && rising.b * (descent[j - 1].0 - descent[i].0) >= DESCENT_MIN_FRACTION * peak
+        && rising.b * (descent[rj - 1].0 - descent[ri].0) >= REBOUND_FRACTION * peak
+        && descent[rj - 1].0 - descent[ri].0 <= 2.0 * window as f64
+        && -before.b * (descent[bj - 1].0 - descent[bi].0) >= DESCENT_MIN_FRACTION * peak
     {
         // A last line of a cut note that rises after a fall is the next note's attack read early.
         segments.pop();
@@ -1378,7 +2337,19 @@ fn gate_end(
                 .map(|p| last_line.a + last_line.b * p.0 - p.1)
                 .sum::<f64>()
                 / tail.len() as f64;
-            let drop = bend.max(-last_line.b * span);
+            let mut drop = bend.max(-last_line.b * span);
+            // A release begun within the slack of the onset: the line held before it, against
+            // the last point.
+            let settled: Vec<(f64, f64)> = descent[last.0..last.1]
+                .iter()
+                .filter(|p| p.0 + GATE_SLACK_FRAMES + window as f64 <= end as f64)
+                .copied()
+                .collect();
+            if settled.len() >= MIN_SEGMENT_POINTS {
+                let held = Sums::new(&settled).line(0, settled.len());
+                let final_point = descent[last.1 - 1];
+                drop = drop.max(held.a + held.b * final_point.0 - final_point.1);
+            }
             (
                 end,
                 (1.0 - drop / (HOLD_DROP_FULL_FRACTION * peak)).clamp(0.0, 1.0),
@@ -1399,7 +2370,69 @@ fn gate_end(
         } else {
             0.0
         };
-        (knee.round() as usize, visibility)
+        if s1 > 0.0 {
+            // The falling line follows a rise: a decay cut by the onset or ending in an unseen
+            // release, or a release begun at the rise's top; which, the level does not tell.
+            if cut {
+                (end, AMBIGUOUS_GATE_CONFIDENCE)
+            } else {
+                (knee.round() as usize, AMBIGUOUS_GATE_CONFIDENCE)
+            }
+        } else {
+            // A release is one line from its knee. A last line the points bend away from, beyond
+            // the window's reach of the knee and the slack of the end, holds a later knee: a
+            // sustain the line has run into its release.
+            let release = Sums::new(&descent[last.0..last.1]).line(0, last.1 - last.0);
+            let bend = descent[last.0..last.1]
+                .iter()
+                .filter(|p| {
+                    p.0 >= knee + window as f64
+                        && p.0 + window as f64 + GATE_SLACK_FRAMES <= end as f64
+                        && p.1 >= DESCENT_MIN_FRACTION * peak
+                })
+                .map(|p| (p.1 - release.a - release.b * p.0).abs())
+                .fold(0.0f64, f64::max);
+            // A held sustain is as flat as the line before the knee. Where the points after the
+            // window's reach of the knee already fall as steeply as the release, the bend is the
+            // release's own curve (the drive's), not a later knee.
+            let reach: Vec<(f64, f64)> = descent[last.0..last.1]
+                .iter()
+                .filter(|p| p.0 >= knee + window as f64 && p.0 <= knee + 2.0 * window as f64)
+                .copied()
+                .collect();
+            let held = if reach.len() >= MIN_SEGMENT_POINTS && s2 < s1 {
+                let local = Sums::new(&reach).line(0, reach.len());
+                ((local.b - s2) / (s1 - s2)).clamp(0.0, 1.0)
+            } else {
+                1.0
+            };
+            let bend = bend * held;
+            let straight = (1.0 - bend / (REBOUND_FRACTION * peak)).clamp(0.0, 1.0);
+            let sharp = ((s2 - s1).abs() * GATE_SLACK_FRAMES / (KNEE_SHARP_FULL_FRACTION * peak))
+                .clamp(0.0, 1.0);
+            // A cut last line falling less steeply than the line before it may be that line's
+            // decay still running at the next onset, the gate held to it; which, the level does
+            // not tell.
+            let confidence = visibility.min(straight).min(sharp);
+            // A short cut last line after a line that falls from a flatter one: the release may
+            // have begun at the earlier knee, the last line the next note's attack falling to a
+            // lower velocity before its onset is seen.
+            let earlier = match segments[..] {
+                [.., (_, _, first), (bi, bj, middle), (ri, rj, _)] => {
+                    descent[rj - 1].0 - descent[ri].0 <= 2.0 * window as f64
+                        && middle.b < first.b.min(0.0)
+                        && -middle.b * (descent[bj - 1].0 - descent[bi].0)
+                            >= DESCENT_MIN_FRACTION * peak
+                }
+                _ => false,
+            };
+            let confidence = if cut && (s2.abs() < s1.abs() || earlier) {
+                confidence.min(AMBIGUOUS_GATE_CONFIDENCE)
+            } else {
+                confidence
+            };
+            (knee.round() as usize, confidence)
+        }
     } else if cut {
         (end, AMBIGUOUS_GATE_CONFIDENCE)
     } else {
@@ -1421,16 +2454,84 @@ fn gate_end(
         )
     };
     let sample = sample.clamp(start + 1, end);
-    let level = points
+    // The body from the peak to the gate end is a decay and a sustain: two lines. What they leave
+    // unexplained, away from their knee and the window's reach of either end, is another note's.
+    let body: Vec<(f64, f64)> = descent
+        .iter()
+        .filter(|p| p.0 + half as f64 <= sample as f64)
+        .copied()
+        .collect();
+    let mut residual = 0.0f64;
+    let mut step = (0.0f64, end);
+    if body.len() >= 2 * MIN_SEGMENT_POINTS {
+        let fit = fit_segments_up_to(&body, peak, 2);
+        let knees: Vec<f64> = fit.iter().skip(1).map(|s| body[s.0].0).collect();
+        let reach = window as f64;
+        let mut lines: Vec<Option<Line>> = Vec::with_capacity(fit.len());
+        for &(i, j, _) in &fit {
+            // Each line refitted to the points the window's smear of a knee does not reach.
+            let inner: Vec<(f64, f64)> = body[i..j]
+                .iter()
+                .filter(|p| {
+                    !(knees.iter().any(|k| (p.0 - k).abs() < reach)
+                        || p.0 - body[0].0 < reach
+                        || body[body.len() - 1].0 - p.0 < reach + GATE_SLACK_FRAMES)
+                })
+                .copied()
+                .collect();
+            if inner.len() < MIN_SEGMENT_POINTS {
+                // A line too short to clear the gate's slack: the points clear of the knees alone
+                // still tell a step, not a residual.
+                let short: Vec<(f64, f64)> = body[i..j]
+                    .iter()
+                    .filter(|p| {
+                        !(knees.iter().any(|k| (p.0 - k).abs() < reach) || p.0 - body[0].0 < reach)
+                    })
+                    .copied()
+                    .collect();
+                lines.push(
+                    (short.len() >= MIN_SEGMENT_POINTS
+                        && short[short.len() - 1].0 - short[0].0 >= reach)
+                        .then(|| Sums::new(&short).line(0, short.len())),
+                );
+                continue;
+            }
+            let line = Sums::new(&inner).line(0, inner.len());
+            for p in &inner {
+                residual = residual.max((p.1 - line.a - line.b * p.0).abs());
+            }
+            lines.push(Some(line));
+        }
+        // A decay meets its sustain: two lines that do not meet within the window's reach of
+        // their knee are a step of the level, a velocity the note did not start with.
+        for (k, pair) in knees.iter().zip(lines.windows(2)) {
+            if let [Some(a), Some(b)] = pair {
+                let gap = |t: f64| a.a + a.b * t - b.a - b.b * t;
+                let (g1, g2) = (gap(k - reach), gap(k + reach));
+                if g1.signum() == g2.signum() {
+                    let gap = g1.abs().min(g2.abs());
+                    residual = residual.max(gap);
+                    if gap / peak > step.0 {
+                        step = (gap / peak, k.round() as usize);
+                    }
+                }
+            }
+        }
+    }
+    let rebound = rebound_over(sample as f64 - half as f64 - window as f64 - GATE_SLACK_FRAMES);
+    let rebound = (rebound.0.max(residual / peak), rebound.1, rebound.0);
+    // The velocity reads the RMS where the level peaks within the gate (Dc1-2).
+    let loudest = points
         .iter()
         .filter(|p| p.0 <= sample as f64 + half as f64)
-        .map(|p| p.1)
-        .fold(0.0f64, f64::max)
-        .max(points[0].1);
+        .fold(points[0], |best, p| if p.1 > best.1 { *p } else { best });
+    let level = signal.centred(loudest.0 as isize, window);
     Gate {
         sample,
         confidence,
         level,
+        rebound,
+        step,
     }
 }
 
@@ -1442,6 +2543,11 @@ fn intersection(a: Line, b: Line) -> Option<f64> {
 
 /// The best fit of one to three lines to `points` (step 6): `(first, end, line)` per line.
 fn fit_segments(points: &[(f64, f64)], peak: f64) -> Vec<(usize, usize, Line)> {
+    fit_segments_up_to(points, peak, 3)
+}
+
+/// The best fit of one to `lines` (at most three) lines to `points`.
+fn fit_segments_up_to(points: &[(f64, f64)], peak: f64, lines: usize) -> Vec<(usize, usize, Line)> {
     let sums = Sums::new(points);
     let n = points.len();
     let m = MIN_SEGMENT_POINTS;
@@ -1460,7 +2566,7 @@ fn fit_segments(points: &[(f64, f64)], peak: f64) -> Vec<(usize, usize, Line)> {
         }
     }
     // Three lines.
-    if n >= 3 * m {
+    if lines >= 3 && n >= 3 * m {
         for i in m..=n - 2 * m {
             let a = sums.line(0, i);
             for j in i + m..=n - m {
@@ -1476,35 +2582,75 @@ fn fit_segments(points: &[(f64, f64)], peak: f64) -> Vec<(usize, usize, Line)> {
     best.1
 }
 
-/// Whether the note's gate `[start, gate_end)` sounds polyphonic (module documentation).
-fn polyphony(signal: &Signal, start: usize, gate_end: usize, f0_hz: f64) -> bool {
+/// The runs `(first, last)` of `built` (one region's notes) that may be one tone: each note
+/// starts where the one before it ends its tail, the notes with a pitch share one MIDI number, and
+/// a note without one is ambiguous, not too short to measure.
+fn pitch_spans(built: &[Built]) -> Vec<(usize, usize)> {
+    let mut spans: Vec<(usize, usize)> = Vec::new();
+    let mut midi = 0u8;
+    for (i, b) in built.iter().enumerate() {
+        let joins = i > 0
+            && b.note.start_sample <= built[i - 1].note.tail_end_sample
+            && (midi == 0 || b.note.midi_note == 0 || b.note.midi_note == midi);
+        match spans.last_mut() {
+            Some(span) if joins => span.1 = i,
+            _ => {
+                spans.push((i, i));
+                midi = 0;
+            }
+        }
+        if b.note.midi_note != 0 {
+            midi = b.note.midi_note;
+        }
+    }
+    spans
+}
+
+/// Whether `[start, gate_end)`, one run of notes of `pitch_spans` whose most confident pitch is
+/// `f0_hz` (0 for none), sounds polyphonic (module documentation).
+fn polyphony(
+    signal: &Signal,
+    samples: &[f32],
+    (start, gate_end): (usize, usize),
+    f0_hz: f64,
+) -> Option<bool> {
     let span = gate_end.saturating_sub(start);
     let skip = (span / 4).min(2_400);
     let available = span - skip;
     if available < POLYPHONY_MIN_FFT_LENGTH {
-        return false;
+        return Some(false);
     }
     let mut n = POLYPHONY_MAX_FFT_LENGTH;
     while n > available {
         n /= 2;
     }
     let first = start + skip + (available - n) / 2;
-    let mut buffer: Vec<Complex> = (0..n)
-        .map(|k| {
-            let phase = 2.0 * std::f64::consts::PI * k as f64 / n as f64;
-            let w = 0.42 - 0.5 * phase.cos() + 0.08 * (2.0 * phase).cos();
-            Complex::new(signal.x[first + k] * w, 0.0)
-        })
-        .collect();
-    if fft(&mut buffer).is_err() {
-        return false;
+    // A spectrum whose halves differ holds a change of tone, not two tones at once.
+    let halves = (
+        spectrum(signal, first, n / 2),
+        spectrum(signal, first + n / 2, n / 2),
+    );
+    let dot: f64 = halves.0.iter().zip(&halves.1).map(|(a, b)| a * b).sum();
+    let norms = halves.0.iter().map(|a| a * a).sum::<f64>().sqrt()
+        * halves.1.iter().map(|b| b * b).sum::<f64>().sqrt();
+    if norms <= 0.0 || dot < POLYPHONY_STATIONARY * norms {
+        return None;
     }
+    let magnitude = spectrum(signal, first, n);
     let bin_hz = f64::from(SAMPLE_RATE_HZ) / n as f64;
-    let top = ((POLYPHONY_MAX_HZ / bin_hz) as usize).min(n / 2 - 1);
-    let magnitude: Vec<f64> = buffer[..=top + 1].iter().map(|z| z.norm()).collect();
+    let top = magnitude.len() - 2;
     let largest = magnitude[1..=top].iter().copied().fold(0.0f64, f64::max);
     if largest <= 0.0 {
-        return false;
+        return Some(false);
+    }
+    // Without a pitch, only a tonal spectrum is read: noise has peaks that are no harmonics.
+    if f0_hz <= 0.0 {
+        let mut sorted = magnitude[1..=top].to_vec();
+        sorted.sort_by(f64::total_cmp);
+        let median = sorted[sorted.len() / 2];
+        if largest < median * 10f64.powf(POLYPHONY_TONAL_DB / 20.0) {
+            return Some(false);
+        }
     }
     let floor = largest * 10f64.powf(POLYPHONY_PEAK_FLOOR_DB / 20.0);
     let mut peaks: Vec<(f64, f64)> = Vec::new();
@@ -1525,26 +2671,85 @@ fn polyphony(signal: &Signal, start: usize, gate_end: usize, f0_hz: f64) -> bool
             peaks.push(((k as f64 + offset) * bin_hz, m * m));
         }
     }
-    let Some(&(lowest, _)) = peaks.first() else {
-        return false;
+    // Modulation sidebands: a pair of peaks mirrored about one harmonic is the envelope of one
+    // tone changing within the spectrum, not a second tone.
+    if f0_hz > 0.0 {
+        let tolerance = POLYPHONY_SIDEBAND_BINS * bin_hz;
+        let harmonic = |f: f64| (f / f0_hz).round().max(1.0) * f0_hz;
+        let inharmonic = |f: f64| (f - harmonic(f)).abs() > POLYPHONY_HARMONIC_TOLERANCE * f0_hz;
+        let paired: Vec<bool> = peaks
+            .iter()
+            .map(|&(f, p)| {
+                let carrier = harmonic(f);
+                inharmonic(f)
+                    && peaks
+                        .iter()
+                        .any(|&(g, q)| (g - carrier).abs() <= tolerance && q >= 4.0 * p)
+                    && {
+                        let mirror = 2.0 * carrier - f;
+                        peaks.iter().any(|&(g, _)| {
+                            (g - carrier).abs() > tolerance && (g - mirror).abs() <= tolerance
+                        })
+                    }
+            })
+            .collect();
+        let mut kept = paired.iter();
+        peaks.retain(|_| !kept.next().copied().unwrap_or(false));
+    }
+    // The lowest peak that could be a tone of its own; a weaker one is only counted below.
+    let audible = largest * largest * 10f64.powf(POLYPHONY_LOWEST_FLOOR_DB / 10.0);
+    let Some(&(lowest, _)) = peaks.iter().find(|p| p.1 >= audible) else {
+        return Some(false);
     };
-    let fundamental = if f0_hz > 0.0 {
-        let h = lowest / f0_hz;
-        if (h - 1.0).abs() > POLYPHONY_HARMONIC_TOLERANCE {
-            return true;
-        }
-        f0_hz
-    } else {
-        lowest
-    };
+    // The share of the peaks' power that is no harmonic of `fundamental`.
     let total: f64 = peaks.iter().map(|p| p.1).sum();
-    let inharmonic: f64 = peaks
-        .iter()
-        .filter(|(f, _)| {
-            let h = f / fundamental;
-            (h - h.round()).abs() > POLYPHONY_HARMONIC_TOLERANCE || h.round() < 1.0
+    // A peak this near a harmonic is that harmonic: [`POLYPHONY_HARMONIC_TOLERANCE`] of the
+    // fundamental, or the window's main lobe when that is wider.
+    let near = |fundamental: f64| {
+        (POLYPHONY_HARMONIC_TOLERANCE * fundamental).max(POLYPHONY_LOBE_BINS * bin_hz)
+    };
+    let share = |fundamental: f64| {
+        let inharmonic: f64 = peaks
+            .iter()
+            .filter(|(f, _)| {
+                let h = (f / fundamental).round();
+                (f - h * fundamental).abs() > near(fundamental) || h < 1.0
+            })
+            .map(|p| p.1)
+            .sum();
+        inharmonic / total
+    };
+    if f0_hz > 0.0 && (lowest - f0_hz).abs() > near(f0_hz) {
+        // The lowest peak is not the fundamental: two tones, or one tone of another pitch than
+        // the note's (a change of tone the notes do not hold).
+        return (share(lowest) > POLYPHONY_INHARMONIC_SHARE).then_some(true);
+    }
+    let fundamental = if f0_hz > 0.0 { f0_hz } else { lowest };
+    if share(fundamental) <= POLYPHONY_INHARMONIC_SHARE {
+        return Some(false);
+    }
+    // Two halves with two clear pitches are a change of tone.
+    let half = |a: usize| note_pitch(samples, a, a + n / 2).ok().map(|p| p.f0_hz);
+    match (half(first), half(first + n / 2)) {
+        (Some(a), Some(b)) if cents_between(a, b).abs() >= PITCH_CHANGE_CENTS => None,
+        _ => Some(true),
+    }
+}
+
+/// The Blackman-windowed magnitude spectrum of the `n` samples from `first`, bins 0 to one past
+/// [`POLYPHONY_MAX_HZ`].
+fn spectrum(signal: &Signal, first: usize, n: usize) -> Vec<f64> {
+    let mut buffer: Vec<Complex> = (0..n)
+        .map(|k| {
+            let phase = 2.0 * std::f64::consts::PI * k as f64 / n as f64;
+            let w = 0.42 - 0.5 * phase.cos() + 0.08 * (2.0 * phase).cos();
+            Complex::new(signal.x.get(first + k).copied().unwrap_or(0.0) * w, 0.0)
         })
-        .map(|p| p.1)
-        .sum();
-    inharmonic > POLYPHONY_INHARMONIC_SHARE * total
+        .collect();
+    if fft(&mut buffer).is_err() {
+        return vec![0.0; 3];
+    }
+    let bin_hz = f64::from(SAMPLE_RATE_HZ) / n as f64;
+    let top = ((POLYPHONY_MAX_HZ / bin_hz) as usize).min(n / 2 - 1);
+    buffer[..=top + 1].iter().map(|z| z.norm()).collect()
 }

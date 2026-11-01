@@ -6,7 +6,7 @@
 //!
 //! | File | Contents |
 //! |---|---|
-//! | `estimation.txt` | `patchback-note-estimation 1`: the estimation id, the sample rate, the clip's frame count and SHA-256, the estimator's configuration, then one line per note (`patchback_analysis::write_estimation` states the records) |
+//! | `estimation.txt` | `patchback-note-estimation 1`: the estimation id, the sample rate, the clip's frame count and SHA-256, the SHA-256 of the note lines, the estimator's configuration, then one line per note (`patchback_analysis::write_estimation` states the records) |
 //! | `notes.events` | the estimated notes as a note sequence that records the estimation id (`note_estimation_id`), the canonical text of `patchback_core::score::write_events`; its patch id is `patchback_analysis::ESTIMATED_SEQUENCE_PATCH_ID`, the sequence being written for no particular patch |
 //!
 //! Two runs over one clip write identical bytes: the estimation id is a version 8 UUID of the
@@ -233,20 +233,21 @@ fn write_new(path: &Path, bytes: &[u8]) -> io::Result<()> {
 }
 
 /// Binds `sequence`, read from `notes`, to the estimation it records (module documentation,
-/// Dc1-8). On a refusal returns the message that follows the verb's `NoteSequenceNotFound`:
+/// Dc1-8): the estimation it is bound to, `None` for a sequence that records none. On a refusal
+/// returns the message that follows the verb's `NoteSequenceNotFound`:
 /// `"<notes>": patchback.score.NoteEstimationNotFound: <why>`.
 pub fn bind(
     sequence: &NoteSequence,
     notes: &Path,
     estimation: Option<&Path>,
-) -> Result<(), String> {
+) -> Result<Option<NoteEstimation>, String> {
     let refused = |why: String| format!("{notes:?}: patchback.score.NoteEstimationNotFound: {why}");
     let estimations = match estimation {
         Some(path) => vec![read_estimation_file(path).map_err(refused)?],
         None => Vec::new(),
     };
     bind_note_sequence(sequence, &estimations)
-        .map(|_| ())
+        .map(|bound| bound.cloned())
         .map_err(|error| {
             refused(match estimation {
                 Some(path) => format!(

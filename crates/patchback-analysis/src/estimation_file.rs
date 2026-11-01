@@ -15,23 +15,31 @@
 //! | `sample_rate_hz 48000` | the clip's rate |
 //! | `frame_count <n>` | the clip's samples |
 //! | `clip_sha256 <hex>` | the SHA-256 of the clip's samples ([`crate::clip_sha256`]), 64 lower-case hex digits |
+//! | `notes_sha256 <hex>` | the SHA-256 of the note lines, each with its `\n`, in file order (Dc1-14); of no bytes when there are no notes |
 //! | `config <name> <value>` | one per configuration entry, in order ([`crate::configuration`]): a name of `a-z`, `0-9` and `_`, a value of printable ASCII without spaces |
 //! | `note <start> <gate_end> <tail_end> <midi> <f0_hz> <velocity> <onset> <pitch> <gate> <tail>` | one per note in onset order: three sample positions, the MIDI number, f0 in Hz, the velocity and the four confidences |
 //!
 //! Integers are decimal without sign or leading zeros; reals are as Rust prints an `f64` (the
 //! velocity an `f32`): the shortest text that reads back to the same value, never NaN or
-//! infinite. A note satisfies `start < gate_end <= tail_end <= frame_count`, `midi <= 127`,
-//! `f0_hz >= 0`, the velocity and each confidence in `[0, 1]`, and starts at or after the
-//! previous note's tail end. The id must be [`crate::note_estimation_id`] of the file's digest
+//! infinite. A note satisfies `start < gate_end <= tail_end <= frame_count`, `f0_hz > 0`, `midi`
+//! the nearest MIDI number to `f0_hz` and not 0, the velocity in `[0, 1]`, each confidence in
+//! `[0, 1]` and at or above its threshold ([`crate::ONSET_CONFIDENCE_THRESHOLD`] and the other
+//! three), and starts at or after the previous note's tail end: what an accepted estimation
+//! holds (Dc1-14). The note lines must hash to `notes_sha256`, so a note edited without its
+//! digest reads as refused. The id must be [`crate::note_estimation_id`] of the file's digest
 //! and configuration, so a file whose clip, configuration or id was changed reads as refused.
 //! [`write_estimation`] writes the one text [`read_estimation`] reads back to the same value.
 
 use std::fmt;
 
-use patchback_core::digest::hex;
+use patchback_core::digest::{hex, sha256};
 use patchback_core::score::NoteSequence;
 
-use crate::{EstimatedNote, NoteEstimation, SAMPLE_RATE_HZ, note_estimation_id};
+use crate::estimate::nearest_midi;
+use crate::{
+    EstimatedNote, GATE_CONFIDENCE_THRESHOLD, NoteEstimation, ONSET_CONFIDENCE_THRESHOLD,
+    PITCH_CONFIDENCE_THRESHOLD, SAMPLE_RATE_HZ, TAIL_CONFIDENCE_THRESHOLD, note_estimation_id,
+};
 
 /// The file's name inside `patchback estimate --out`.
 pub const ESTIMATION_FILE: &str = "estimation.txt";
@@ -75,6 +83,8 @@ pub enum EstimationReason {
     InvalidNote { why: &'static str },
     /// The id is not the one the digest and configuration give.
     IdentityMismatch,
+    /// The note lines are not the ones `notes_sha256` was computed over.
+    NotesDigestMismatch,
     /// A line longer than [`ESTIMATION_MAX_LINE_BYTES`].
     LineTooLong,
     /// A file longer than [`ESTIMATION_MAX_FILE_BYTES`].
@@ -109,6 +119,10 @@ impl fmt::Display for EstimationReason {
                 f,
                 "the estimation id is not the one its clip digest and configuration give"
             ),
+            Self::NotesDigestMismatch => write!(
+                f,
+                "the note lines are not the ones notes_sha256 was computed over"
+            ),
             Self::LineTooLong => write!(f, "line longer than {ESTIMATION_MAX_LINE_BYTES} bytes"),
             Self::FileTooLarge => write!(f, "file larger than {ESTIMATION_MAX_FILE_BYTES} bytes"),
             Self::TooManyNotes => write!(f, "more than {ESTIMATION_MAX_NOTES} notes"),
@@ -139,31 +153,37 @@ impl std::error::Error for EstimationFileError {}
 
 /// The text of `estimation` (module documentation).
 pub fn write_estimation(estimation: &NoteEstimation) -> String {
+    let notes: String = estimation
+        .notes
+        .iter()
+        .map(|note| {
+            format!(
+                "note {} {} {} {} {} {} {} {} {} {}\n",
+                note.start_sample,
+                note.end_sample,
+                note.tail_end_sample,
+                note.midi_note,
+                note.f0_hz,
+                note.velocity,
+                note.onset_confidence,
+                note.pitch_confidence,
+                note.gate_confidence,
+                note.tail_confidence
+            )
+        })
+        .collect();
     let mut text = format!(
-        "{ESTIMATION_HEADER} {ESTIMATION_FORMAT_VERSION}\nnote_estimation_id {}\nsample_rate_hz {}\nframe_count {}\nclip_sha256 {}\n",
+        "{ESTIMATION_HEADER} {ESTIMATION_FORMAT_VERSION}\nnote_estimation_id {}\nsample_rate_hz {}\nframe_count {}\nclip_sha256 {}\nnotes_sha256 {}\n",
         estimation.note_estimation_id,
         estimation.sample_rate_hz,
         estimation.frame_count,
-        hex(&estimation.clip_sha256)
+        hex(&estimation.clip_sha256),
+        hex(&sha256(notes.as_bytes()))
     );
     for (name, value) in &estimation.configuration {
         text.push_str(&format!("config {name} {value}\n"));
     }
-    for note in &estimation.notes {
-        text.push_str(&format!(
-            "note {} {} {} {} {} {} {} {} {} {}\n",
-            note.start_sample,
-            note.end_sample,
-            note.tail_end_sample,
-            note.midi_note,
-            note.f0_hz,
-            note.velocity,
-            note.onset_confidence,
-            note.pitch_confidence,
-            note.gate_confidence,
-            note.tail_confidence
-        ));
-    }
+    text.push_str(&notes);
     text
 }
 
@@ -251,9 +271,13 @@ pub fn read_estimation(text: &str) -> Result<NoteEstimation, EstimationFileError
     // 5: the digest.
     let digest = record(4, "clip_sha256")?;
     let clip_sha256 = parse_digest(digest).ok_or(at(5)(EstimationReason::MalformedDigest))?;
+    // 6: the digest of the note lines.
+    let notes_digest = record(5, "notes_sha256")?;
+    let notes_sha256 =
+        parse_digest(notes_digest).ok_or(at(6)(EstimationReason::MalformedDigest))?;
 
     // The configuration, then the notes.
-    let mut i = 5;
+    let mut i = 6;
     let mut configuration = Vec::new();
     while i < lines.len() && fields(i).first() == Some(&"config") {
         let f = fields(i);
@@ -271,6 +295,7 @@ pub fn read_estimation(text: &str) -> Result<NoteEstimation, EstimationFileError
         configuration.push((f[1].to_owned(), f[2].to_owned()));
         i += 1;
     }
+    let first_note = i;
     let mut notes: Vec<EstimatedNote> = Vec::new();
     while i < lines.len() {
         let line = i + 1;
@@ -318,14 +343,29 @@ pub fn read_estimation(text: &str) -> Result<NoteEstimation, EstimationFileError
             .ok()
             .filter(|m| *m <= 127)
             .ok_or_else(|| invalid("the MIDI number is above 127"))?;
-        if f0_hz < 0.0 {
-            return Err(invalid("f0 is negative"));
+        if f0_hz <= 0.0 {
+            return Err(invalid("f0 is not positive"));
+        }
+        if midi_note == 0 {
+            return Err(invalid("the MIDI number is 0"));
+        }
+        if midi_note != nearest_midi(f0_hz) {
+            return Err(invalid("the MIDI number is not the nearest to f0"));
         }
         if !(0.0..=1.0).contains(&velocity) {
             return Err(invalid("the velocity is outside 0 to 1"));
         }
         if confidences.iter().any(|c| !(0.0..=1.0).contains(c)) {
             return Err(invalid("a confidence is outside 0 to 1"));
+        }
+        let thresholds = [
+            ONSET_CONFIDENCE_THRESHOLD,
+            PITCH_CONFIDENCE_THRESHOLD,
+            GATE_CONFIDENCE_THRESHOLD,
+            TAIL_CONFIDENCE_THRESHOLD,
+        ];
+        if confidences.iter().zip(thresholds).any(|(c, t)| *c < t) {
+            return Err(invalid("a confidence is below its threshold"));
         }
         notes.push(EstimatedNote {
             start_sample: start,
@@ -340,6 +380,13 @@ pub fn read_estimation(text: &str) -> Result<NoteEstimation, EstimationFileError
             tail_confidence: confidences[3],
         });
         i += 1;
+    }
+    let note_text: String = lines[first_note..]
+        .iter()
+        .map(|l| format!("{l}\n"))
+        .collect();
+    if sha256(note_text.as_bytes()) != notes_sha256 {
+        return Err(at(6)(EstimationReason::NotesDigestMismatch));
     }
     if note_estimation_id(&clip_sha256, &configuration) != id {
         return Err(at(2)(EstimationReason::IdentityMismatch));
@@ -446,5 +493,56 @@ pub fn bind_note_sequence<'a>(
             .ok_or_else(|| NoteEstimationNotFound {
                 note_estimation_id: id.clone(),
             }),
+    }
+}
+
+/// `patchback.score.EstimationClipMismatch`: the estimation a sequence is bound to was made from
+/// another clip than the one it is fitted against (Dc1-14, `estimation-of-another-clip` of
+/// `LoadNoteSequence`); no sequence is loaded.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EstimationClipMismatch {
+    /// The estimation the sequence is bound to.
+    pub note_estimation_id: String,
+    /// The SHA-256 of the clip the estimation records.
+    pub estimated_clip_sha256: [u8; 32],
+    /// The SHA-256 of the clip the sequence is fitted against ([`crate::clip_sha256`]).
+    pub fitted_clip_sha256: [u8; 32],
+}
+
+impl EstimationClipMismatch {
+    /// The error of `spec/domains/score.yaml` this refusal is.
+    pub fn domain_error(&self) -> &'static str {
+        "patchback.score.EstimationClipMismatch"
+    }
+}
+
+impl fmt::Display for EstimationClipMismatch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "note estimation {} was made from the clip of SHA-256 {}, not from the fitted clip of SHA-256 {}",
+            self.note_estimation_id,
+            hex(&self.estimated_clip_sha256),
+            hex(&self.fitted_clip_sha256)
+        )
+    }
+}
+
+impl std::error::Error for EstimationClipMismatch {}
+
+/// Checks that `estimation` was made from the clip whose samples hash to `fitted_clip_sha256`
+/// ([`crate::clip_sha256`]; Dc1-14).
+pub fn check_estimation_clip(
+    estimation: &NoteEstimation,
+    fitted_clip_sha256: &[u8; 32],
+) -> Result<(), EstimationClipMismatch> {
+    if &estimation.clip_sha256 == fitted_clip_sha256 {
+        Ok(())
+    } else {
+        Err(EstimationClipMismatch {
+            note_estimation_id: estimation.note_estimation_id.clone(),
+            estimated_clip_sha256: estimation.clip_sha256,
+            fitted_clip_sha256: *fitted_clip_sha256,
+        })
     }
 }

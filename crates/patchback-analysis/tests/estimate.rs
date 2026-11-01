@@ -359,6 +359,17 @@ fn the_estimation_file_reads_back_to_the_estimation() {
         lines[4],
         format!("clip_sha256 {}", hex(&estimation.clip_sha256))
     );
+    // Dc1-14: the SHA-256 of the note lines as written, each with its newline.
+    let note_text: String = text
+        .lines()
+        .filter(|l| l.starts_with("note "))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    assert_eq!(
+        lines[5],
+        format!("notes_sha256 {}", hex(&sha256(note_text.as_bytes())))
+    );
+    assert!(lines[6].starts_with("config "), "{}", lines[6]);
     assert_eq!(
         lines.iter().filter(|l| l.starts_with("note ")).count(),
         estimation.notes.len()
@@ -426,7 +437,7 @@ fn the_estimation_file_reader_refuses_what_the_writer_never_writes() {
         EstimationReason::IdentityMismatch
     ));
     assert!(matches!(
-        reason(&with(5, "config onset_hop")),
+        reason(&with(6, "config onset_hop")),
         EstimationReason::FieldCount { .. }
     ));
     assert!(matches!(
@@ -482,6 +493,106 @@ fn the_estimation_file_reader_refuses_what_the_writer_never_writes() {
     let error = read_estimation(&with(2, "sample_rate_hz 44100")).unwrap_err();
     assert_eq!(error.line, 3);
     assert!(error.to_string().contains("line 3"), "{error}");
+}
+
+/// The file's lines with `notes_sha256` recomputed over its note lines, so that a refusal can
+/// only come from what a note says.
+fn resealed(lines: &[String]) -> String {
+    let note_text: String = lines
+        .iter()
+        .filter(|l| l.starts_with("note "))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    let digest = format!("notes_sha256 {}", hex(&sha256(note_text.as_bytes())));
+    lines
+        .iter()
+        .map(|l| {
+            if l.starts_with("notes_sha256 ") {
+                digest.clone()
+            } else {
+                l.clone()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n"
+}
+
+/// Dc1-14: the file vouches for its own note lines and holds only notes an accepted estimation
+/// can hold.
+#[test]
+fn the_estimation_file_refuses_note_lines_it_does_not_vouch_for() {
+    let estimation = estimated(&render_notes(PLAIN, &PHRASE));
+    let text = write_estimation(&estimation);
+    let lines: Vec<String> = text.lines().map(str::to_owned).collect();
+    let note_line = lines.iter().position(|l| l.starts_with("note ")).unwrap();
+    let note_fields: Vec<String> = lines[note_line].split(' ').map(str::to_owned).collect();
+    let note_with = |changes: &[(usize, &str)]| {
+        let mut fields = note_fields.clone();
+        for (field, value) in changes {
+            fields[*field] = (*value).to_owned();
+        }
+        let mut changed = lines.clone();
+        changed[note_line] = fields.join(" ");
+        changed
+    };
+    assert_eq!(resealed(&lines), text, "resealing changes nothing");
+
+    // A note line changed without its digest.
+    let mut tampered = note_with(&[(6, "0.5")]);
+    let tampered_text = tampered.join("\n") + "\n";
+    assert!(
+        matches!(
+            reason(&tampered_text),
+            EstimationReason::NotesDigestMismatch
+        ),
+        "{:?}",
+        reason(&tampered_text)
+    );
+    let error = read_estimation(&tampered_text).unwrap_err();
+    assert_eq!(error.line, 6, "{error}");
+    // The same note with its digest recomputed is read.
+    assert!(read_estimation(&resealed(&tampered)).is_ok());
+    // A malformed or missing digest.
+    tampered[5] = "notes_sha256 00".to_owned();
+    assert!(matches!(
+        reason(&(tampered.join("\n") + "\n")),
+        EstimationReason::MalformedDigest
+    ));
+    let mut missing = lines.clone();
+    missing.remove(5);
+    assert!(matches!(
+        reason(&(missing.join("\n") + "\n")),
+        EstimationReason::UnexpectedRecord { .. }
+    ));
+
+    // What no accepted estimation holds, even sealed: no pitch, a MIDI number that is not the
+    // nearest to f0, a confidence below its threshold.
+    let invalid = |changed: Vec<String>| match reason(&resealed(&changed)) {
+        EstimationReason::InvalidNote { why } => why,
+        other => panic!("expected an invalid note, got {other:?}"),
+    };
+    invalid(note_with(&[(4, "0"), (5, "0")]));
+    invalid(note_with(&[(5, "0")]));
+    invalid(note_with(&[(4, "0")]));
+    let f0: f64 = note_fields[5].parse().unwrap();
+    let midi: u8 = note_fields[4].parse().unwrap();
+    invalid(note_with(&[(4, &(midi + 1).to_string())]));
+    invalid(note_with(&[(5, &(f0 * 2.0).to_string())]));
+    for (field, threshold) in [
+        (7, ONSET_CONFIDENCE_THRESHOLD),
+        (8, PITCH_CONFIDENCE_THRESHOLD),
+        (9, GATE_CONFIDENCE_THRESHOLD),
+        (10, TAIL_CONFIDENCE_THRESHOLD),
+    ] {
+        let below = (threshold - 0.01).to_string();
+        invalid(note_with(&[(field, &below)]));
+        let at = threshold.to_string();
+        assert!(
+            read_estimation(&resealed(&note_with(&[(field, &at)]))).is_ok(),
+            "a confidence at its threshold is read"
+        );
+    }
 }
 
 // The input guards AnalyzeAudio declares, which EstimateNotes passes on.

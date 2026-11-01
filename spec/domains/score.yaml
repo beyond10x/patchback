@@ -230,6 +230,17 @@ errors:
       - name: note_estimation_id
         type: Optional<patchback.analysis.NoteEstimationId>
 
+  - name: patchback.score.EstimationClipMismatch
+    summary: >-
+      The note estimation the sequence names was made from another clip than the one it is fitted
+      against (approval-record:wave-c1 Dc1-14): the SHA-256 of the clip the estimation records is
+      not the fitted clip's. No sequence is loaded.
+    fields:
+      - name: note_sequence_id
+        type: patchback.score.NoteSequenceId
+      - name: note_estimation_id
+        type: Optional<patchback.analysis.NoteEstimationId>
+
   - name: patchback.score.SampleRateMismatch
     summary: The sequence's sample rate is not its patch's (section 10).
     fields:
@@ -413,6 +424,16 @@ commands:
         payload:
           patchback.score.LengthBoundExceeded:
             note_sequence_id: input.note_sequence_id
+      # approval-record:wave-c1 Dc1-14: a fit binds the sequence to its estimation only when the
+      # estimation was made from the clip being fitted. The clip is the fit's input, outside this
+      # command's input, so the comparison of the two SHA-256 digests is the loader's.
+      - name: estimation-of-another-clip
+        external: the estimation the sequence names was made from a clip whose SHA-256 is not the fitted clip's
+        error: patchback.score.EstimationClipMismatch
+        payload:
+          patchback.score.EstimationClipMismatch:
+            note_sequence_id: input.note_sequence_id
+            note_estimation_id: input.note_estimation_id
       - name: loaded
         creates: patchback.score.NoteSequence
         instance: note_sequence_id

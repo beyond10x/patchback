@@ -423,3 +423,29 @@ fn fit_binds_a_sequence_to_its_estimation_and_refuses_it_without_one() {
         parse_events(&fs::read_to_string(&notes).unwrap()).unwrap()
     );
 }
+
+/// Dc1-14: the estimation binds the sequence only to the clip it was estimated from.
+#[test]
+fn fit_refuses_an_estimation_of_another_clip_than_its_input() {
+    let dir = scratch("fit-other-clip");
+    let (_, estimation_dir, _) = estimated_phrase(&dir);
+    let notes = estimation_dir.join("notes.events");
+    let estimation = estimation_dir.join("estimation.txt");
+    // The same notes, rendered a little louder: another clip.
+    let mut louder = render_notes(VOICE, &PHRASE);
+    for sample in &mut louder {
+        *sample *= 1.25;
+    }
+    let other = wav(&dir, "other.wav", louder);
+    let out = dir.join("out");
+    let line = assert_refused(
+        &fit_with(&other, &notes, &out, Some(&estimation)),
+        "patchback: fit refused: patchback.fit.NoteSequenceNotFound: ",
+    );
+    assert!(
+        line.contains("patchback.score.EstimationClipMismatch"),
+        "{line}"
+    );
+    assert!(line.contains("other.wav"), "{line}");
+    assert!(!out.exists());
+}

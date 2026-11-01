@@ -89,7 +89,10 @@
 //!    Dc1-8, `crate::estimate::bind`): without `--estimation`, with another estimation's file, or
 //!    with one that cannot be read or is refused, it is refused here with
 //!    `patchback.score.NoteEstimationNotFound` following; a given `--estimation` that cannot be
-//!    read or is refused is refused so even when the sequence records no estimation.
+//!    read or is refused is refused so even when the sequence records no estimation. A
+//!    sequence bound to an estimation of another clip (its `clip_sha256` is not
+//!    `patchback_analysis::clip_sha256` of the `--input` samples) is refused here with
+//!    `patchback.score.EstimationClipMismatch` following (Dc1-14).
 //! 4. On a seeded run, the inputs as files (Da11-6): `patchback.model.UnknownWeightArtifact`
 //!    for a `--weights` path with no file or one that cannot be read;
 //!    `patchback.model.CorruptWeightArtifact` for a file `weights/1` refuses (its reason
@@ -154,7 +157,9 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::Args;
-use patchback_analysis::{AnalysisConfig, analyze_clip, read_stats};
+use patchback_analysis::{
+    AnalysisConfig, analyze_clip, check_estimation_clip, clip_sha256, read_stats,
+};
 use patchback_audio::{AudioClip, MAX_FRAMES, decode};
 use patchback_core::digest::sha256;
 use patchback_core::parameter::Topology;
@@ -316,7 +321,11 @@ pub fn fit_and_write(args: &FitArgs) -> Result<FitOutcome, Refusal> {
     config.bounds.check()?;
     // 2. The reference, 3. the note sequence, each with the digest of its bytes.
     let (reference, reference_sha256) = read_reference(&args.input)?;
-    let (notes, notes_sha256) = read_notes(&args.notes, args.estimation.as_deref())?;
+    let (notes, notes_sha256) = read_notes(
+        &args.notes,
+        args.estimation.as_deref(),
+        (&args.input, &clip_sha256(reference.samples())),
+    )?;
     // The weight artifact and its statistics, when given (each requires the other).
     let seed = match (&args.weights, &args.normalization) {
         (Some(weights), Some(normalization)) => Some(read_seed_inputs(weights, normalization)?),
@@ -410,9 +419,13 @@ fn read_reference(path: &Path) -> Result<(AudioClip, [u8; 32]), Refusal> {
     Ok((clip, sha256(&bytes)))
 }
 
-/// The note sequence, bound to the estimation it records (Dc1-8), and the SHA-256 of the bytes
-/// it was parsed from.
-fn read_notes(path: &Path, estimation: Option<&Path>) -> Result<(NoteSequence, [u8; 32]), Refusal> {
+/// The note sequence, bound to the estimation it records (Dc1-8) and made from the `input` clip
+/// whose samples hash to `clip` (Dc1-14), and the SHA-256 of the bytes it was parsed from.
+fn read_notes(
+    path: &Path,
+    estimation: Option<&Path>,
+    (input, clip): (&Path, &[u8; 32]),
+) -> Result<(NoteSequence, [u8; 32]), Refusal> {
     let refused = |message: String| Refusal::domain("patchback.fit.NoteSequenceNotFound", message);
     let bytes = read_bounded(path, MAX_EVENTS_FILE_BYTES as u64)
         .map_err(|io| refused(format!("no note sequence at {path:?}: {io}")))?;
@@ -424,7 +437,14 @@ fn read_notes(path: &Path, estimation: Option<&Path>) -> Result<(NoteSequence, [
             }
         })
     })?;
-    crate::estimate::bind(&notes, path, estimation).map_err(refused)?;
+    if let Some(bound) = crate::estimate::bind(&notes, path, estimation).map_err(refused)?
+        && let Err(mismatch) = check_estimation_clip(&bound, clip)
+    {
+        return Err(refused(format!(
+            "{path:?}: {}: {mismatch}; --input {input:?} is not the clip it was estimated from",
+            mismatch.domain_error()
+        )));
+    }
     Ok((notes, sha256(&bytes)))
 }
 
