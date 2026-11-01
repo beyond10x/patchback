@@ -8,7 +8,7 @@ relations:
 - decides: story:note-estimation
 - decides: story:studio-patch-graph
 - decides: story:studio-fit-replay
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-01T15:24:46Z", actor: "human:timo", revision: 2, executor: "agent:wave-c1-coordinator"}
 ---
@@ -215,6 +215,15 @@ results and highest engineering quality"), after the adversary passes.
   step for a level onset). When its half-width reaches the 256-sample tolerance, the confidence is
   below threshold. Two stress violations left after Dc1-12..14 (a MIDI 42 pitch change, a 3 dB
   level onset) are fixed by this rule, not by a case-specific cap and not accepted as red.
+- Dc1-18 Replaces Dc1-15's widening clause. Widening by half the longer period, measured, marked
+  32 % of correct reference change points unconfident (pooled confident-inside 0.834 against
+  0.90) and refused the shared three-note fixture phrase: it is a property of the pitch, not of
+  the evidence. The χ² interval and the prominence bound stay. Pitch-change onsets are refined on
+  the sample grid from the residual of the old note's periodic continuation meeting the new
+  note's backward continuation, and the interval is widened only by the grid its cost was
+  evaluated on. If low-note errors survive with a narrow interval, the χ² noise variance is
+  recalibrated from the residual's autocorrelation. The 0.90 bound, the MIDI range and the
+  fixture do not change.
 - Dc1-16 A lint-only patch to the adversary's `tests/adversary_1.rs` (a type alias, one hex
   literal regrouped to the same value) is applied, so clippy `-D warnings` passes on all targets;
   no assertion changes.
