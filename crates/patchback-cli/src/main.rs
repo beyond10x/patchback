@@ -1,26 +1,27 @@
 //! `patchback`, the application entry point (DESIGN.md § 4.1, § 11).
 //!
 //! The binary recognises the Milestone A subcommands, `patch validate`, `render`, `analyze`,
-//! `compare`, `fit` and `benchmark`, and the Milestone B `generate-dataset`, all implemented:
-//! `patch validate <file>` ([`patch_validate`]), `render --patch <file> --notes <file> --out
-//! <wav> [--block-size <frames>]` ([`render`]), `analyze --input <wav> --out <dir>`
-//! ([`analyze`]), `compare --reference <wav> --candidate <wav>` ([`compare`]), `fit --input
-//! <wav> --notes <file> --out <dir> [--max-renders <n>] [--max-wall-time-ms <ms>]
-//! [--max-restarts <n>] [--improvement-threshold <loss>] [--seed <n>] [--block-size <frames>]
-//! [--weights <path> --normalization <path>]`
-//! ([`fit`]), `benchmark --out <dir> --examples <n> [--seed <n>] [--topology <name>]
+//! `compare`, `fit` and `benchmark`, the Milestone B `generate-dataset` and the Milestone C
+//! `estimate`, all implemented: `patch validate <file>` ([`patch_validate`]), `render --patch
+//! <file> --notes <file> --out <wav> [--block-size <frames>] [--estimation <path>]`
+//! ([`render`]), `analyze --input <wav> --out <dir>` ([`analyze`]), `compare --reference <wav>
+//! --candidate <wav>` ([`compare`]), `fit --input <wav> --notes <file> --out <dir>
 //! [--max-renders <n>] [--max-wall-time-ms <ms>] [--max-restarts <n>] [--improvement-threshold
-//! <loss>] [--block-size <frames>] [--kind engine-baseline|ml-init] [--weights <path>
-//! --normalization <path>]` ([`benchmark`]) and `generate-dataset --seed <n> --samples
-//! <n> --out <dir>` ([`generate_dataset`]). The command line is parsed with clap derive, the one
-//! reviewed command-line crate (DESIGN.md § 3).
+//! <loss>] [--seed <n>] [--block-size <frames>] [--weights <path> --normalization <path>]
+//! [--estimation <path>]` ([`fit`]), `benchmark --out <dir> --examples <n> [--seed <n>]
+//! [--topology <name>] [--max-renders <n>] [--max-wall-time-ms <ms>] [--max-restarts <n>]
+//! [--improvement-threshold <loss>] [--block-size <frames>] [--kind engine-baseline|ml-init]
+//! [--weights <path> --normalization <path>]` ([`benchmark`]), `generate-dataset --seed <n>
+//! --samples <n> --out <dir>` ([`generate_dataset`]) and `estimate --input <wav> --out <dir>`
+//! ([`estimate`]). The command line is parsed with clap derive, the one reviewed command-line
+//! crate (DESIGN.md § 3).
 //!
 //! Exit statuses:
 //!
 //! | Status | Meaning |
 //! |---|---|
-//! | 0 | `patch validate` found the patch valid and printed one line naming it, its node and edge counts, to stdout; or `render` wrote its WAV and printed the output path, sample rate, block size, frame count, `limited true` or `limited false` and the limited sample count as `key value` lines to stdout; or `analyze` wrote its analysis file and printed its path to stdout; or `compare` printed the loss, its four components, their weights and the alignment lag as `key value` lines to stdout; or `fit` wrote its six files (`patch.patch`, `notes.events`, `reconstructed.wav`, `report.txt`, `run.meta` and `trace.events`) and printed `out`, `init` (`default`, or `regressor-prediction` with `--weights` and `--normalization`), the run's evaluations, restarts, initial and best loss, the best loss's four components, the stop reason, the wall time and `limited` as `key value` lines to stdout, then a last `warning clamped <n> of 8 predictions` line when a seeded run's prediction had `<n>` values outside [0, 1]; or `generate-dataset` wrote `normalization.stats`, `dataset.meta`, and the three `samples.meta`, `x.f32`, `y.f32` and `order.u32`, and printed `out` and the split and diagnostic counts as `key value` lines to stdout; or `benchmark` wrote `clips.txt`, `examples/<k>/reference.wav`, `default.wav` and `fit.wav` for the first three clips, and `benchmark.txt`, and printed the default and search median losses, the reduction, `target_verdict met` or `target_verdict not-met`, the median evaluations, the wall time and one `listening_example` line per example as `key value` lines to stdout (both verdicts exit 0); or `benchmark --kind ml-init` with `--weights` and `--normalization` wrote the same files with `predicted.wav` and `seeded.wav` beside each example's three, and printed the default, search, raw regressor and regressor-search median losses, both median evaluations, `clamped_predictions <n> of <clips>`, the wall time and one `listening_example` line per example as `key value` lines to stdout (no reduction and no verdict); or `--help` or `-h` (on the root or on any command) or `help [command]` printed clap's help to stdout; or `--version` or `-V` printed `patchback <version>` to stdout |
-//! | 1 | `patch validate` refused (an unreadable file, a file the parser refuses, a graph validation refuses), with one line on stderr: `patchback: patch validate refused: <domain error>: "<file>": <line or node or edge>: <reason>`; or `render` refused (an unsupported sample rate, a block size of zero or less, a patch or note sequence not found, a patch not compiled, a render too long, a non-finite sample, an existing output or one it cannot write) and wrote nothing, with one line on stderr: `patchback: render refused: <domain error>: <message>` for a domain refusal; or `analyze` refused (unreadable or refused WAV, a refused analysis, an existing analysis file, an output it cannot write) and wrote nothing, with one line on stderr naming the reason: `patchback: analyze refused: <domain error>: <message>` for a domain refusal; or `compare` refused (a missing clip, a refused WAV, clips at different rates, lengths alignment cannot absorb), with one line on stderr: `patchback: compare refused: <domain error>: <message>` for a domain refusal; or `fit` refused (a bound of 0, a missing or refused reference or note sequence, a missing or corrupt weight artifact, missing or malformed normalization statistics, an artifact or statistics of another feature contract than `features/1`, a seeded first note that reaches the reference's end or whose clip is silent or pitch-ambiguous, a silent or unpitched reference, a run without a valid candidate, an `--out` that is not a directory, one of its six files already in `--out`, or one it cannot write) and wrote nothing, with one line on stderr: `patchback: fit refused: <domain error>: <message>` for a domain refusal; or `generate-dataset` refused (a split count that is not a positive multiple of 16, an existing `dataset.meta`, `normalization.stats`, `samples.meta`, `x.f32`, `y.f32` or `order.u32`, an output it cannot write, a dense file that does not read back with its byte count and finite values, a generation that ran out of draws) and left nothing written, with one line on stderr: `patchback: generate-dataset refused: <domain error>: <message>` for a domain refusal; or `benchmark` refused (a missing or corrupt weight artifact, missing or malformed normalization statistics, an artifact or statistics of another feature contract than `features/1`, an `--examples` of 0, `--kind ml-init` without a weight artifact, an unknown `--topology`, a bound of 0, an `--out` that is not a directory, an existing `benchmark.txt`, `clips.txt` or `examples`, a holdout not drawn within four draws a clip, a clip whose reference or default patch cannot be rendered or compared or whose fit is refused or fails, on `--kind ml-init` also a clip whose analysis, seeded fit or predicted patch is refused or fails, an engine baseline's default median loss of 0, an output it cannot write) and left nothing written, with one line on stderr: `patchback: benchmark refused: <domain error>: <message>` for a domain refusal, `patchback: benchmark refused: clip <k>: <domain error>: <message>` for a clip |
+//! | 0 | `patch validate` found the patch valid and printed one line naming it, its node and edge counts, to stdout; or `render` wrote its WAV and printed the output path, sample rate, block size, frame count, `limited true` or `limited false` and the limited sample count as `key value` lines to stdout; or `analyze` wrote its analysis file and printed its path to stdout; or `compare` printed the loss, its four components, their weights and the alignment lag as `key value` lines to stdout; or `fit` wrote its six files (`patch.patch`, `notes.events`, `reconstructed.wav`, `report.txt`, `run.meta` and `trace.events`) and printed `out`, `init` (`default`, or `regressor-prediction` with `--weights` and `--normalization`), the run's evaluations, restarts, initial and best loss, the best loss's four components, the stop reason, the wall time and `limited` as `key value` lines to stdout, then a last `warning clamped <n> of 8 predictions` line when a seeded run's prediction had `<n>` values outside [0, 1]; or `generate-dataset` wrote `normalization.stats`, `dataset.meta`, and the three `samples.meta`, `x.f32`, `y.f32` and `order.u32`, and printed `out` and the split and diagnostic counts as `key value` lines to stdout; or `benchmark` wrote `clips.txt`, `examples/<k>/reference.wav`, `default.wav` and `fit.wav` for the first three clips, and `benchmark.txt`, and printed the default and search median losses, the reduction, `target_verdict met` or `target_verdict not-met`, the median evaluations, the wall time and one `listening_example` line per example as `key value` lines to stdout (both verdicts exit 0); or `benchmark --kind ml-init` with `--weights` and `--normalization` wrote the same files with `predicted.wav` and `seeded.wav` beside each example's three, and printed the default, search, raw regressor and regressor-search median losses, both median evaluations, `clamped_predictions <n> of <clips>`, the wall time and one `listening_example` line per example as `key value` lines to stdout (no reduction and no verdict); or `estimate` wrote `estimation.txt` and `notes.events` and printed `out`, `note_estimation_id` and `notes` as `key value` lines to stdout; or `--help` or `-h` (on the root or on any command) or `help [command]` printed clap's help to stdout; or `--version` or `-V` printed `patchback <version>` to stdout |
+//! | 1 | `patch validate` refused (an unreadable file, a file the parser refuses, a graph validation refuses), with one line on stderr: `patchback: patch validate refused: <domain error>: "<file>": <line or node or edge>: <reason>`; or `render` refused (an unsupported sample rate, a block size of zero or less, a patch or note sequence not found (a sequence that records a `note_estimation_id` is not found without the `--estimation` of that id; a given `--estimation` that cannot be read or is refused is refused so too), a patch not compiled, a render too long, a non-finite sample, an existing output or one it cannot write) and wrote nothing, with one line on stderr: `patchback: render refused: <domain error>: <message>` for a domain refusal; or `analyze` refused (unreadable or refused WAV, a refused analysis, an existing analysis file, an output it cannot write) and wrote nothing, with one line on stderr naming the reason: `patchback: analyze refused: <domain error>: <message>` for a domain refusal; or `compare` refused (a missing clip, a refused WAV, clips at different rates, lengths alignment cannot absorb), with one line on stderr: `patchback: compare refused: <domain error>: <message>` for a domain refusal; or `fit` refused (a bound of 0, a missing or refused reference or note sequence (a sequence that records a `note_estimation_id` without the `--estimation` of that id, or a given `--estimation` that cannot be read or is refused, included), a missing or corrupt weight artifact, missing or malformed normalization statistics, an artifact or statistics of another feature contract than `features/1`, a seeded first note that reaches the reference's end or whose clip is silent or pitch-ambiguous, a silent or unpitched reference, a run without a valid candidate, an `--out` that is not a directory, one of its six files already in `--out`, or one it cannot write) and wrote nothing, with one line on stderr: `patchback: fit refused: <domain error>: <message>` for a domain refusal; or `generate-dataset` refused (a split count that is not a positive multiple of 16, an existing `dataset.meta`, `normalization.stats`, `samples.meta`, `x.f32`, `y.f32` or `order.u32`, an output it cannot write, a dense file that does not read back with its byte count and finite values, a generation that ran out of draws) and left nothing written, with one line on stderr: `patchback: generate-dataset refused: <domain error>: <message>` for a domain refusal; or `benchmark` refused (a missing or corrupt weight artifact, missing or malformed normalization statistics, an artifact or statistics of another feature contract than `features/1`, an `--examples` of 0, `--kind ml-init` without a weight artifact, an unknown `--topology`, a bound of 0, an `--out` that is not a directory, an existing `benchmark.txt`, `clips.txt` or `examples`, a holdout not drawn within four draws a clip, a clip whose reference or default patch cannot be rendered or compared or whose fit is refused or fails, on `--kind ml-init` also a clip whose analysis, seeded fit or predicted patch is refused or fails, an engine baseline's default median loss of 0, an output it cannot write) and left nothing written, with one line on stderr: `patchback: benchmark refused: <domain error>: <message>` for a domain refusal, `patchback: benchmark refused: clip <k>: <domain error>: <message>` for a clip; or `estimate` refused (an `--out` that is not a directory, an existing `estimation.txt` or `notes.events`, an unreadable or refused WAV, an input the estimation refuses: empty, at another rate, too long, non-finite, silent, polyphonic, or with notes below their confidence thresholds, which the message lists by index with their quantities, an output it cannot write) and left nothing written, with one line on stderr: `patchback: estimate refused: <domain error>: <message>` for a domain refusal |
 //! | 2 | usage error, reported by clap on stderr: no arguments or `patch` alone (the help, to stderr), an unknown command or flag, `patch validate` without its file or with a second one, a missing `--patch`, `--notes`, `--out`, `--input`, `--reference`, `--candidate`, `--seed`, `--samples` or `--examples`, a `--block-size`, `--max-renders`, `--max-wall-time-ms`, `--max-restarts`, `--seed`, `--samples` or `--examples` that is not a non-negative integer, a `--samples` above 4294967295, an `--improvement-threshold` that is not a finite non-negative decimal, a `--block-size` below 1, `--weights` without `--normalization` or `--normalization` without `--weights`, a `benchmark --kind` other than `engine-baseline` or `ml-init`, `benchmark --weights` or `--normalization` with the engine baseline (by default or named), or an argument a command does not take |
 //!
 //! Where clap's conventions differ from the std-only parser of wave a1: help is the help of the
@@ -31,6 +32,7 @@
 mod analyze;
 mod benchmark;
 mod compare;
+mod estimate;
 mod fit;
 mod generate_dataset;
 mod patch_validate;
@@ -76,6 +78,10 @@ enum Command {
         /// The mono 48 kHz float32 WAV to write; it must not exist yet
         #[arg(long)]
         out: PathBuf,
+        /// The estimation.txt the notes were estimated into, required when notes.events records a
+        /// note_estimation_id
+        #[arg(long)]
+        estimation: Option<PathBuf>,
         /// Frames per processing block, a positive integer [default: 256]
         #[arg(long, allow_negative_numbers = true)]
         block_size: Option<i64>,
@@ -105,6 +111,15 @@ enum Command {
     /// Benchmark the fit against the default patch, or the regressor's start, over a synthesized
     /// holdout
     Benchmark(benchmark::BenchmarkArgs),
+    /// Estimate the notes of a monophonic WAV with a confidence for each quantity
+    Estimate {
+        /// The WAV to estimate: mono or stereo, PCM16 or float32, 48 kHz, one note at a time
+        #[arg(long)]
+        input: PathBuf,
+        /// The directory to write estimation.txt and notes.events into; created when absent
+        #[arg(long)]
+        out: PathBuf,
+    },
 }
 
 #[derive(Subcommand)]
@@ -126,8 +141,9 @@ fn main() -> ExitCode {
             patch,
             notes,
             out,
+            estimation,
             block_size,
-        } => match render::run(patch, notes, out, *block_size) {
+        } => match render::run(patch, notes, estimation.as_deref(), out, *block_size) {
             Ok(written) => {
                 print!("{}", render::report(out, &written.report));
                 ExitCode::SUCCESS
@@ -163,5 +179,15 @@ fn main() -> ExitCode {
         Command::Fit(args) => fit::run(args),
         Command::GenerateDataset(args) => generate_dataset::run(args),
         Command::Benchmark(args) => benchmark::run(args),
+        Command::Estimate { input, out } => match estimate::run(input, out) {
+            Ok(written) => {
+                print!("{}", estimate::report(out, &written));
+                ExitCode::SUCCESS
+            }
+            Err(refusal) => {
+                eprintln!("{}", refusal.line());
+                ExitCode::from(REFUSED)
+            }
+        },
     }
 }

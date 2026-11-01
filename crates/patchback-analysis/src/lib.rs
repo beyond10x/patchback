@@ -30,6 +30,13 @@
 //!   deviations, refused as a typed [`NormalizationError`]; [`NormalizationStats::apply`], the
 //!   same `(x − mean) / std` at training and inference; [`write_stats`] and [`read_stats`] of the
 //!   artifact `normalization.stats`, whose line bound [`STATS_MAX_LINE_BYTES`] is provisional.
+//! - [`estimate_notes`]: the monophonic note estimator (story:note-estimation, DESIGN.md § 10),
+//!   whose [`NoteEstimation`] holds each [`EstimatedNote`]'s onset, gate end, tail end, pitch,
+//!   velocity and four confidences, refused as a typed [`EstimationError`] (polyphonic input, low
+//!   confidence); its deterministic [`note_estimation_id`]; [`write_estimation`] and
+//!   [`read_estimation`] of the file `estimation.txt`; [`NoteEstimation::note_sequence`], the
+//!   note sequence written from it; and [`bind_note_sequence`], which refuses a sequence naming an
+//!   estimation not given ([`NoteEstimationNotFound`]).
 //!
 //! Every function refuses a non-finite input value ([`AnalysisError::NonFiniteSamples`]) and
 //! returns finite values or a typed [`AnalysisError`] (DESIGN.md § 2 invariant 4).
@@ -46,12 +53,33 @@
 //! the same way (OQ-15, DESIGN.md § 17): [`FEATURE_FFT_LENGTH`], [`ATTACK_WINDOW_FRAMES`],
 //! [`RELEASE_OFFSET_FRAMES`], [`RELEASE_WINDOW_FRAMES`], [`ATTACK_SLOPE_BLOCK_FRAMES`] and
 //! [`ATTACK_SLOPE_FRACTION`].
+//!
+//! The note estimator's confidence thresholds, one per quantity, are provisional and set by the
+//! calibration on the seeded reference set (approval-record:wave-c1 Dc1-4, Dc1-9;
+//! `tests/estimate_reference.rs`): [`ONSET_CONFIDENCE_THRESHOLD`],
+//! [`PITCH_CONFIDENCE_THRESHOLD`], [`GATE_CONFIDENCE_THRESHOLD`] and
+//! [`TAIL_CONFIDENCE_THRESHOLD`]. So are its other constants, each recorded in every estimation's
+//! configuration ([`configuration`]): [`QUIET_AMPLITUDE`], [`QUIET_RUN_FRAMES`],
+//! [`NOVELTY_FFT_LENGTH`], [`NOVELTY_HOP_FRAMES`], [`NOVELTY_MAX_HZ`], [`NOVELTY_THRESHOLD`],
+//! [`NOVELTY_PEAK_HALF_WIDTH`], [`REGION_ONSET_GUARD_FRAMES`], [`COARSE_MARGIN_FRAMES`],
+//! [`PITCH_CHANGE_CENTS`], [`PITCH_SPAN_FRAMES`], [`PERIOD_MISMATCH`], [`LEVEL_RISE_DB`], [`LEVEL_RISE_FULL_DB`],
+//! [`LEVEL_WINDOW_MIN_FRAMES`], [`CHANGE_POINT_WINDOW_FRAMES`], [`ONSET_SEARCH_FRAMES`],
+//! [`ONSET_CONTRAST_FRAMES`], [`ONSET_CONTRAST_FULL_DB`], [`ENVELOPE_STEP_FRAMES`],
+//! [`ENVELOPE_WINDOW_MIN_FRAMES`], [`SEGMENT_PENALTY`], [`MIN_SEGMENT_POINTS`],
+//! [`DESCENT_MIN_FRACTION`], [`AMBIGUOUS_GATE_CONFIDENCE`], [`HOLD_DROP_FULL_FRACTION`], [`TAIL_WINDOW_FRAMES`],
+//! [`TAIL_CONTEXT_FRAMES`], [`TAIL_FULL_DB`], [`POLYPHONY_MIN_FFT_LENGTH`],
+//! [`POLYPHONY_MAX_FFT_LENGTH`], [`POLYPHONY_MAX_HZ`], [`POLYPHONY_PEAK_FLOOR_DB`],
+//! [`POLYPHONY_HARMONIC_TOLERANCE`] and [`POLYPHONY_INHARMONIC_SHARE`], and the estimation
+//! file's bounds [`ESTIMATION_MAX_LINE_BYTES`], [`ESTIMATION_MAX_FILE_BYTES`] and
+//! [`ESTIMATION_MAX_NOTES`].
 
 mod analyze;
 mod complex;
 mod correlation;
 mod descriptors;
 mod error;
+mod estimate;
+mod estimation_file;
 mod features;
 mod fft;
 mod normalization;
@@ -68,7 +96,30 @@ pub use descriptors::{
     BAND_COUNT, attack_envelope_slope, log_band_energies, peak, rms, spectral_centroid,
     spectral_flatness, spectral_flux, spectral_rolloff, zero_crossing_rate,
 };
-pub use error::{AnalysisError, FeatureError, NormalizationError, NotComputableReason};
+pub use error::{
+    AnalysisError, EstimationError, FeatureError, NormalizationError, NotComputableReason,
+};
+pub use estimate::{
+    AMBIGUOUS_GATE_CONFIDENCE, CHANGE_POINT_WINDOW_FRAMES, COARSE_MARGIN_FRAMES,
+    DESCENT_MIN_FRACTION, ENVELOPE_STEP_FRAMES, ENVELOPE_WINDOW_MIN_FRAMES,
+    ESTIMATED_SEQUENCE_PATCH_ID, ESTIMATOR, EstimatedNote, GATE_CONFIDENCE_THRESHOLD,
+    HOLD_DROP_FULL_FRACTION, LEVEL_RISE_DB, LEVEL_RISE_FULL_DB, LEVEL_WINDOW_MIN_FRAMES,
+    MIN_SEGMENT_POINTS, NOVELTY_FFT_LENGTH, NOVELTY_HOP_FRAMES, NOVELTY_MAX_HZ,
+    NOVELTY_PEAK_HALF_WIDTH, NOVELTY_THRESHOLD, NoteEstimation, ONSET_CONFIDENCE_THRESHOLD,
+    ONSET_CONTRAST_FRAMES, ONSET_CONTRAST_FULL_DB, ONSET_SEARCH_FRAMES, PERIOD_MISMATCH,
+    PITCH_CHANGE_CENTS, PITCH_CONFIDENCE_THRESHOLD, PITCH_SPAN_FRAMES,
+    POLYPHONY_HARMONIC_TOLERANCE, POLYPHONY_INHARMONIC_SHARE, POLYPHONY_MAX_FFT_LENGTH,
+    POLYPHONY_MAX_HZ, POLYPHONY_MIN_FFT_LENGTH, POLYPHONY_PEAK_FLOOR_DB, QUIET_AMPLITUDE,
+    QUIET_RUN_FRAMES, Quantity, REGION_ONSET_GUARD_FRAMES, SEGMENT_PENALTY,
+    TAIL_CONFIDENCE_THRESHOLD, TAIL_CONTEXT_FRAMES, TAIL_FULL_DB, TAIL_WINDOW_FRAMES, clip_sha256,
+    configuration, estimate_notes, note_estimation_id,
+};
+pub use estimation_file::{
+    ESTIMATION_FILE, ESTIMATION_FORMAT_VERSION, ESTIMATION_HEADER, ESTIMATION_MAX_FILE_BYTES,
+    ESTIMATION_MAX_LINE_BYTES, ESTIMATION_MAX_NOTES, EstimationFileError, EstimationReason,
+    NoteEstimationNotFound, bind_note_sequence, read_estimation, read_estimation_bytes,
+    write_estimation,
+};
 pub use features::{
     BandWindow, FEATURES_1_BAND_WINDOWS, FEATURES_1_SCALARS, FEATURES_1_VALUE_COUNT,
     FEATURES_1_VERSION, FeatureContract, FeatureContractDefinition, FeatureContractId,

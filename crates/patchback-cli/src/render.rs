@@ -1,7 +1,8 @@
-//! `patchback render --patch <file> --notes <file> --out <wav> [--block-size <frames>]`
-//! (DESIGN.md § 11, `RenderPatch` of `spec/domains/audio.yaml`): loads, validates and compiles
-//! the `.patch` file through `patchback-core`, reads the `notes.events` file, renders the plan
-//! with `patchback-dsp` and writes a mono 48 kHz float32 WAV through `patchback-audio`.
+//! `patchback render --patch <file> --notes <file> --out <wav> [--estimation <file>]
+//! [--block-size <frames>]` (DESIGN.md § 11, `RenderPatch` of `spec/domains/audio.yaml`): loads,
+//! validates and compiles the `.patch` file through `patchback-core`, reads the `notes.events`
+//! file (bound to the `estimation.txt` it was estimated into, when it records one), renders the
+//! plan with `patchback-dsp` and writes a mono 48 kHz float32 WAV through `patchback-audio`.
 //!
 //! All or nothing: the WAV is written only after the whole render succeeded, to a file that must
 //! not exist yet (an existing `--out` is never overwritten), and a failed write removes what it
@@ -33,7 +34,14 @@
 //! 3. `patchback.audio.PatchNotFound`: a `.patch` file that cannot be read, or that `LoadPatch`
 //!    refuses (its `patchback.patch` error follows in the message): no patch was loaded.
 //! 4. `patchback.audio.NoteSequenceNotFound`: a `notes.events` file that cannot be read or that
-//!    the parser refuses (its `patchback.score` error follows).
+//!    the parser refuses (its `patchback.score` error follows). A sequence that records a
+//!    `note_estimation_id` is found only bound to that estimation (approval-record:wave-c1
+//!    Dc1-8, `crate::estimate::bind`): without `--estimation`, with the `estimation.txt` of
+//!    another estimation, or with an `--estimation` that cannot be read or is refused, it is
+//!    refused here with `patchback.score.NoteEstimationNotFound` following, after an unknown
+//!    patch (step 3) and before its rate is checked (step 1 reads only a found sequence), the
+//!    score domain's precedence. A given `--estimation` that cannot be read or is refused is
+//!    refused so even when the sequence records no estimation.
 //! 5. `patchback.audio.PatchNotCompiled`: a patch that loaded and that `ValidatePatch` refuses;
 //!    it is in state `Loaded` and is never executed (its `patchback.patch` error follows).
 //! 6. `patchback.audio.InputTooLong`: a render longer than [`patchback_audio::MAX_FRAMES`]
@@ -62,7 +70,7 @@ use patchback_audio::{AudioClip, WavError, WavSampleFormat, encode};
 use patchback_core::patch::{
     LoadPatchError, VALIDATE_PATCH_PRECEDENCE, ValidatedPatch, compile, load_patch_file,
 };
-use patchback_core::score::{NoteSequence, ReadEventsError, read_events_file};
+use patchback_core::score::{ReadEventsError, read_events_file};
 use patchback_dsp::{
     RenderConfig, RenderError, RenderReport, SAMPLE_RATE_HZ, render as render_plan,
 };
@@ -142,11 +150,21 @@ fn refused_at_load(error: &LoadPatchError) -> bool {
 pub fn run(
     patch: &Path,
     notes: &Path,
+    estimation: Option<&Path>,
     out: &Path,
     block_size_frames: Option<i64>,
 ) -> Result<Written, Refusal> {
     let loaded = load_patch_file(patch);
-    let sequence = read_events_file(notes);
+    // A sequence that does not bind to its estimation is not found: it is answered at step 4,
+    // after the patch, and its rate is not checked (the score domain answers `unknown-estimation`
+    // after `unknown-patch` and before `rate-mismatch`; Dc1-8).
+    let sequence = read_events_file(notes)
+        .map_err(|error| sequence_not_found(notes, &error))
+        .and_then(|sequence| {
+            crate::estimate::bind(&sequence, notes, estimation)
+                .map(|()| sequence)
+                .map_err(|message| Refusal::domain("patchback.audio.NoteSequenceNotFound", message))
+        });
 
     // 1. The rate of the render: the patch's, then the sequence's.
     if let Err(error) = &loaded
@@ -180,7 +198,7 @@ pub fn run(
     }
     // 3. The patch, 4. the sequence, 5. the patch's compilation.
     let validated = patch_lookup(patch, loaded)?;
-    let sequence = sequence_lookup(notes, sequence)?;
+    let sequence = sequence?;
     let validated = validated.map_err(|error| {
         Refusal::domain(
             "patchback.audio.PatchNotCompiled",
@@ -233,21 +251,16 @@ fn patch_lookup(
     }
 }
 
-fn sequence_lookup(
-    notes: &Path,
-    sequence: Result<NoteSequence, ReadEventsError>,
-) -> Result<NoteSequence, Refusal> {
-    sequence.map_err(|error| {
-        Refusal::domain(
-            "patchback.audio.NoteSequenceNotFound",
-            match &error {
-                ReadEventsError::Io(io) => format!("{notes:?}: {io}"),
-                ReadEventsError::Format(format) => {
-                    format!("{notes:?}: {}: {format}", format.reason.spec_error())
-                }
-            },
-        )
-    })
+fn sequence_not_found(notes: &Path, error: &ReadEventsError) -> Refusal {
+    Refusal::domain(
+        "patchback.audio.NoteSequenceNotFound",
+        match error {
+            ReadEventsError::Io(io) => format!("{notes:?}: {io}"),
+            ReadEventsError::Format(format) => {
+                format!("{notes:?}: {}: {format}", format.reason.spec_error())
+            }
+        },
+    )
 }
 
 fn non_finite(patch: &Path, frame: u64) -> Refusal {

@@ -1,7 +1,8 @@
 //! The typed refusals of analysis. Each [`AnalysisError`] names one error of
 //! `spec/domains/analysis.yaml` ([`AnalysisError::domain_error`]), and so does each
 //! [`FeatureError`] of the feature contract ([`FeatureError::domain_error`]) and each
-//! [`NormalizationError`] of the normalization statistics ([`NormalizationError::domain_error`]).
+//! [`NormalizationError`] of the normalization statistics ([`NormalizationError::domain_error`]),
+//! and each [`EstimationError`] of the note estimator ([`EstimationError::domain_error`]).
 
 use std::fmt;
 
@@ -675,3 +676,99 @@ impl fmt::Display for NormalizationError {
 }
 
 impl std::error::Error for NormalizationError {}
+
+/// Why no note estimation was made (`EstimateNotes` of `spec/domains/analysis.yaml`). A refusal
+/// produces no estimation; [`Self::LowConfidenceNotes`] carries every estimated note.
+#[derive(Clone, Debug, PartialEq)]
+pub enum EstimationError {
+    /// An input guard of `AnalyzeAudio` the estimator applies itself: no samples, a rate other
+    /// than 48 kHz, more than [`crate::MAX_DURATION_FRAMES`] samples, a non-finite sample, or a
+    /// clip below the silence threshold. Named by its own analysis error.
+    Analysis(AnalysisError),
+    /// `patchback.analysis.PolyphonicInput`: more than one note sounds at once (DESIGN.md § 10
+    /// states the detector); refused outright, never estimated as far as possible.
+    PolyphonicInput,
+    /// `patchback.analysis.LowConfidenceNotes`: a note has a confidence below its quantity's
+    /// threshold. `notes` holds every estimated note in onset order, none dropped.
+    LowConfidenceNotes { notes: Vec<crate::EstimatedNote> },
+}
+
+impl EstimationError {
+    /// The errors `EstimateNotes` declares, in its order; the input guards are
+    /// [`AnalysisError`]s, whose names `AnalyzeAudio` declares.
+    pub const DOMAIN_ERRORS: &'static [&'static str] = &[
+        "patchback.analysis.PolyphonicInput",
+        "patchback.analysis.LowConfidenceNotes",
+    ];
+
+    /// The error of `spec/domains/analysis.yaml` this refusal is.
+    pub fn domain_error(&self) -> &'static str {
+        match self {
+            Self::Analysis(error) => error.domain_error(),
+            Self::PolyphonicInput => "patchback.analysis.PolyphonicInput",
+            Self::LowConfidenceNotes { .. } => "patchback.analysis.LowConfidenceNotes",
+        }
+    }
+
+    /// One value of every variant. The `match` below has no wildcard, so a new variant does not
+    /// compile until it is listed here, and the domain test then checks its name.
+    pub fn examples() -> Vec<EstimationError> {
+        let examples = vec![
+            Self::Analysis(AnalysisError::EmptyAudio),
+            Self::PolyphonicInput,
+            Self::LowConfidenceNotes {
+                notes: vec![crate::EstimatedNote::default()],
+            },
+        ];
+        for example in &examples {
+            match example {
+                Self::Analysis(_) | Self::PolyphonicInput | Self::LowConfidenceNotes { .. } => {}
+            }
+        }
+        examples
+    }
+}
+
+impl From<AnalysisError> for EstimationError {
+    fn from(error: AnalysisError) -> Self {
+        Self::Analysis(error)
+    }
+}
+
+impl fmt::Display for EstimationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Analysis(error) => error.fmt(f),
+            Self::PolyphonicInput => write!(
+                f,
+                "more than one note sounds at once; polyphony is outside the MVP and is refused, \
+                 not guessed away"
+            ),
+            Self::LowConfidenceNotes { notes } => {
+                let low: Vec<String> = notes
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, note)| !note.low_quantities().is_empty())
+                    .map(|(index, note)| {
+                        let quantities: Vec<String> = note
+                            .low_quantities()
+                            .iter()
+                            .map(|q| format!("{} {:.3}", q.name(), note.confidence(*q)))
+                            .collect();
+                        format!("note {index} ({})", quantities.join(", "))
+                    })
+                    .collect();
+                write!(
+                    f,
+                    "{} of {} estimated notes are below their confidence thresholds: {}; every \
+                     note is kept with its confidences",
+                    low.len(),
+                    notes.len(),
+                    low.join(", ")
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for EstimationError {}

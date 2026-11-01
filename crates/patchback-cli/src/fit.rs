@@ -1,6 +1,7 @@
 //! `patchback fit --input <wav> --notes <events> --out <dir> [--max-renders <n>]
 //! [--max-wall-time-ms <ms>] [--max-restarts <n>] [--improvement-threshold <loss>] [--seed <n>]
-//! [--block-size <frames>] [--weights <path> --normalization <path>]` (DESIGN.md § 9.2, § 11,
+//! [--block-size <frames>] [--weights <path> --normalization <path>] [--estimation <path>]`
+//! (DESIGN.md § 9.2, § 11,
 //! `StartFit` of `spec/domains/fit.yaml`): the bounded search for a patch of
 //! `subtractive-mono/1` that reproduces a reference recording, driven by its known notes
 //! (D-a6-1), with `patchback_fit::fit` (its module documentation states the search and its
@@ -41,6 +42,7 @@
 //! | `--block-size` | frames per render block, at least 1 | 256 |
 //! | `--weights` | the regressor's `weights/1` artifact; requires `--normalization` | none: the default start |
 //! | `--normalization` | the `normalization.stats` file the artifact was trained with, read up to [`MAX_STATS_BYTES`]; requires `--weights` | none: the default start |
+//! | `--estimation` | the `estimation.txt` the `--notes` sequence was estimated into (`patchback estimate`); required when the sequence records a `note_estimation_id` | none |
 //!
 //! A bound of 0 parses and is refused as `InvalidSearchBound`; a negative bound, a NaN, infinite
 //! or negative threshold, a negative seed, a block size of 0 or less, and `--weights` or
@@ -82,7 +84,12 @@
 //!    [`MAX_INPUT_BYTES`], or that the WAV importer refuses (its `patchback.audio` error
 //!    follows): no clip was imported.
 //! 3. `patchback.fit.NoteSequenceNotFound`: a `--notes` file that cannot be read or that the
-//!    parser refuses (its `patchback.score` error follows).
+//!    parser refuses (its `patchback.score` error follows). A sequence that records a
+//!    `note_estimation_id` is found only bound to that estimation (approval-record:wave-c1
+//!    Dc1-8, `crate::estimate::bind`): without `--estimation`, with another estimation's file, or
+//!    with one that cannot be read or is refused, it is refused here with
+//!    `patchback.score.NoteEstimationNotFound` following; a given `--estimation` that cannot be
+//!    read or is refused is refused so even when the sequence records no estimation.
 //! 4. On a seeded run, the inputs as files (Da11-6): `patchback.model.UnknownWeightArtifact`
 //!    for a `--weights` path with no file or one that cannot be read;
 //!    `patchback.model.CorruptWeightArtifact` for a file `weights/1` refuses (its reason
@@ -217,6 +224,10 @@ pub struct FitArgs {
     /// The normalization.stats file the regressor was trained with; requires --weights
     #[arg(long, requires = "weights")]
     pub normalization: Option<PathBuf>,
+    /// The estimation.txt the notes were estimated into, required when notes.events records a
+    /// note_estimation_id
+    #[arg(long)]
+    pub estimation: Option<PathBuf>,
 }
 
 /// A finite, non-negative decimal.
@@ -305,7 +316,7 @@ pub fn fit_and_write(args: &FitArgs) -> Result<FitOutcome, Refusal> {
     config.bounds.check()?;
     // 2. The reference, 3. the note sequence, each with the digest of its bytes.
     let (reference, reference_sha256) = read_reference(&args.input)?;
-    let (notes, notes_sha256) = read_notes(&args.notes)?;
+    let (notes, notes_sha256) = read_notes(&args.notes, args.estimation.as_deref())?;
     // The weight artifact and its statistics, when given (each requires the other).
     let seed = match (&args.weights, &args.normalization) {
         (Some(weights), Some(normalization)) => Some(read_seed_inputs(weights, normalization)?),
@@ -399,8 +410,9 @@ fn read_reference(path: &Path) -> Result<(AudioClip, [u8; 32]), Refusal> {
     Ok((clip, sha256(&bytes)))
 }
 
-/// The note sequence and the SHA-256 of the bytes it was parsed from.
-fn read_notes(path: &Path) -> Result<(NoteSequence, [u8; 32]), Refusal> {
+/// The note sequence, bound to the estimation it records (Dc1-8), and the SHA-256 of the bytes
+/// it was parsed from.
+fn read_notes(path: &Path, estimation: Option<&Path>) -> Result<(NoteSequence, [u8; 32]), Refusal> {
     let refused = |message: String| Refusal::domain("patchback.fit.NoteSequenceNotFound", message);
     let bytes = read_bounded(path, MAX_EVENTS_FILE_BYTES as u64)
         .map_err(|io| refused(format!("no note sequence at {path:?}: {io}")))?;
@@ -412,6 +424,7 @@ fn read_notes(path: &Path) -> Result<(NoteSequence, [u8; 32]), Refusal> {
             }
         })
     })?;
+    crate::estimate::bind(&notes, path, estimation).map_err(refused)?;
     Ok((notes, sha256(&bytes)))
 }
 

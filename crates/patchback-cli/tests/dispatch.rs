@@ -15,6 +15,7 @@ const TOP_LEVEL: &[&str] = &[
     "fit",
     "generate-dataset",
     "benchmark",
+    "estimate",
 ];
 
 fn run(args: &[&str]) -> Output {
@@ -389,5 +390,70 @@ fn patch_without_validate_prints_its_help_to_stderr_and_exits_2() {
         help.lines()
             .any(|line| line.trim_start().starts_with("validate ")),
         "{help}"
+    );
+}
+
+// story:note-estimation: `estimate` and the `--estimation` flag of `render` and `fit`.
+
+#[test]
+fn estimate_without_its_arguments_is_a_usage_error_and_exits_2() {
+    assert_required_flags(&["estimate"], &["--input <INPUT>", "--out <OUT>"]);
+}
+
+#[test]
+fn estimate_with_an_argument_it_does_not_take_is_a_usage_error_and_exits_2() {
+    let base = ["estimate", "--input", "a.wav", "--out", "estimation"];
+    for extra in ["--anything", "song.patch", "--notes"] {
+        let mut argv = base.to_vec();
+        argv.push(extra);
+        assert_usage_error(&argv, extra);
+    }
+}
+
+#[test]
+fn help_after_estimate_prints_its_help_and_exits_0() {
+    assert_help_after(&["estimate"]);
+}
+
+#[test]
+fn render_and_fit_name_the_estimation_flag_in_their_help() {
+    for command in ["render", "fit"] {
+        let out = run(&[command, "--help"]);
+        assert_eq!(out.status.code(), Some(0));
+        let help = text(&out.stdout);
+        assert!(
+            help.contains("--estimation <ESTIMATION>"),
+            "{command}: {help}"
+        );
+    }
+}
+
+#[test]
+fn an_estimation_flag_without_its_value_is_a_usage_error_and_exits_2() {
+    assert_usage_error(
+        &[
+            "render",
+            "--patch",
+            "a.patch",
+            "--notes",
+            "a.events",
+            "--out",
+            "a.wav",
+            "--estimation",
+        ],
+        "--estimation <ESTIMATION>",
+    );
+    assert_usage_error(
+        &[
+            "fit",
+            "--input",
+            "a.wav",
+            "--notes",
+            "a.events",
+            "--out",
+            "run",
+            "--estimation",
+        ],
+        "--estimation <ESTIMATION>",
     );
 }

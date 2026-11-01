@@ -134,6 +134,7 @@ version = "0.11.0"
 dependencies = [
  "patchback-audio",
  "patchback-core",
+ "patchback-dsp",
 ]
 
 [[package]]

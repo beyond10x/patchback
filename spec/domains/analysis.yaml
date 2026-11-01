@@ -64,10 +64,10 @@ types:
   # DESIGN.md 10 NoteEvent (start_sample, end_sample, midi_note, velocity) plus the per-estimate
   # confidence DESIGN.md 6.1 requires ("estimated and emitted with confidence scores") and the
   # tail Milestone C names ("note onsets, pitches, gate lengths, and tails").
-  # UNMAPPED: no section says whether confidence is one score per note or one per estimated
-  # quantity (onset, pitch, gate, tail). This model records one per quantity.
-  # UNMAPPED: DESIGN.md 10 carries `velocity: f32`; no section says whether velocity is
-  # estimated for external audio. It is left out here.
+  # Confidence is one score per estimated quantity (onset, pitch, gate, tail), each in [0, 1];
+  # DESIGN.md 10 defines each from the signal (approval-record:wave-c1 Dc1-1).
+  # Velocity is estimated (Dc1-2): the note's peak RMS over its gate relative to the loudest
+  # note's, linear, the loudest note 1.0, the inverse of the renderer's linear velocity scaling.
   - name: patchback.analysis.EstimatedNote
     kind: struct
     fields:
@@ -78,9 +78,15 @@ types:
         summary: End of the gate; the gate length is end_sample - start_sample.
       - name: tail_end_sample
         type: Integer
-        summary: Where the release tail falls below the silence threshold.
+        summary: Where the release tail falls below the silence threshold, or the next note's start when that comes first.
       - name: midi_note
         type: Integer
+      - name: f0_hz
+        type: Decimal
+        summary: The note's fundamental frequency, from which midi_note is rounded.
+      - name: velocity
+        type: Decimal
+        summary: The note's peak RMS over its gate relative to the loudest note's, in [0, 1]; the loudest note is 1.
       - name: onset_confidence
         type: Decimal
       - name: pitch_confidence
@@ -933,11 +939,14 @@ commands:
         summary: The statistics are read and left unchanged.
 
   # DESIGN.md 10 V1 and Milestone C: monophonic onset, pitch, gate and tail estimates.
-  # UNMAPPED: DESIGN.md 2 puts polyphony outside the MVP, 10 defers "simple polyphony" to V2, and
-  # 6.2 says the limitation "must be surfaced rather than guessed away"; none says whether
-  # polyphonic input is refused outright or estimated as far as possible and reported. This
-  # model refuses it (PolyphonicInput).
-  # UNMAPPED: no confidence threshold is given (DESIGN.md 6.2, 10).
+  # Polyphonic input is refused outright (PolyphonicInput), not estimated as far as possible
+  # (approval-record:wave-c1 Dc1-3; DESIGN.md 2 puts polyphony outside the MVP and 6.2 says the
+  # limitation "must be surfaced rather than guessed away"); DESIGN.md 10 states the detector.
+  # Low confidence (Dc1-4): there is one threshold per quantity, the provisional constants
+  # ONSET_CONFIDENCE_THRESHOLD, PITCH_CONFIDENCE_THRESHOLD, GATE_CONFIDENCE_THRESHOLD and
+  # TAIL_CONFIDENCE_THRESHOLD of crates/patchback-analysis, set by calibration on the seeded
+  # reference set. The estimation is refused when any note has any confidence below its
+  # quantity's threshold; the refusal carries every note.
   - name: patchback.analysis.EstimateNotes
     naming:
       wire: estimate-notes

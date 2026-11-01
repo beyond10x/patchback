@@ -88,9 +88,11 @@ entities:
         target: patchback.analysis.NoteEstimation
         cardinality: one
         via: note_estimation_id
-    # UNMAPPED: no section says whether the notes of a sequence written from an estimation must
-    # equal the estimation's notes (EstimatedNote carries confidence, NoteEvent does not). The
-    # model records the link and does not compare the notes.
+    # A sequence written from an estimation equals its notes (approval-record:wave-c1 Dc1-5):
+    # one NoteEvent per EstimatedNote, in the same order, with the same start_sample, end_sample
+    # (the gate end), midi_note and velocity. The writer (crates/patchback-analysis) guarantees
+    # it and a Rust test holds it; the tail and the confidences stay in the estimation. The model
+    # records the link and does not compare the notes.
     lifecycle:
       initial: Loaded
       states: [Loaded]

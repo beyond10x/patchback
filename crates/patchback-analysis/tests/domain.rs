@@ -4,7 +4,10 @@
 //! commands (story:feature-contract), and for [`NormalizationError`] and the two normalization
 //! commands (story:normalization-stats).
 
-use patchback_analysis::{AnalysisError, FeatureError, NormalizationError};
+use patchback_analysis::{
+    AnalysisError, EstimatedNote, EstimationError, FeatureError, NormalizationError,
+    NoteEstimationNotFound,
+};
 
 fn section<'a>(text: &'a str, start: &str, end: &str) -> &'a str {
     text.split_once(start)
@@ -430,4 +433,141 @@ fn normalization_error_fields_lead_the_rust_variants() {
             "{name}: domain {fields:?}, Rust {rust_fields:?}"
         );
     }
+}
+
+// story:note-estimation: `EstimateNotes`, `EstimationError`, `EstimatedNote` and the binding
+// refusal `NoteEstimationNotFound` of `spec/domains/score.yaml`.
+
+/// The `EstimateNotes` command, to the `events:` list that follows the commands.
+fn estimate_notes_command(text: &str) -> &str {
+    section(
+        text,
+        "  - name: patchback.analysis.EstimateNotes\n",
+        "\nevents:\n",
+    )
+}
+
+#[test]
+fn every_estimation_refusal_names_an_error_of_the_analysis_domain() {
+    let text = domain();
+    let declared: Vec<&str> = section(&text, "\nerrors:\n", "\ncommands:\n")
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("- name: "))
+        .collect();
+    for name in EstimationError::DOMAIN_ERRORS {
+        assert!(
+            declared.contains(name),
+            "{name} is not an error of spec/domains/analysis.yaml"
+        );
+    }
+}
+
+/// `EstimateNotes` declares two errors, both emitted by [`EstimationError`]; the input guards it
+/// passes on are [`AnalysisError`]s, whose names `AnalyzeAudio` declares.
+#[test]
+fn every_error_of_estimate_notes_is_emitted() {
+    let text = domain();
+    let errors: Vec<&str> = estimate_notes_command(&text)
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("error: "))
+        .collect();
+    assert_eq!(
+        errors,
+        [
+            "patchback.analysis.PolyphonicInput",
+            "patchback.analysis.LowConfidenceNotes"
+        ]
+    );
+    assert_eq!(EstimationError::DOMAIN_ERRORS, errors.as_slice());
+}
+
+#[test]
+fn every_estimation_variant_maps_into_the_declared_list_or_the_analysis_errors() {
+    let mut seen = Vec::new();
+    for error in EstimationError::examples() {
+        let name = error.domain_error();
+        match &error {
+            EstimationError::Analysis(inner) => {
+                assert_eq!(name, inner.domain_error());
+                assert!(AnalysisError::DOMAIN_ERRORS.contains(&name), "{name}");
+            }
+            _ => {
+                assert!(
+                    EstimationError::DOMAIN_ERRORS.contains(&name),
+                    "{error:?} maps to {name}"
+                );
+                seen.push(name);
+            }
+        }
+    }
+    seen.sort_unstable();
+    let mut all = EstimationError::DOMAIN_ERRORS.to_vec();
+    all.sort_unstable();
+    assert_eq!(seen, all);
+}
+
+/// The fields of the two errors, `audio_clip_id` aside (the crate takes samples, not a clip),
+/// are the fields of their Rust variants, and the fields of `EstimatedNote` are the Rust
+/// struct's, by name and in order.
+#[test]
+fn estimation_fields_agree_with_the_rust_types() {
+    let text = domain();
+    let errors = section(&text, "\nerrors:\n", "\ncommands:\n");
+    for (name, rust_fields) in [
+        ("patchback.analysis.PolyphonicInput", &[][..]),
+        ("patchback.analysis.LowConfidenceNotes", &["notes"][..]),
+    ] {
+        let start = format!("  - name: {name}\n");
+        let body = errors
+            .split_once(start.as_str())
+            .unwrap_or_else(|| panic!("analysis.yaml declares {name}"))
+            .1;
+        let body = body.split_once("\n  - name: ").map_or(body, |(b, _)| b);
+        let fields: Vec<&str> = body
+            .lines()
+            .filter_map(|line| line.strip_prefix("      - name: "))
+            .filter(|field| *field != "audio_clip_id")
+            .collect();
+        assert_eq!(fields, rust_fields, "{name}");
+    }
+
+    let note = section(
+        &text,
+        "  - name: patchback.analysis.EstimatedNote\n",
+        "\nentities:\n",
+    );
+    let declared: Vec<&str> = note
+        .lines()
+        .filter_map(|line| line.strip_prefix("      - name: "))
+        .collect();
+    let debug = format!("{:?}", EstimatedNote::default());
+    let rust: Vec<&str> = debug
+        .trim_start_matches("EstimatedNote { ")
+        .trim_end_matches(" }")
+        .split(", ")
+        .filter_map(|field| field.split_once(": ").map(|(name, _)| name))
+        .collect();
+    assert_eq!(declared, rust);
+}
+
+#[test]
+fn the_binding_refusal_is_the_score_domains_note_estimation_not_found() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/domains/score.yaml");
+    let score = std::fs::read_to_string(path).unwrap();
+    let errors = section(&score, "\nerrors:\n", "\ncommands:\n");
+    let refusal = NoteEstimationNotFound {
+        note_estimation_id: "7f0c0000-0000-4000-8000-000000000969".to_owned(),
+    };
+    let name = refusal.domain_error();
+    assert_eq!(name, "patchback.score.NoteEstimationNotFound");
+    let body = errors
+        .split_once(format!("  - name: {name}\n").as_str())
+        .expect("score.yaml declares the error")
+        .1;
+    let body = body.split_once("\n  - name: ").map_or(body, |(b, _)| b);
+    let fields: Vec<&str> = body
+        .lines()
+        .filter_map(|line| line.strip_prefix("      - name: "))
+        .collect();
+    assert_eq!(fields, ["note_estimation_id"]);
 }
