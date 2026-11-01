@@ -3,9 +3,12 @@
 // exported by `patchback-studio export` (`task studio-fixtures` writes it, `task
 // studio-fixtures-check` holds it to a fresh run). It goes through the same parser as a picked
 // file.
+// The sample is a chunk of its own, loaded by a dynamic import before the store is ready, so the
+// application chunk does not carry its 390 kB.
 import { shallowRef } from "vue";
-import sampleText from "../fixtures/sample-run.json?raw";
 import { DocumentError, parseDocument, type StudioDocument } from "./document";
+
+const sampleText: string = (await import("../fixtures/sample-run.json?raw")).default;
 
 export const SAMPLE_LABEL = "bundled sample: patchback fit of demos/pluck";
 

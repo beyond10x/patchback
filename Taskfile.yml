@@ -164,6 +164,7 @@ tasks:
       - task: studio-sample
         vars: { OUT: "{{.WORK}}" }
       - cp "{{.WORK}}/sample-run.json" studio/fixtures/sample-run.json
+      - PATCHBACK_STUDIO_BLESS=1 cargo test --locked -p patchback-studio --test fit_replay the_rejected_frame_fixture_is_the_export_of_the_replayed_lines
 
   studio-fixtures-check:
     vars:
@@ -178,6 +179,7 @@ tasks:
             echo "studio-fixtures-check: studio/fixtures/sample-run.json is not the export of a fresh fit of demos/pluck; run task studio-fixtures" >&2
             exit 1
           fi
+      - cargo test --locked -p patchback-studio --test fit_replay the_rejected_frame_fixture_is_the_export_of_the_replayed_lines
 
   check:
     cmds:

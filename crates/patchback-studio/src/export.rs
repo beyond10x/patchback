@@ -41,15 +41,23 @@
 //!    refuses the patch.
 //! 4. `run`: `run.meta` or `trace.events` is missing or unreadable, or the trace is of another
 //!    topology or parameter list than the patch's.
-//! 5. `patchback.studio.FrameOutOfOrder`, `patchback.studio.BestLossWorsened`,
+//! 5. [`INVARIANT`], `invariant`: an evaluation line of sequence 0 or of evaluation count 0
+//!    breaks the `TraceFrame` invariant `sequence >= 1` or `evaluation >= 1`; the studio's
+//!    loader gives a frame that does so the same name.
+//! 6. `patchback.studio.FrameOutOfOrder`, `patchback.studio.BestLossWorsened`,
 //!    `patchback.studio.InconsistentFrame`: `patchback_fit::parse_trace` refuses an evaluation
-//!    line for the reason the domain names (a sequence out of order; a best loss that rises; a
-//!    rejected candidate with a loss, a retained one without a best loss, a best loss lost or
-//!    before the first retained), or the replay refuses a frame ([`crate::replay`]: a retained
-//!    candidate whose loss is not the best).
-//! 6. `trace`: `parse_trace` refuses the text for any other reason (header, version, shape,
-//!    number, length, an unclosed trace).
-//! 7. `output`: the output file exists or cannot be written ([`write_export`]).
+//!    line for the reason the domain names (a sequence not above every one held before it; a
+//!    best loss that rises; a rejected candidate with a loss, a retained one without a best
+//!    loss, a best loss lost or before the first retained), or the replay refuses a frame
+//!    ([`crate::replay`]: a retained candidate whose loss is not the best).
+//! 7. `trace`: `parse_trace` refuses the text for any other reason (header, version, shape,
+//!    number, length, an unclosed trace, and a sequence above every held one that is not the
+//!    next: the grammar numbers lines without gaps, which the domain does not ask).
+//! 8. `run`: `patch.patch` is not the patch of the trace's last retained candidate, compared
+//!    value by value as the patch file writes them, or the trace retains none: the run's files
+//!    do not belong together. A trace without evaluations is a valid replay, but no completed
+//!    fit run writes one beside a patch file, so none exports.
+//! 9. `output`: the output file exists or cannot be written ([`write_export`]).
 
 use std::fmt;
 use std::fs::{self, OpenOptions};
@@ -57,7 +65,7 @@ use std::io::Write as _;
 use std::path::Path;
 
 use patchback_core::parameter::Topology;
-use patchback_core::patch::{read_patch, validate, write_patch};
+use patchback_core::patch::{Patch, format_decimal, read_patch, validate, write_patch};
 use patchback_fit::{
     EvaluationOutcome, PATCH_FILE, RUN_META_FILE, TRACE_FILE, Trace, TraceError, TraceReason,
     parse_trace, patch_at,
@@ -76,6 +84,11 @@ pub const FORMAT: &str = "patchback-studio-export/1";
 const SEQUENCE_ORDER: &str = "sequence numbers 1, 2, 3 and on, in order";
 /// The `parse_trace` expectation of a rejected line that carries a loss.
 const REJECTED_LOSSES: &str = "`-` for the losses of a rejected candidate";
+/// The `parse_trace` expectation of an evaluation line whose evaluation count is 0.
+const EVALUATION_COUNT: &str = "an evaluation count of at least 1";
+/// The name of a refusal for a frame that breaks a `TraceFrame` invariant; the studio's loader
+/// answers the same input with the same name (`studio/src/document.ts`).
+pub const INVARIANT: &str = "invariant";
 /// The lines of `trace.events` before its first `evaluation` line.
 const TRACE_HEAD_LINES: usize = 2;
 
@@ -176,6 +189,7 @@ pub fn export_run(dir: &Path) -> Result<String, ExportError> {
 
     let fit_run_id = id::derive(id::FIT_RUN, &[&identity_meta(&meta), &trace_bytes, &bytes]);
     let replay = replay(&trace, topology, &fit_run_id, &drawing.topology_id)?;
+    check_retained(&patch, &trace, topology)?;
     let document: Value = json!({
         "format": FORMAT,
         "topology": patch.topology_id,
@@ -258,7 +272,7 @@ fn replay(
     Ok(replay)
 }
 
-/// The export's answer to a refused `trace.events` (module documentation, refusal 5 and 6).
+/// The export's answer to a refused `trace.events` (module documentation, refusals 5 to 7).
 /// The trace identity is not known yet, so the error names the line and the sequence it holds.
 fn trace_refusal(text: &str, error: &TraceError) -> ExportError {
     let sequence = || {
@@ -275,12 +289,25 @@ fn trace_refusal(text: &str, error: &TraceError) -> ExportError {
             .unwrap_or(0)
     };
     let trace_id = format!("of {TRACE_FILE}");
+    let invariant = |rule: &str| {
+        ExportError::other(
+            INVARIANT,
+            format!("patchback.studio.TraceFrame {rule}: {TRACE_FILE}: {error}"),
+        )
+    };
     let studio = match &error.reason {
         TraceReason::MalformedRecord { expected } if *expected == SEQUENCE_ORDER => {
-            Some(StudioError::FrameOutOfOrder {
-                trace_id,
-                sequence: sequence(),
-            })
+            let sequence = sequence();
+            if sequence == 0 {
+                return invariant("sequence >= 1");
+            }
+            if sequence > held_sequence(text, error.line) {
+                return ExportError::other("trace", format!("{TRACE_FILE}: {error}"));
+            }
+            Some(StudioError::FrameOutOfOrder { trace_id, sequence })
+        }
+        TraceReason::MalformedRecord { expected } if *expected == EVALUATION_COUNT => {
+            return invariant("evaluation >= 1");
         }
         TraceReason::BestLossRose { .. } => Some(StudioError::BestLossWorsened {
             trace_id,
@@ -304,6 +331,72 @@ fn trace_refusal(text: &str, error: &TraceError) -> ExportError {
         Some(studio) => ExportError::studio(studio, error),
         None => ExportError::other("trace", format!("{TRACE_FILE}: {error}")),
     }
+}
+
+/// The highest sequence of the `evaluation` lines before line `line` (1-based) of `text`: the
+/// last one's, as `parse_trace` holds them in order from 1. Zero when none comes before it.
+fn held_sequence(text: &str, line: Option<usize>) -> u64 {
+    let Some(line) = line else { return 0 };
+    text.lines()
+        .take(line.saturating_sub(1))
+        .filter(|l| l.starts_with("evaluation "))
+        .filter_map(|l| l.split_ascii_whitespace().nth(1)?.parse::<u64>().ok())
+        .max()
+        .unwrap_or(0)
+}
+
+/// Refusal 8 (module documentation): `patch.patch` holds the values of the trace's last retained
+/// candidate, each compared as the patch file writes it (`format_decimal`), node by node.
+fn check_retained(patch: &Patch, trace: &Trace, topology: &Topology) -> Result<(), ExportError> {
+    let run = |message: String| ExportError::other("run", message);
+    let Some(last) = trace.records.iter().rev().find(|r| r.outcome.retained()) else {
+        return Err(run(format!(
+            "{TRACE_FILE} retains no candidate, yet {PATCH_FILE} holds a patch"
+        )));
+    };
+    let retained = patch_at(topology, &last.normalized).map_err(|error| {
+        ExportError::other(
+            "trace",
+            format!("evaluation {} is not a patch: {error}", last.sequence),
+        )
+    })?;
+    let values = |p: &Patch| -> Vec<(u32, String, String)> {
+        let mut out: Vec<(u32, String, String)> = p
+            .nodes
+            .iter()
+            .flat_map(|node| {
+                node.parameters
+                    .iter()
+                    .map(move |v| (node.id, v.name.clone(), format_decimal(v.value)))
+            })
+            .collect();
+        out.sort();
+        out
+    };
+    let (held, want) = (values(patch), values(&retained));
+    if held == want {
+        return Ok(());
+    }
+    let lookup = |list: &[(u32, String, String)], node: u32, name: &str| -> String {
+        list.iter()
+            .find(|(n, p, _)| *n == node && p == name)
+            .map_or_else(|| "absent".to_owned(), |(_, _, v)| v.clone())
+    };
+    let differing = want
+        .iter()
+        .chain(&held)
+        .find(|entry| !held.contains(entry) || !want.contains(entry))
+        .map_or_else(String::new, |(node, name, _)| {
+            format!(
+                ": {name} of node {node} is {} in {PATCH_FILE}, {} in the trace",
+                lookup(&held, *node, name),
+                lookup(&want, *node, name)
+            )
+        });
+    Err(run(format!(
+        "{PATCH_FILE} is not the patch of the last retained evaluation, sequence {}{differing}",
+        last.sequence
+    )))
 }
 
 /// Writes the document of the run in `dir` to `out`, a file that must not exist yet.

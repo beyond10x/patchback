@@ -59,7 +59,7 @@ describe("loading a picked file", () => {
     const text = JSON.parse(sampleText);
     text.graph.nodes[0].rank = -1;
     expect(load("negative.json", JSON.stringify(text))).toBe(false);
-    expect(loadError.value).toMatch(/graph\.nodes\[0\]\.rank is not an integer of at least 0/);
+    expect(loadError.value).toMatch(/invariant: patchback\.studio\.GraphNode rank >= 0: graph\.nodes\[0\]\.rank is -1/);
   });
 });
 

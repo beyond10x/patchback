@@ -35,18 +35,22 @@ jobs:
 
       - name: Install pnpm
         env:
-          PNPM_PINNED: "11.9.0"
+          COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+          COREPACK_DEFAULT_TO_LATEST: "0"
         run: |
           set -euo pipefail
-          PNPM_VERSION=$(sed -n 's/^  "packageManager": "pnpm@\([^"+]*\)".*$/\1/p' studio/package.json)
-          if [ "$PNPM_VERSION" != "$PNPM_PINNED" ]; then
-            echo "studio/package.json names pnpm '$PNPM_VERSION'; this workflow pins $PNPM_PINNED" >&2
+          SPEC=$(sed -n 's/^  "packageManager": "\(pnpm@[0-9.]*+sha512\.[0-9a-f]\{128\}\)",$/\1/p' studio/package.json)
+          if [ -z "$SPEC" ]; then
+            echo "studio/package.json packageManager is not pnpm@<version>+sha512.<hex>" >&2
             exit 1
           fi
-          npm install --global --no-fund --no-audit "pnpm@$PNPM_PINNED"
+          PINNED=${SPEC#pnpm@}
+          PINNED=${PINNED%%+*}
+          corepack enable pnpm
+          corepack prepare --activate "$SPEC"
           REPORTED=$(pnpm --version)
-          if [ "$REPORTED" != "$PNPM_PINNED" ]; then
-            echo "the installed pnpm reports '$REPORTED'; this workflow pins $PNPM_PINNED" >&2
+          if [ "$REPORTED" != "$PINNED" ]; then
+            echo "pnpm reports '$REPORTED'; studio/package.json pins $PINNED" >&2
             exit 1
           fi
 

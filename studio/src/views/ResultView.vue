@@ -47,6 +47,8 @@ const renSpectrum = computed(() => saw(recovered.value));
       <RateLegend />
     </header>
     <p class="fixture-note">{{ result.note }}</p>
+    <p v-if="!best" class="panel empty">The run has no retained patch, so it has no end result.</p>
+    <template v-else>
     <div class="panel">
       <div class="panel-title">Recovered patch</div>
       <PatchGraph :graph="graph" :modules="modules" :values="recovered" />
@@ -83,6 +85,7 @@ const renSpectrum = computed(() => saw(recovered.value));
           </table>
         </div>
     </div>
+    </template>
   </section>
 </template>
 

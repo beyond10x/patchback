@@ -81,22 +81,118 @@ pub fn default_run_meta() -> &'static str {
 
 /// The patch a fit retains at every parameter's normalized 0.5, as `patch.patch` holds it.
 pub fn fitted_patch() -> String {
+    patch_of(&[0.5; 8])
+}
+
+/// The patch `patch_at` makes of `normalized`, as `patch.patch` holds it.
+pub fn patch_of(normalized: &[f64]) -> String {
     let topology = patchback_core::patch::known_topology(TOPOLOGY).expect("the topology");
-    let patch = patchback_fit::patch_at(&topology, &[0.5; 8]).expect("a patch");
+    let patch = patchback_fit::patch_at(&topology, normalized).expect("a patch");
     patchback_core::patch::write_patch(&patch).expect("written")
 }
 
+/// The `patch.patch` a fit writes when it retains the values of the hand-written `patch`: each
+/// value through its contract's normalized form and back (`patch_at`), so a value may move by a
+/// few units of its last digit, as a fit's patch file holds it.
+pub fn fit_of(patch: &str) -> String {
+    use patchback_core::patch::{known_topology, read_patch};
+    let patch = read_patch(patch.as_bytes()).expect("a patch");
+    let topology = known_topology(&patch.topology_id).expect("a known topology");
+    let values: Vec<f64> = topology
+        .contracts()
+        .iter()
+        .map(|contract| {
+            let physical = patch
+                .nodes
+                .iter()
+                .flat_map(|node| &node.parameters)
+                .find(|p| p.name == contract.path)
+                .expect("every parameter")
+                .value;
+            contract
+                .to_normalized(physical)
+                .expect("a normalized value")
+        })
+        .collect();
+    patch_of(&values)
+}
+
+/// The `patch.patch` of a run whose last retained `evaluation` line in `lines` is the retained
+/// patch: that line's normalized values, its last eight fields.
+pub fn retained_patch(lines: &[String]) -> String {
+    let line = lines
+        .iter()
+        .rev()
+        .find(|line| line.contains(" first-retained ") || line.contains(" improved "))
+        .expect("a retained line");
+    let fields: Vec<&str> = line.split_ascii_whitespace().collect();
+    let values: Vec<f64> = fields[fields.len() - 8..]
+        .iter()
+        .map(|v| v.parse().expect("a value"))
+        .collect();
+    patch_of(&values)
+}
+
+/// The normalized values whose `patch_at` holds `patch`'s parameter values exactly as its file
+/// writes them, or `None` for a patch that is not a drawable `subtractive-mono/1` patch.
+fn normalized_of(patch: &str) -> Option<Vec<f64>> {
+    use patchback_core::patch::{format_decimal, known_topology, read_patch};
+    let patch = read_patch(patch.as_bytes()).ok()?;
+    let topology = known_topology(&patch.topology_id)?;
+    let mut values = Vec::new();
+    for contract in topology.contracts() {
+        let physical = patch
+            .nodes
+            .iter()
+            .flat_map(|node| &node.parameters)
+            .find(|p| p.name == contract.path)?
+            .value;
+        let held = |n: f64| {
+            let low = contract.physical_at_zero.min(contract.physical_at_one);
+            let high = contract.physical_at_zero.max(contract.physical_at_one);
+            contract
+                .apply(n)
+                .ok()
+                .map(|s| format_decimal(s.physical.clamp(low, high)))
+        };
+        let want = Some(format_decimal(physical));
+        let start = contract.to_normalized(physical).ok()?;
+        let (mut up, mut down) = (start, start);
+        let mut found = None;
+        for _ in 0..4096 {
+            if held(up) == want {
+                found = Some(up);
+                break;
+            }
+            if held(down) == want {
+                found = Some(down);
+                break;
+            }
+            up = up.next_up();
+            down = down.next_down();
+        }
+        values.push(found?);
+    }
+    Some(values)
+}
+
 /// A run directory holding `patch` as `patch.patch`, and `run.meta` and `trace.events`: the
-/// given texts, or a default run's (one retained evaluation) when none is given.
+/// given texts, or by default a run's that retained `patch` at its one evaluation (a patch that
+/// does not parse or validate gets every value at 0.5; the export refuses it before its trace).
 pub fn run_dir(name: &str, patch: &str, run_meta: Option<&str>, trace: Option<&str>) -> PathBuf {
     let dir = scratch(name);
     fs::write(dir.join("patch.patch"), patch).expect("write patch.patch");
     fs::write(dir.join("run.meta"), run_meta.unwrap_or(default_run_meta()))
         .expect("write run.meta");
+    let values = normalized_of(patch).unwrap_or_else(|| vec![0.5; 8]);
+    let values: Vec<String> = values
+        .iter()
+        .map(|v| patchback_core::patch::format_decimal(*v))
+        .collect();
     let default = trace_text(
         &[format!(
-            "evaluation 1 1 0 first-retained {TOPOLOGY} 0.4 0.3 0.2 0.1 0.25 0.25 0.5 0.5 0.5 \
-             0.5 0.5 0.5 0.5 0.5"
+            "evaluation 1 1 0 first-retained {TOPOLOGY} 0.4 0.3 0.2 0.1 0.25 0.25 {}",
+            values.join(" ")
         )],
         "RenderBudgetExhausted",
     );

@@ -21,7 +21,7 @@
 //! An `evaluation` line carries the fields of `spec/domains/studio.yaml` `TraceFrame`:
 //!
 //! - `<sequence>`: the evaluation's number, from 1 ([`crate::Evaluation::sequence`]), each line
-//!   one more than the line before. `TraceFrame.sequence` counts from 0; it is this value less 1.
+//!   one more than the line before. `TraceFrame.sequence` is this value.
 //! - `<evaluations>`: the run's evaluation count after it (`FitRun.evaluations`), at least 1:
 //!   always equal to `<sequence>`, since every evaluation, valid or rejected, is counted. It is
 //!   written anyway, and a line where it differs is refused.

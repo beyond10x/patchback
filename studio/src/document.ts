@@ -27,7 +27,7 @@ export interface StudioDocument {
   trace: Replay;
 }
 
-/** A refused document: the patchback.studio error it is an instance of, or `malformed`. */
+/** A refused document: the patchback.studio error it is an instance of, `invariant` or `malformed`. */
 export class DocumentError extends Error {
   constructor(
     readonly error: string,
@@ -83,6 +83,19 @@ function integer(value: Json, at: string, min = 0): number {
   return value;
 }
 
+/**
+ * An integer field a domain invariant bounds (`spec/domains/studio.yaml`: GraphNode
+ * `node_id >= 0`, `rank >= 0`; TraceFrame `sequence >= 1`, `evaluation >= 1`, `restart >= 0`).
+ * Not an integer is `malformed`; below the bound is `invariant`, the name
+ * `patchback-studio export` gives a trace line that breaks the same invariant.
+ */
+function bounded(value: Json, at: string, entity: string, field: string, min: number): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value)) malformed(at, "an integer");
+  if (value < min)
+    throw new DocumentError("invariant", `patchback.studio.${entity} ${field} >= ${min}: ${at} is ${value}`);
+  return value;
+}
+
 function boolean(value: Json, at: string): boolean {
   if (typeof value !== "boolean") malformed(at, "true or false");
   return value;
@@ -109,9 +122,9 @@ function uuid(value: Json, at: string): string {
 function node(value: Json, at: string): GraphNode {
   const o = object(value, at);
   return {
-    node_id: integer(o.node_id, `${at}.node_id`),
+    node_id: bounded(o.node_id, `${at}.node_id`, "GraphNode", "node_id", 0),
     kind: oneOf(o.kind, `${at}.kind`, NODE_KINDS),
-    rank: integer(o.rank, `${at}.rank`),
+    rank: bounded(o.rank, `${at}.rank`, "GraphNode", "rank", 0),
   };
 }
 
@@ -251,9 +264,9 @@ function frame(value: Json, at: string): FrameAppended {
   const f: FrameAppended = {
     frame_id: uuid(o.frame_id, `${at}.frame_id`),
     trace_id: uuid(o.trace_id, `${at}.trace_id`),
-    sequence: integer(o.sequence, `${at}.sequence`, 1),
-    evaluation: integer(o.evaluation, `${at}.evaluation`, 1),
-    restart: integer(o.restart, `${at}.restart`),
+    sequence: bounded(o.sequence, `${at}.sequence`, "TraceFrame", "sequence", 1),
+    evaluation: bounded(o.evaluation, `${at}.evaluation`, "TraceFrame", "evaluation", 1),
+    restart: bounded(o.restart, `${at}.restart`, "TraceFrame", "restart", 0),
     outcome: oneOf(o.outcome, `${at}.outcome`, OUTCOMES),
     topology_id: uuid(o.topology_id, `${at}.topology_id`),
     topology_name: string(o.topology_name, `${at}.topology_name`),

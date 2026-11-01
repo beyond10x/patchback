@@ -14,7 +14,7 @@ const trace = computed(() => loaded.value.document.trace);
 const frames = computed(() => trace.value.frames);
 const last = computed(() => frames.value.length - 1);
 const start = Number(new URLSearchParams(window.location.search).get("frame") ?? 0);
-const index = ref(Number.isInteger(start) ? Math.min(last.value, Math.max(0, start)) : 0);
+const index = ref(Number.isInteger(start) ? Math.max(0, Math.min(last.value, start)) : 0);
 const playing = ref(false);
 /** The time one play of the whole trace takes, in milliseconds. */
 const duration = ref(20_000);
@@ -63,6 +63,7 @@ watch(loaded, () => {
 onBeforeUnmount(() => window.clearInterval(timer));
 
 function step(d: number) {
+  if (last.value < 0) return;
   playing.value = false;
   index.value = Math.min(last.value, Math.max(0, index.value + d));
 }
@@ -91,7 +92,7 @@ const OUTCOME_LABEL: Record<string, string> = {
         <h2>Fit evolution</h2>
         <p class="sub">
           Replay of fit run <span class="mono">{{ trace.opened.fit_run_id.slice(-4) }}</span>,
-          {{ frames.length }} evaluations over {{ restarts }} restart{{ restarts === 1 ? "" : "s" }}, source
+          <template v-if="frames.length">{{ frames.length }} evaluations over {{ restarts }} restart{{ restarts === 1 ? "" : "s" }}</template><template v-else>no evaluations</template>, source
           {{ trace.opened.source }}, ended {{ trace.closed.ended }}{{ trace.closed.stop_reason ? ` (${trace.closed.stop_reason})` : "" }}.
         </p>
       </div>
@@ -99,6 +100,7 @@ const OUTCOME_LABEL: Record<string, string> = {
     </header>
     <p class="fixture-note">From {{ loaded.label }}.</p>
 
+    <template v-if="frames.length">
     <div class="transport panel">
       <button class="btn primary" :aria-label="playing ? 'Pause' : 'Play'" @click="playing = !playing">
         {{ playing ? "❚❚ Pause" : "▶ Play" }}
@@ -204,6 +206,8 @@ const OUTCOME_LABEL: Record<string, string> = {
         </tbody>
       </table>
     </details>
+    </template>
+    <p v-else class="panel empty">The trace closed with no evaluations: there is no frame to replay.</p>
   </section>
 </template>
 

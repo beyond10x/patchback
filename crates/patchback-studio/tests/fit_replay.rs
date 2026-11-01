@@ -258,7 +258,7 @@ fn exported(name: &str, lines: &[String]) -> Value {
     let text = trace_text(lines, "ImprovementBelowThreshold");
     let dir = run_dir(
         name,
-        &common::fitted_patch(),
+        &common::retained_patch(lines),
         Some(default_run_meta()),
         Some(&text),
     );
@@ -269,7 +269,7 @@ fn refused(name: &str, lines: &[String]) -> (String, String) {
     let text = trace_text(lines, "ImprovementBelowThreshold");
     let dir = run_dir(
         name,
-        &common::fitted_patch(),
+        &common::retained_patch(lines),
         Some(default_run_meta()),
         Some(&text),
     );
@@ -362,11 +362,153 @@ fn studio_fit_replay_out_of_order_in_a_trace_file_is_refused() {
     assert_eq!(name, "patchback.studio.FrameOutOfOrder", "{message}");
     assert!(message.contains("sequence 1"), "{message}");
 
+    // a sequence below one already held, after a gap-free start
+    let mut lines = replayed_lines();
+    lines[3] = lines[3].replace("evaluation 4 4", "evaluation 2 2");
+    let (name, message) = refused("lower", &lines);
+    assert_eq!(name, "patchback.studio.FrameOutOfOrder", "{message}");
+    assert!(message.contains("sequence 2"), "{message}");
+}
+
+/// A sequence above every held one but not the next is not out of order (the domain's
+/// `out-of-order` needs a held sequence >= the input's); `trace.events` refuses the gap as its
+/// grammar does, `trace`.
+#[test]
+fn a_gap_in_the_trace_file_is_its_grammar_error_not_out_of_order() {
+    let mut lines = replayed_lines();
+    lines[2] = lines[2].replace("evaluation 3 3", "evaluation 5 5");
+    let (name, message) = refused("gap", &lines);
+    assert_eq!(name, "trace", "{message}");
+    assert!(message.contains("sequence numbers 1, 2, 3"), "{message}");
+}
+
+/// A frame of sequence 0, or of evaluation count 0, breaks a `TraceFrame` invariant
+/// (`sequence >= 1`, `evaluation >= 1`): the exporter and the studio's loader both answer
+/// `invariant`, whether or not a frame is held before it.
+#[test]
+fn a_frame_below_the_trace_frame_invariants_is_refused_as_invariant() {
     let mut lines = replayed_lines();
     lines[0] = lines[0].replace("evaluation 1 1", "evaluation 0 0");
     let (name, message) = refused("zero", &lines);
-    assert_eq!(name, "patchback.studio.FrameOutOfOrder", "{message}");
-    assert!(message.contains("sequence 0"), "{message}");
+    assert_eq!(name, "invariant", "{message}");
+    assert!(message.contains("sequence >= 1"), "{message}");
+
+    let mut lines = replayed_lines();
+    lines[2] = lines[2].replace("evaluation 3 3", "evaluation 0 0");
+    let (name, message) = refused("zero-later", &lines);
+    assert_eq!(name, "invariant", "{message}");
+    assert!(message.contains("sequence >= 1"), "{message}");
+
+    let mut lines = replayed_lines();
+    lines[0] = lines[0].replace("evaluation 1 1", "evaluation 1 0");
+    let (name, message) = refused("evaluation-zero", &lines);
+    assert_eq!(name, "invariant", "{message}");
+    assert!(message.contains("evaluation >= 1"), "{message}");
+}
+
+/// `patch.patch` is the retained patch of the trace's last retained evaluation, its values
+/// compared as the patch file writes them; a run whose files do not belong together is `run`.
+#[test]
+fn a_patch_that_is_not_the_last_retained_candidate_is_refused() {
+    let lines = replayed_lines();
+    let text = trace_text(&lines, "ImprovementBelowThreshold");
+    // the first retained candidate's patch, not the last one's
+    let dir = run_dir(
+        "earlier-patch",
+        &common::fitted_patch(),
+        Some(default_run_meta()),
+        Some(&text),
+    );
+    let error = export_run(&dir).expect_err("the patch of evaluation 1");
+    assert_eq!(error.name(), "run", "{error}");
+    assert!(error.to_string().contains("attack"), "{error}");
+    assert!(error.to_string().contains("sequence 2"), "{error}");
+
+    // one value a step of the last digit away
+    let patch = common::retained_patch(&lines);
+    let line = patch
+        .lines()
+        .find(|l| l.contains(" output_gain "))
+        .expect("the output gain")
+        .to_owned();
+    let value: f64 = line
+        .rsplit(' ')
+        .next()
+        .expect("a value")
+        .parse()
+        .expect("a number");
+    let moved = format!(
+        "{} {}",
+        line.rsplit_once(' ').expect("a value").0,
+        patchback_core::patch::format_decimal(value.next_up())
+    );
+    let dir = run_dir(
+        "one-ulp",
+        &patch.replace(&line, &moved),
+        Some(default_run_meta()),
+        Some(&text),
+    );
+    let error = export_run(&dir).expect_err("a value one ulp away");
+    assert_eq!(error.name(), "run", "{error}");
+    assert!(error.to_string().contains("output_gain"), "{error}");
+
+    // a trace that retained nothing, beside a patch file
+    let rejected = vec![format!(
+        "evaluation 1 1 0 rejected {TOPOLOGY} - - 0.5 0.5 0.5 0.5 0.5 0.5 0.5 0.5"
+    )];
+    for (name, lines) in [("nothing-retained", rejected), ("no-evaluation", vec![])] {
+        let text = trace_text(&lines, "RenderBudgetExhausted");
+        let dir = run_dir(
+            name,
+            &common::fitted_patch(),
+            Some(default_run_meta()),
+            Some(&text),
+        );
+        let error = export_run(&dir).expect_err("no retained candidate");
+        assert_eq!(error.name(), "run", "{name}: {error}");
+        assert!(
+            error.to_string().contains("retains no candidate"),
+            "{error}"
+        );
+    }
+}
+
+/// `studio/fixtures/export-replayed-lines.json` is the export of this test's run of four
+/// evaluations, one of each outcome, a restart and a rejected candidate: the studio's tests draw
+/// a rejected frame from it, as the bundled sample has none. `PATCHBACK_STUDIO_BLESS=1`
+/// (`task studio-fixtures`) rewrites it.
+#[test]
+fn the_rejected_frame_fixture_is_the_export_of_the_replayed_lines() {
+    let lines = replayed_lines();
+    let text = trace_text(&lines, "ImprovementBelowThreshold");
+    let dir = run_dir(
+        "fixture",
+        &common::retained_patch(&lines),
+        Some(default_run_meta()),
+        Some(&text),
+    );
+    let export = export_run(&dir).expect("the run exports");
+    let path = repository_root().join("studio/fixtures/export-replayed-lines.json");
+    if std::env::var_os("PATCHBACK_STUDIO_BLESS").is_some() {
+        fs::write(&path, &export).expect("write the fixture");
+    }
+    let fixture = fs::read_to_string(&path).expect("the fixture");
+    assert!(
+        fixture == export,
+        "{} is not the export of the replayed lines; run task studio-fixtures",
+        path.display()
+    );
+    let document = json(&fixture);
+    let outcomes: Vec<&str> = document["trace"]["frames"]
+        .as_array()
+        .expect("frames")
+        .iter()
+        .map(|f| f["outcome"].as_str().expect("an outcome"))
+        .collect();
+    assert_eq!(
+        outcomes,
+        ["FirstRetained", "Improved", "NotImproved", "Rejected"]
+    );
 }
 
 #[test]
@@ -440,7 +582,12 @@ fn the_fit_run_identity_ignores_the_patchback_version_and_nothing_else() {
     let other_seed = meta.replace("seed 0", "seed 1");
     let text = trace_text(&replayed_lines(), "ImprovementBelowThreshold");
     let id = |name: &str, meta: &str| {
-        let dir = run_dir(name, &common::fitted_patch(), Some(meta), Some(&text));
+        let dir = run_dir(
+            name,
+            &common::retained_patch(&replayed_lines()),
+            Some(meta),
+            Some(&text),
+        );
         json(&export_run(&dir).expect("exports"))["trace"]["opened"]["fit_run_id"].clone()
     };
     let base = id("meta-base", meta);

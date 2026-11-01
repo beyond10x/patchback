@@ -6,7 +6,7 @@ mod common;
 use std::fs;
 use std::process::Command;
 
-use common::{demo_patch, is_uuid_v8, json, run_dir, scenario, scratch};
+use common::{demo_patch, fit_of, is_uuid_v8, json, run_dir, scenario, scratch};
 use patchback_core::patch::{EdgeDecl, NodeDecl, NodeKind, Patch, PortRate};
 use patchback_studio::StudioError;
 use patchback_studio::export::export_run;
@@ -120,7 +120,7 @@ fn studio_patch_graph_subtractive_voice_scenario_is_drawn() {
 #[test]
 fn studio_patch_graph_subtractive_voice_export_ranks_the_fixed_chain() {
     scenario("studio-patch-graph-subtractive-voice");
-    let dir = run_dir("voice", &demo_patch(), None, None);
+    let dir = run_dir("voice", &fit_of(&demo_patch()), None, None);
     let document = json(&export_run(&dir).expect("the demo voice exports"));
     let graph = &document["graph"];
     let nodes: Vec<(u64, &str, u64)> = graph["nodes"]
@@ -351,7 +351,7 @@ fn studio_patch_graph_an_unvalidated_patch_is_not_drawn() {
 
 #[test]
 fn studio_patch_graph_an_export_is_byte_reproducible() {
-    let dir = run_dir("twice", &demo_patch(), None, None);
+    let dir = run_dir("twice", &fit_of(&demo_patch()), None, None);
     let first = export_run(&dir).expect("first export");
     let second = export_run(&dir).expect("second export");
     assert_eq!(first, second);
@@ -359,7 +359,7 @@ fn studio_patch_graph_an_export_is_byte_reproducible() {
 
     // another patch is another identity
     let text = demo_patch().replace("param 4 filter_cutoff 5000", "param 4 filter_cutoff 4000");
-    let other = export_run(&run_dir("other", &text, None, None)).expect("other export");
+    let other = export_run(&run_dir("other", &fit_of(&text), None, None)).expect("other export");
     assert_ne!(
         json(&first)["graph"]["patch_id"],
         json(&other)["graph"]["patch_id"]
@@ -368,7 +368,7 @@ fn studio_patch_graph_an_export_is_byte_reproducible() {
 
 #[test]
 fn studio_patch_graph_the_cli_writes_the_document_and_refuses_an_existing_file() {
-    let dir = run_dir("cli", &demo_patch(), None, None);
+    let dir = run_dir("cli", &fit_of(&demo_patch()), None, None);
     let out = dir.join("export.json");
     let binary = env!("CARGO_BIN_EXE_patchback-studio");
     let run = || {

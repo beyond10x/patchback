@@ -78,10 +78,42 @@ describe("patchback.studio.AppendFrame and CloseTrace refusals", () => {
     expect(refusal(() => check(failed)).error).toBe("patchback.studio.InconsistentEnd");
   });
 
-  it("refuses a frame of sequence 0 as malformed: sequences count from 1", () => {
+  it("refuses a frame below a TraceFrame invariant as invariant, the name the exporter gives it", () => {
+    const zero = sampleTrace();
+    zero.frames[0].sequence = 0;
+    const first = refusal(() => check(zero));
+    expect(first.error).toBe("invariant");
+    expect(first.message).toContain("sequence >= 1");
+
+    const later = sampleTrace();
+    later.frames[5].sequence = 0;
+    expect(refusal(() => check(later)).error).toBe("invariant");
+
+    const evaluation = sampleTrace();
+    evaluation.frames[0].evaluation = 0;
+    expect(refusal(() => check(evaluation)).message).toContain("evaluation >= 1");
+
+    const restart = sampleTrace();
+    restart.frames[0].restart = -1;
+    expect(refusal(() => check(restart)).message).toContain("restart >= 0");
+
+    const fraction = sampleTrace();
+    fraction.frames[0].sequence = 1.5;
+    expect(refusal(() => check(fraction)).error).toBe("malformed");
+  });
+
+  it("refuses a graph node below a GraphNode invariant as invariant", () => {
+    const text = JSON.parse(sampleText);
+    text.graph.nodes[0].rank = -1;
+    const error = refusal(() => parseDocument(JSON.stringify(text)));
+    expect(error.error).toBe("invariant");
+    expect(error.message).toContain("rank >= 0");
+  });
+
+  it("accepts a gap in the sequence: the domain asks only that each is above every earlier one", () => {
     const trace = sampleTrace();
-    trace.frames[0].sequence = 0;
-    expect(refusal(() => check(trace)).error).toBe("malformed");
+    trace.frames = trace.frames.slice(0, 1).concat(trace.frames.slice(2));
+    expect(check(trace).frames.length).toBe(399);
   });
 
   it("refuses a path named twice", () => {
