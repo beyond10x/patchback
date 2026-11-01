@@ -8,7 +8,7 @@ relations:
 - decides: story:note-estimation
 - decides: story:studio-patch-graph
 - decides: story:studio-fit-replay
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-01T15:24:46Z", actor: "human:timo", revision: 2, executor: "agent:wave-c1-coordinator"}
 ---
@@ -209,6 +209,18 @@ results and highest engineering quality"), after the adversary passes.
   refuses a mismatch, an unknown pitch, a MIDI number that is not nearest to its f0 and a
   confidence below its threshold. `patchback fit` refuses an estimation of another clip than its
   `--input`. The Dc1-7 id is unchanged.
+- Dc1-15 Onset confidence derives from the onset's own localisation interval: the candidate
+  positions whose change-point cost lies within a noise-derived margin of the minimum, widened by
+  the resolution of the evidence (half the longer period for a pitch-change onset, the envelope
+  step for a level onset). When its half-width reaches the 256-sample tolerance, the confidence is
+  below threshold. Two stress violations left after Dc1-12..14 (a MIDI 42 pitch change, a 3 dB
+  level onset) are fixed by this rule, not by a case-specific cap and not accepted as red.
+- Dc1-16 A lint-only patch to the adversary's `tests/adversary_1.rs` (a type alias, one hex
+  literal regrouped to the same value) is applied, so clippy `-D warnings` passes on all targets;
+  no assertion changes.
+- Dc1-17 The workspace sets `[profile.test] opt-level = 2`: the note-estimation suites took 244 s
+  in the unoptimised test profile and 23 s at opt-level 2 with the same results. Rust has no
+  fast-math, so results do not depend on the level.
 - Dc1-28 Two adversary judgement items in the studio are fixed, not deferred: the loss chart's
   maximum is one pass over the frames (no argument spread), and the export fixture is blessed only
   when `PATCHBACK_STUDIO_BLESS` equals `1`.
