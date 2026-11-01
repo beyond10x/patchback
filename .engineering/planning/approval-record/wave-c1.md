@@ -8,7 +8,7 @@ relations:
 - decides: story:note-estimation
 - decides: story:studio-patch-graph
 - decides: story:studio-fit-replay
-revision: 2
+revision: 3
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-01T15:24:46Z", actor: "human:timo", revision: 2, executor: "agent:wave-c1-coordinator"}
 ---
@@ -189,3 +189,29 @@ Wave:
 | tolerances (Dc1-9) | onset 256, gate 1,024, tail 2,400 samples; pitch 10 cents | the same | set before measuring; DESIGN.md names none |
 | rates (Dc1-9) | 95 % detection, 5 % spurious, 98 % pitch, 90 % gate and tail | the same | the same |
 | confidence thresholds (Dc1-4) | set by calibration | `crates/patchback-analysis/src/lib.rs` | measured on the reference set only |
+
+## Decisions taken after the adversary passes
+
+Taken by the coordinator under Timo's standing grant of 2026-11-01 ("you have my authority to make
+decissions yourself. always decide in a way that we avoid technical dept, we aim for the best
+results and highest engineering quality"), after the adversary passes.
+
+- Dc1-12 The note-estimation reference set is a distribution, not one seed
+  (`review-result:note-estimation-adversary-1`: every rate 1.0000 on the pinned seed, confident
+  wrong quantities on 9 of 12 other seeds). The generator draws Dc1-9's set as worded, zero-gap
+  same-pitch repeats included; the committed harness measures every Dc1-9 rate over 16 seeds of
+  32 phrases, the bounds hold on the pooled set and the calibration rule on every seed.
+- Dc1-13 Stress shapes (long releases, short gates, low notes, quiet notes, zero-gap repeats, a
+  -70 dBFS noise floor) hold calibration and polyphony, not the rates: no confident quantity
+  outside tolerance and no monophonic phrase refused as `PolyphonicInput`, over 4 seeds of 32
+  phrases each. Refusing a hard note as `LowConfidenceNotes` is allowed.
+- Dc1-14 An estimation file is self-checking: a digest of its note lines, and a reader that
+  refuses a mismatch, an unknown pitch, a MIDI number that is not nearest to its f0 and a
+  confidence below its threshold. `patchback fit` refuses an estimation of another clip than its
+  `--input`. The Dc1-7 id is unchanged.
+- Dc1-28 Two adversary judgement items in the studio are fixed, not deferred: the loss chart's
+  maximum is one pass over the frames (no argument spread), and the export fixture is blessed only
+  when `PATCHBACK_STUDIO_BLESS` equals `1`.
+- Dc1-29 The studio exporter decides no refusal from an error message: the fit trace parser
+  reports typed reasons (`crates/patchback-fit/src/trace.rs`) and the exporter maps those; the
+  trace grammar and the `patchback fit` messages are unchanged.

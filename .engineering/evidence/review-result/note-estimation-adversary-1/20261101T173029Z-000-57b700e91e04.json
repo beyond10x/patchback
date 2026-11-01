@@ -1,0 +1,15 @@
+{
+  "at": "2026-11-01T17:30:29Z",
+  "actor": "human:timo",
+  "artifact": "review-result:note-estimation-adversary-1",
+  "kind": "review-result",
+  "revision": 2,
+  "change": {
+    "change": "redaction",
+    "literal_sha256": "562be58d6c8fc9cde2cac6e80c19a5a388f40607f70149864f74f12f147ca5d2",
+    "literal_chars": 26,
+    "replacement": "needs-coordinator: yes",
+    "count": 1,
+    "reason": "stray closing fence left by the coordinator when cutting the header out of the report; it hid the findings block"
+  }
+}
