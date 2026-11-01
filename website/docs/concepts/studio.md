@@ -39,8 +39,8 @@ line. Feedback is drawn as a delayed return path marked `z⁻¹` and routed unde
 edge marked as delayed feedback must leave a Delay node (DESIGN.md § 5.4). A patch that has not
 been validated is not drawn.
 
-The view shows the fixed `subtractive-mono/1` voice and, as an example of what Milestone D
-adds, a Drive into a Delay with the Delay fed back.
+The view shows the patch of the loaded export and, as an example of what Milestone D adds, a
+Drive into a Delay with the Delay fed back (an illustrative fixture, not a Patchback run).
 
 ## Fit replay
 
@@ -52,14 +52,22 @@ the evaluations, and the URL parameter `?frame=N` opens a given frame. With each
 - the retained patch, or the candidate if asked, is drawn with its parameter values, and the
   knob of the parameter that changed is lit;
 - the per-parameter trajectories move with it;
-- a marker shows where the topology changes, once Milestone D selects topologies.
+- a marker shows where the topology changes, once Milestone D selects topologies; the studio's
+  tests draw it from a labelled illustrative trace.
 
 The trace obeys the rules of the search (DESIGN.md § 9.2): frames arrive in strictly increasing
 sequence, the best retained loss never rises, a retained frame's loss is the best loss, and a
 rejected frame carries no loss. The studio refuses a trace that breaks them.
 
-DESIGN.md § 11 lists no per-evaluation trace file among a fit run's results yet, so there is
-nothing to replay from a real run; the prototype replays a fixture trace.
+A fit run writes its trace to `trace.events` (DESIGN.md § 11). `patchback-studio export --run
+<dir> --out <file>` turns a run's directory into the one JSON document the studio opens: the
+retained patch drawn as a graph, the module catalogue and the replay, one frame per evaluation
+from sequence 1. Open it with the file picker. The studio ships one such export as its sample, a
+real fit of the demo voice `demos/pluck` (400 renders). The exporter refuses a trace that breaks
+the rules above, and so does the studio for a file picked by hand.
+
+Play runs the whole trace in a time you choose (60, 20 or 6 seconds), whatever its length; the
+frame table shows the 21 evaluations around the cursor.
 
 ## Live fit
 

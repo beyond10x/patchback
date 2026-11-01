@@ -389,20 +389,28 @@ pub const CAPABILITIES: &[Capability] = &[
         "One card per module kind with its ports (direction, rate, meaning) and parameter contracts (index, path, mapping, physical range, default). The prototype renders illustrative fixture data.",
         "/docs/concepts/studio#module-catalogue",
     ),
-    planned(
-        STUDIO,
-        "Studio",
-        "Patch graph view",
-        "A validated patch drawn as nodes by rank and edges coloured by port rate, with delayed feedback routed as a z⁻¹ return path through a Delay node.",
-        "/docs/concepts/studio#patch-graph",
-    ),
-    planned(
-        STUDIO,
-        "Studio",
-        "Fit evolution replay",
-        "A finished fit run replayed evaluation by evaluation: loss curve, retained or candidate patch, parameter trajectories and topology changes. Replays a fixture trace until a fit run writes one.",
-        "/docs/concepts/studio#fit-replay",
-    ),
+    Capability {
+        area: "Studio",
+        label: "Patch graph view",
+        detail: "patchback-studio export --run <dir> --out <file> writes a fit run's validated patch as one studio document, drawn as nodes by rank and edges coloured by port rate, with delayed feedback routed as a z⁻¹ return path through a Delay node. Unvalidated patches, missing endpoints and feedback that does not leave a Delay are refused, and two exports of one run are byte-identical.",
+        status: "shipped",
+        evidence: Some(
+            "crates/patchback-studio/tests/patch_graph.rs::studio_patch_graph_subtractive_voice_export_ranks_the_fixed_chain",
+        ),
+        milestone: None,
+        href: "/docs/concepts/studio#patch-graph",
+    },
+    Capability {
+        area: "Studio",
+        label: "Fit evolution replay",
+        detail: "A finished fit run, exported from its trace.events by patchback-studio export, replayed evaluation by evaluation: loss curve, retained or rejected candidate, parameter trajectories, restarts and the stop reason. A trace whose sequence, best loss or retained loss breaks the replay rules is refused by the exporter and by the studio alike. The studio opens an export with a file picker and bundles a real fit of the demo voice pluck, held to a fresh fit by task studio-fixtures-check.",
+        status: "shipped",
+        evidence: Some(
+            "crates/patchback-studio/tests/fit_replay.rs::the_bundled_sample_is_a_consistent_replay_of_a_real_fit",
+        ),
+        milestone: None,
+        href: "/docs/concepts/studio#fit-replay",
+    },
     planned(
         STUDIO,
         "Studio",

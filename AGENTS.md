@@ -51,6 +51,15 @@ Entry points are the `Taskfile.yml` tasks (go-task):
   demo model as `models/demo/PROVENANCE` records it (dataset generation about 22 minutes);
   never in `task check`, and ModelSpec is never downloaded for it.
 - `task docs-check`: `generate --check` plus `cargo test -p patchback-docs`.
+- `task studio-types` regenerates `studio/src/generated/` from `spec/`; `task studio-types-check`
+  fails on drift. Its digest covers every `spec/` domain, so run `task studio-types` after any
+  `spec/` change.
+- `task studio-build` (`vue-tsc`, then `vite build`) and `task studio-test` (vitest) run under
+  `studio/` with the pnpm that `studio/package.json` pins through corepack.
+- `task studio-fixtures-check` refits `demos/pluck` (400 renders, about 80 s in a debug build) and
+  fails unless the export equals `studio/fixtures/sample-run.json`; `task studio-fixtures`
+  rewrites it and the rejected-frame fixture. Run it after any change to the fit, render,
+  analysis or exporter code.
 - `task rust-test`: `cargo test --locked --workspace`; holds the dependency gate
   (`crates/patchback-cli/tests/dependencies.rs`) and the CLI dispatch tests.
 - `task dependency-audit`: runs the dependency gate alone.
@@ -91,6 +100,8 @@ Entry points are the `Taskfile.yml` tasks (go-task):
   `crates/patchback-cli/tests/dependencies.rs` with its exact version and reviewed closure, naming
   an AEP approval record (not rejected, superseded or archived) whose body has the line
   ``Approves: `<crate>` <version>``. No ModelSpec crate is admitted (DESIGN.md § 3, § 8.2).
+- `crates/patchback-docs` and `crates/patchback-studio` are tooling: no application crate may
+  depend on them, even as a dev-dependency (`dependencies.rs`, the tooling-crate list).
 - ModelSpec is pinned to a tested release; never assume a ModelSpec capability its documentation
   does not list as shipped (DESIGN.md § 1.1).
 - Fixtures are synthesized by Patchback or carry a recorded licence and provenance.

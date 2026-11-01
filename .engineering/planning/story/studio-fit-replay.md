@@ -31,7 +31,7 @@ scope:
   path: studio/src/model.ts
 - confidence: cited
   path: studio/src/views/EvolutionView.vue
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-01T15:25:04Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-11-01T15:25:05Z", actor: "human:timo", revision: 7}
@@ -56,6 +56,7 @@ Source: `OpenTrace`, `AppendFrame`, `CloseTrace`; events `TraceOpened`, `FrameAp
 - spec/scenarios/studio-fit-replay-best-worsened.yaml
 - spec/scenarios/studio-fit-replay-out-of-order.yaml
 - spec/scenarios/studio-fit-replay-inconsistent-frame.yaml
+- spec/scenarios/studio-fit-replay-inconsistent-end.yaml
 
 ## Numeric obligations
 

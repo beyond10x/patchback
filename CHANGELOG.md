@@ -6,6 +6,31 @@ All notable changes to Patchback are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `patchback-studio export --run <dir> --out <file>` (stories studio-patch-graph,
+  studio-fit-replay): a tooling binary that turns a fit run's directory (`patch.patch`,
+  `run.meta`, `trace.events`) into one studio document: the drawn patch graph, the module
+  catalogue and the replay, one frame per evaluation. Identities are version-8 UUIDs from the
+  SHA-256 of the run's files, so two exports of one run are byte-identical. It refuses a run whose
+  patch is not the trace's last retained candidate, and a trace that breaks the replay rules, with
+  the studio domain's error names (`invariant`, `FrameOutOfOrder`, `BestLossWorsened`,
+  `InconsistentFrame`, `InconsistentEnd`).
+- The studio opens an export with a file picker and bundles a real 400-render fit of the demo
+  voice `demos/pluck` as its sample; play runs a trace of any length in 60, 20 or 6 seconds
+  (story studio-fit-replay). `task studio-test`, `task studio-build`, `task studio-types-check`
+  and `task studio-fixtures-check` are part of `task check`.
+- `patchback_fit::TraceReason::SequenceOutOfOrder`, `EvaluationCountZero` and `RejectedWithLoss`,
+  and `patchback_fit::trace_lines` with `TraceLine`, the tokenizer of the `trace.events` grammar
+  (story studio-fit-replay). The messages of `patchback fit` are unchanged.
+
+### Changed
+
+- `spec/domains/studio.yaml` follows the shipped trace: frames count from 1 and carry `restart`
+  and `topology_name`, a closed trace carries its `stop_reason`, and `CloseTrace` refuses a
+  completed end without one or a failed end with one (`patchback.studio.InconsistentEnd`).
+- The ESS pin moves to 0.80.0.
+
 ## [0.11.0] - 2026-10-25
 
 ### Added
