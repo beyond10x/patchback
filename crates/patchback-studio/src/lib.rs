@@ -15,6 +15,14 @@ pub mod graph;
 pub mod id;
 pub mod replay;
 
+/// A finite `f64` as an ESS `Decimal` (`^-?(0|[1-9][0-9]*)(\.[0-9]+)?$`): the shortest digits
+/// that read back to the same `f64`, written without an exponent, as Rust's `Display` writes
+/// them (`1e-3` is `0.001`). The `.patch` and `trace.events` files keep their own form
+/// (`patchback_core::patch::format_decimal`); only the export uses this one.
+pub fn decimal(value: f64) -> String {
+    format!("{value}")
+}
+
 /// The errors of `spec/domains/studio.yaml` the exporter answers.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StudioError {

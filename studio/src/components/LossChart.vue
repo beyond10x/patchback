@@ -17,7 +17,9 @@ const iw = W - M.l - M.r;
 const ih = H - M.t - M.b;
 
 const yMax = computed(() => {
-  const m = Math.max(0, ...props.frames.map((f) => decimal(f.total_loss) ?? 0));
+  // one pass: a spread of every frame overflows the call stack at about 130 000 frames
+  let m = 0;
+  for (const f of props.frames) m = Math.max(m, decimal(f.total_loss) ?? 0);
   return m > 0 ? Math.ceil(m * 10) / 10 : 1;
 });
 const n = computed(() => props.frames.length);

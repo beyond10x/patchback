@@ -131,8 +131,9 @@ pub use search::{
     reference_refusal, restart_point,
 };
 pub use trace::{
-    TRACE_FORMAT_VERSION, TRACE_HEADER, TRACE_MAX_LINE_BYTES, Trace, TraceError, TraceReason,
-    TraceRecord, parse_trace, write_trace,
+    TRACE_EVALUATION, TRACE_FORMAT_VERSION, TRACE_HEADER, TRACE_MARKER, TRACE_MAX_LINE_BYTES,
+    TRACE_TOPOLOGY, Trace, TraceError, TraceLine, TraceReason, TraceRecord, parse_trace,
+    trace_lines, write_trace,
 };
 
 /// The weight of the log-spectral component (DESIGN.md § 9.1).

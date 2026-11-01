@@ -101,9 +101,12 @@ function boolean(value: Json, at: string): boolean {
   return value;
 }
 
+/** ESS `Decimal`: plain digits, no exponent, no leading zero, no `+` (the exporter writes them so). */
+const DECIMAL = /^-?(0|[1-9][0-9]*)(\.[0-9]+)?$/;
+
 export function decimal(value: Json, at: string): string {
   const text = string(value, at);
-  if (!/^-?(\d+)(\.\d+)?([eE]-?\d+)?$/.test(text) || !Number.isFinite(Number(text))) malformed(at, "a decimal");
+  if (!DECIMAL.test(text) || !Number.isFinite(Number(text))) malformed(at, "a decimal");
   return text;
 }
 

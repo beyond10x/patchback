@@ -16,8 +16,8 @@
 //! | `modules` | `ModuleSpec` per drawn kind: its ports, rates and parameter contracts |
 //! | `trace` | `{opened, frames, closed}`: `TraceOpened`, one `FrameAppended` per `evaluation` line of `trace.events`, `TraceClosedEvent` ([`crate::replay`]) |
 //!
-//! Decimals are strings, written in the shortest form that reads back to the same `f64`
-//! (`patchback_core::patch::format_decimal`). Identities are version-8 UUIDs ([`crate::id`]):
+//! Decimals are strings, ESS `Decimal`s: the shortest plain digits that read back to the same `f64`
+//! ([`crate::decimal`], never an exponent form). Identities are version-8 UUIDs ([`crate::id`]):
 //! a patch's of its `.patch` text, the topology's of its name, the fit run's of `run.meta`
 //! without its `patchback <version>` line, `trace.events` and `patch.patch`, so a release that
 //! only renames the version keeps a run's identity; the trace's of the run's, a frame's of the
@@ -39,20 +39,25 @@
 //!    before it asks whether the patch is validated.
 //! 3. `patchback.studio.PatchNotDrawable`: graph validation (`patchback_core::patch::validate`)
 //!    refuses the patch.
-//! 4. `run`: `run.meta` or `trace.events` is missing or unreadable, or the trace is of another
-//!    topology or parameter list than the patch's.
-//! 5. [`INVARIANT`], `invariant`: an evaluation line of sequence 0 or of evaluation count 0
-//!    breaks the `TraceFrame` invariant `sequence >= 1` or `evaluation >= 1`; the studio's
-//!    loader gives a frame that does so the same name.
-//! 6. `patchback.studio.FrameOutOfOrder`, `patchback.studio.BestLossWorsened`,
-//!    `patchback.studio.InconsistentFrame`: `patchback_fit::parse_trace` refuses an evaluation
-//!    line for the reason the domain names (a sequence not above every one held before it; a
-//!    best loss that rises; a rejected candidate with a loss, a retained one without a best
-//!    loss, a best loss lost or before the first retained), or the replay refuses a frame
-//!    ([`crate::replay`]: a retained candidate whose loss is not the best).
-//! 7. `trace`: `parse_trace` refuses the text for any other reason (header, version, shape,
-//!    number, length, an unclosed trace, and a sequence above every held one that is not the
-//!    next: the grammar numbers lines without gaps, which the domain does not ask).
+//! 4. `run`: `run.meta` or `trace.events` is missing or unreadable, or the trace's `topology`
+//!    line (line 2, after a header `parse_trace` reads) names another topology or parameter list
+//!    than the patch's. This is read before the grammar of the frames: a trace of another
+//!    topology is `run` whatever its later lines hold.
+//! 5. [`INVARIANT`], `invariant`: an `evaluation` line whose sequence is below 1, evaluation
+//!    count below 1 or restart below 0 breaks a `TraceFrame` invariant; the studio's loader
+//!    gives a frame that does so the same name.
+//! 6. `patchback.studio.InconsistentFrame`, `patchback.studio.FrameOutOfOrder`,
+//!    `patchback.studio.BestLossWorsened`: the `evaluation` lines, read as frames through the
+//!    grammar's own tokenizer (`patchback_fit::trace_lines`) up to the first that does not read
+//!    as one, are appended to the domain model ([`crate::replay`]), which answers `AppendFrame`
+//!    in the domain's order: a rejected candidate with a loss, a valid one without a loss or a
+//!    retained one whose loss is not its best before a sequence not above every held one, and
+//!    that before a best loss that rises.
+//! 7. `trace`: `patchback_fit::parse_trace` refuses the text (header, version, shape, number,
+//!    length, an unclosed trace, a best loss lost or given before the first retained candidate,
+//!    and a sequence above every held one that is not the next: the grammar numbers lines
+//!    without gaps, which the domain does not ask). No refusal before this one rests on the
+//!    parser's message.
 //! 8. `run`: `patch.patch` is not the patch of the trace's last retained candidate, compared
 //!    value by value as the patch file writes them, or the trace retains none: the run's files
 //!    do not belong together. A trace without evaluations is a valid replay, but no completed
@@ -65,10 +70,13 @@ use std::io::Write as _;
 use std::path::Path;
 
 use patchback_core::parameter::Topology;
-use patchback_core::patch::{Patch, format_decimal, read_patch, validate, write_patch};
+use patchback_core::patch::{
+    Patch, format_decimal, parse_decimal, read_patch, validate, write_patch,
+};
 use patchback_fit::{
-    EvaluationOutcome, PATCH_FILE, RUN_META_FILE, TRACE_FILE, Trace, TraceError, TraceReason,
-    parse_trace, patch_at,
+    EvaluationOutcome, LossComponents, PATCH_FILE, RUN_META_FILE, TRACE_FILE, TRACE_FORMAT_VERSION,
+    TRACE_HEADER, TRACE_MARKER, TRACE_TOPOLOGY, Trace, TraceLine, parse_trace, patch_at,
+    trace_lines,
 };
 use serde_json::{Value, json};
 
@@ -80,17 +88,16 @@ use crate::replay::{Frame, Opened, Replay, TraceEnd};
 /// The `format` member of the document.
 pub const FORMAT: &str = "patchback-studio-export/1";
 
-/// The `parse_trace` expectation of a line whose sequence is not the next one.
-const SEQUENCE_ORDER: &str = "sequence numbers 1, 2, 3 and on, in order";
-/// The `parse_trace` expectation of a rejected line that carries a loss.
-const REJECTED_LOSSES: &str = "`-` for the losses of a rejected candidate";
-/// The `parse_trace` expectation of an evaluation line whose evaluation count is 0.
-const EVALUATION_COUNT: &str = "an evaluation count of at least 1";
 /// The name of a refusal for a frame that breaks a `TraceFrame` invariant; the studio's loader
 /// answers the same input with the same name (`studio/src/document.ts`).
 pub const INVARIANT: &str = "invariant";
-/// The lines of `trace.events` before its first `evaluation` line.
-const TRACE_HEAD_LINES: usize = 2;
+/// The trace identity a refusal of a `trace.events` line names: the trace's own is not known
+/// before the trace parses.
+const OF_TRACE_FILE: &str = "of trace.events";
+/// The fields of an `evaluation` line the `TraceFrame` invariants bound, by position: the
+/// field, its least value.
+const BOUNDED_FIELDS: [(usize, &str, i64); 3] =
+    [(1, "sequence", 1), (2, "evaluation", 1), (3, "restart", 0)];
 
 /// A refused export: the error it is an instance of and what was refused.
 #[derive(Clone, Debug, PartialEq)]
@@ -100,7 +107,8 @@ pub struct ExportError {
 }
 
 impl ExportError {
-    /// The `patchback.studio` error, or `run`, `trace` or `output` (module documentation).
+    /// The `patchback.studio` error, or `run`, [`INVARIANT`], `trace` or `output` (module
+    /// documentation).
     pub fn name(&self) -> &'static str {
         self.name
     }
@@ -171,20 +179,31 @@ pub fn export_run(dir: &Path) -> Result<String, ExportError> {
     let trace_bytes = read(dir, TRACE_FILE).map_err(run)?;
     let trace_text = String::from_utf8(trace_bytes.clone())
         .map_err(|_| ExportError::other("trace", format!("{TRACE_FILE} is not UTF-8")))?;
-    let trace = parse_trace(&trace_text).map_err(|error| trace_refusal(&trace_text, &error))?;
     let paths: Vec<&str> = topology
         .contracts()
         .iter()
         .map(|c| c.path.as_str())
         .collect();
-    if trace.topology != patch.topology_id || trace.paths != paths {
-        return Err(run(format!(
-            "{TRACE_FILE} is of topology {} with parameters {}; {PATCH_FILE} is of {} with {}",
-            trace.topology,
-            trace.paths.join(" "),
+    let other_run = |name: &str, trace_paths: &[&str]| {
+        run(format!(
+            "{TRACE_FILE} is of topology {name} with parameters {}; {PATCH_FILE} is of {} with {}",
+            trace_paths.join(" "),
             patch.topology_id,
             paths.join(" ")
-        )));
+        ))
+    };
+    let lines = trace_lines(&trace_text);
+    if let Some((name, trace_paths)) = trace_head(&lines) {
+        if name != patch.topology_id || trace_paths != paths {
+            return Err(other_run(name, &trace_paths));
+        }
+        check_frames(&lines[2..], &trace_paths)?;
+    }
+    let trace = parse_trace(&trace_text)
+        .map_err(|error| ExportError::other("trace", format!("{TRACE_FILE}: {error}")))?;
+    let trace_paths: Vec<&str> = trace.paths.iter().map(String::as_str).collect();
+    if trace.topology != patch.topology_id || trace_paths != paths {
+        return Err(other_run(&trace.topology, &trace_paths));
     }
 
     let fit_run_id = id::derive(id::FIT_RUN, &[&identity_meta(&meta), &trace_bytes, &bytes]);
@@ -272,77 +291,155 @@ fn replay(
     Ok(replay)
 }
 
-/// The export's answer to a refused `trace.events` (module documentation, refusals 5 to 7).
-/// The trace identity is not known yet, so the error names the line and the sequence it holds.
-fn trace_refusal(text: &str, error: &TraceError) -> ExportError {
-    let sequence = || {
-        error
-            .line
-            .and_then(|line| text.lines().nth(line - 1))
-            .and_then(|line| line.split_ascii_whitespace().nth(1))
-            .and_then(|token| token.parse::<u64>().ok())
-            .or_else(|| {
-                error
-                    .line
-                    .map(|line| line.saturating_sub(TRACE_HEAD_LINES) as u64)
-            })
-            .unwrap_or(0)
+/// The topology and parameter paths of a trace's `topology` line (refusal 4), when line 1 is
+/// the header of the version `parse_trace` reads and line 2 is a `topology` line; otherwise
+/// none, and the grammar answers (refusal 7).
+fn trace_head<'a>(lines: &[TraceLine<'a>]) -> Option<(&'a str, Vec<&'a str>)> {
+    let version = TRACE_FORMAT_VERSION.to_string();
+    let [header, topology, ..] = lines else {
+        return None;
     };
-    let trace_id = format!("of {TRACE_FILE}");
-    let invariant = |rule: &str| {
-        ExportError::other(
-            INVARIANT,
-            format!("patchback.studio.TraceFrame {rule}: {TRACE_FILE}: {error}"),
-        )
-    };
-    let studio = match &error.reason {
-        TraceReason::MalformedRecord { expected } if *expected == SEQUENCE_ORDER => {
-            let sequence = sequence();
-            if sequence == 0 {
-                return invariant("sequence >= 1");
-            }
-            if sequence > held_sequence(text, error.line) {
-                return ExportError::other("trace", format!("{TRACE_FILE}: {error}"));
-            }
-            Some(StudioError::FrameOutOfOrder { trace_id, sequence })
-        }
-        TraceReason::MalformedRecord { expected } if *expected == EVALUATION_COUNT => {
-            return invariant("evaluation >= 1");
-        }
-        TraceReason::BestLossRose { .. } => Some(StudioError::BestLossWorsened {
-            trace_id,
-            sequence: sequence(),
-        }),
-        TraceReason::MalformedRecord { expected } if *expected == REJECTED_LOSSES => {
-            Some(StudioError::InconsistentFrame {
-                trace_id,
-                sequence: sequence(),
-            })
-        }
-        TraceReason::RetainedWithoutBestLoss { .. }
-        | TraceReason::BestLossLost { .. }
-        | TraceReason::BestLossBeforeRetained { .. } => Some(StudioError::InconsistentFrame {
-            trace_id,
-            sequence: sequence(),
-        }),
+    if header.fields() != [TRACE_HEADER, version.as_str()] {
+        return None;
+    }
+    match topology.fields()[..] {
+        [TRACE_TOPOLOGY, name, ref paths @ ..] => Some((name, paths.to_vec())),
         _ => None,
-    };
-    match studio {
-        Some(studio) => ExportError::studio(studio, error),
-        None => ExportError::other("trace", format!("{TRACE_FILE}: {error}")),
     }
 }
 
-/// The highest sequence of the `evaluation` lines before line `line` (1-based) of `text`: the
-/// last one's, as `parse_trace` holds them in order from 1. Zero when none comes before it.
-fn held_sequence(text: &str, line: Option<usize>) -> u64 {
-    let Some(line) = line else { return 0 };
-    text.lines()
-        .take(line.saturating_sub(1))
-        .filter(|l| l.starts_with("evaluation "))
-        .filter_map(|l| l.split_ascii_whitespace().nth(1)?.parse::<u64>().ok())
-        .max()
-        .unwrap_or(0)
+/// Refusals 5 and 6 (module documentation): the `evaluation` lines after the head, read through
+/// the grammar's tokenizer as the domain's frames, in order, up to the first line that does not
+/// read as one (the grammar answers it, refusal 7). Every frame read is held to the
+/// `TraceFrame` invariants first, as the studio's loader holds a document's frames before it
+/// replays them; then the frames are appended to a replay of the domain model
+/// ([`crate::replay`]), which answers `AppendFrame`'s refusals in the domain's order.
+fn check_frames(lines: &[TraceLine<'_>], paths: &[&str]) -> Result<(), ExportError> {
+    let mut frames = Vec::new();
+    for line in lines.iter().filter(|line| line.is_evaluation()) {
+        match read_frame(line, paths)? {
+            Some(frame) => frames.push(frame),
+            None => break,
+        }
+    }
+    let mut model = Replay::open(Opened {
+        trace_id: OF_TRACE_FILE.to_owned(),
+        fit_run_id: String::new(),
+        topology_id: String::new(),
+        topology_name: String::new(),
+        parameter_paths: paths.iter().map(|p| (*p).to_owned()).collect(),
+    })?;
+    for frame in frames {
+        model.append(frame)?;
+    }
+    Ok(())
+}
+
+/// One `evaluation` line as the frame it states, or none when a field does not read: an integer
+/// field below its `TraceFrame` bound is [`INVARIANT`], checked in field order as it is read.
+fn read_frame(line: &TraceLine<'_>, paths: &[&str]) -> Result<Option<Frame>, ExportError> {
+    let fields = line.fields();
+    let mut integers = [0_i64; 3];
+    for (at, (position, field, least)) in BOUNDED_FIELDS.into_iter().enumerate() {
+        let Some(value) = fields.get(position).and_then(|t| t.parse::<i64>().ok()) else {
+            return Ok(None);
+        };
+        if value < least {
+            return Err(ExportError::other(
+                INVARIANT,
+                format!(
+                    "patchback.studio.TraceFrame {field} >= {least}: {TRACE_FILE} line {}: \
+                     {field} is {value}",
+                    line.line
+                ),
+            ));
+        }
+        integers[at] = value;
+    }
+    let [sequence, evaluation, restart] = integers;
+    let (Ok(sequence), Ok(evaluation), Ok(restart)) = (
+        u64::try_from(sequence),
+        u64::try_from(evaluation),
+        u32::try_from(restart),
+    ) else {
+        return Ok(None);
+    };
+    let Some(outcome) = fields.get(4).and_then(|token| {
+        [
+            EvaluationOutcome::FirstRetained,
+            EvaluationOutcome::Improved,
+            EvaluationOutcome::NotImproved,
+            EvaluationOutcome::Rejected,
+        ]
+        .into_iter()
+        .find(|o| o.name() == *token)
+    }) else {
+        return Ok(None);
+    };
+    let losses = fields.len().checked_sub(6 + 1 + paths.len());
+    let number = |token: &str| -> Option<Option<f64>> {
+        if token == TRACE_MARKER {
+            Some(None)
+        } else {
+            parse_decimal(token).map(Some)
+        }
+    };
+    let (components, total) = match losses {
+        Some(1) => match number(fields[6]) {
+            Some(total) => (None, total),
+            None => return Ok(None),
+        },
+        Some(5) => {
+            let read: Option<Vec<Option<f64>>> = fields[6..11].iter().map(|t| number(t)).collect();
+            match read.as_deref() {
+                Some(
+                    &[
+                        Some(log_spectral),
+                        Some(envelope),
+                        Some(transient),
+                        Some(band_energy),
+                        Some(total),
+                    ],
+                ) => (
+                    Some(LossComponents {
+                        log_spectral,
+                        envelope,
+                        transient,
+                        band_energy,
+                    }),
+                    Some(total),
+                ),
+                Some(&[None, None, None, None, None]) => (None, None),
+                _ => return Ok(None),
+            }
+        }
+        _ => return Ok(None),
+    };
+    let best_at = fields.len() - paths.len() - 1;
+    let Some(best) = number(fields[best_at]) else {
+        return Ok(None);
+    };
+    let values: Option<Vec<f64>> = fields[best_at + 1..]
+        .iter()
+        .map(|t| parse_decimal(t))
+        .collect();
+    let Some(values) = values else {
+        return Ok(None);
+    };
+    Ok(Some(Frame {
+        frame_id: String::new(),
+        sequence,
+        evaluation,
+        restart,
+        outcome,
+        topology_id: String::new(),
+        topology_name: fields[5].to_owned(),
+        patch_id: None,
+        total,
+        components,
+        best,
+        parameters: paths.iter().map(|p| (*p).to_owned()).zip(values).collect(),
+    }))
 }
 
 /// Refusal 8 (module documentation): `patch.patch` holds the values of the trace's last retained

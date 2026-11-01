@@ -25,7 +25,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use patchback_core::parameter::{
     ClampPolicy, ParameterContract, ParameterMapping, ParameterUnit, Topology,
 };
-use patchback_core::patch::{NodeKind, Patch, PortRate, format_decimal};
+use patchback_core::patch::{NodeKind, Patch, PortRate};
 use serde_json::{Value, json};
 
 use crate::StudioError;
@@ -270,9 +270,9 @@ fn contract(contract: &ParameterContract) -> Value {
             ParameterMapping::Exponential => "Exponential",
             ParameterMapping::Linear => "Linear",
         },
-        "physical_at_zero": format_decimal(contract.physical_at_zero),
-        "physical_at_one": format_decimal(contract.physical_at_one),
-        "default_normalized": format_decimal(contract.default_normalized),
+        "physical_at_zero": crate::decimal(contract.physical_at_zero),
+        "physical_at_one": crate::decimal(contract.physical_at_one),
+        "default_normalized": crate::decimal(contract.default_normalized),
         "clamp": match contract.clamp {
             ClampPolicy::ClampToUnitInterval => "ClampToUnitInterval",
         },

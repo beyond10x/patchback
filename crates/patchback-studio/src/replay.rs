@@ -17,11 +17,10 @@
 //! ([`StudioError::DuplicateParameterPath`]). A refused command changes nothing.
 //!
 //! Losses are compared as the `f64` values the trace's decimals read back to, bit for bit
-//! (`patchback_core::patch::format_decimal` writes the shortest form that reads back).
+//! (they read back as `f64`; the export writes them with [`crate::decimal`]).
 
 use std::collections::BTreeSet;
 
-use patchback_core::patch::format_decimal;
 use patchback_fit::{EvaluationOutcome, LossComponents, StopReason};
 use serde_json::{Map, Value, json};
 
@@ -219,26 +218,26 @@ impl Replay {
             frame.insert("patch_id".into(), json!(patch_id));
         }
         if let Some(total) = f.total {
-            frame.insert("total_loss".into(), json!(format_decimal(total)));
+            frame.insert("total_loss".into(), json!(crate::decimal(total)));
         }
         if let Some(c) = f.components {
             frame.insert(
                 "components".into(),
                 json!({
-                    "log_spectral": format_decimal(c.log_spectral),
-                    "envelope": format_decimal(c.envelope),
-                    "transient": format_decimal(c.transient),
-                    "band_energy": format_decimal(c.band_energy),
+                    "log_spectral": crate::decimal(c.log_spectral),
+                    "envelope": crate::decimal(c.envelope),
+                    "transient": crate::decimal(c.transient),
+                    "band_energy": crate::decimal(c.band_energy),
                 }),
             );
         }
         if let Some(best) = f.best {
-            frame.insert("best_loss".into(), json!(format_decimal(best)));
+            frame.insert("best_loss".into(), json!(crate::decimal(best)));
         }
         let parameters: Vec<Value> = f
             .parameters
             .iter()
-            .map(|(path, value)| json!({"path": path, "normalized_value": format_decimal(*value)}))
+            .map(|(path, value)| json!({"path": path, "normalized_value": crate::decimal(*value)}))
             .collect();
         frame.insert("parameters".into(), Value::Array(parameters));
         Value::Object(frame)

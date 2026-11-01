@@ -372,14 +372,21 @@ fn studio_fit_replay_out_of_order_in_a_trace_file_is_refused() {
 
 /// A sequence above every held one but not the next is not out of order (the domain's
 /// `out-of-order` needs a held sequence >= the input's); `trace.events` refuses the gap as its
-/// grammar does, `trace`.
+/// grammar does, `trace`. A later frame below the gap's sequence is out of order in the domain,
+/// which answers before the grammar (`export.rs` refusals 6 and 7).
 #[test]
 fn a_gap_in_the_trace_file_is_its_grammar_error_not_out_of_order() {
     let mut lines = replayed_lines();
-    lines[2] = lines[2].replace("evaluation 3 3", "evaluation 5 5");
+    lines[3] = lines[3].replace("evaluation 4 4", "evaluation 6 6");
     let (name, message) = refused("gap", &lines);
     assert_eq!(name, "trace", "{message}");
     assert!(message.contains("sequence numbers 1, 2, 3"), "{message}");
+
+    let mut lines = replayed_lines();
+    lines[2] = lines[2].replace("evaluation 3 3", "evaluation 5 5");
+    let (name, message) = refused("gap-then-lower", &lines);
+    assert_eq!(name, "patchback.studio.FrameOutOfOrder", "{message}");
+    assert!(message.contains("sequence 4"), "{message}");
 }
 
 /// A frame of sequence 0, or of evaluation count 0, breaks a `TraceFrame` invariant
@@ -476,7 +483,7 @@ fn a_patch_that_is_not_the_last_retained_candidate_is_refused() {
 /// `studio/fixtures/export-replayed-lines.json` is the export of this test's run of four
 /// evaluations, one of each outcome, a restart and a rejected candidate: the studio's tests draw
 /// a rejected frame from it, as the bundled sample has none. `PATCHBACK_STUDIO_BLESS=1`
-/// (`task studio-fixtures`) rewrites it.
+/// (`task studio-fixtures`) rewrites it; any other value compares ([`blesses`]).
 #[test]
 fn the_rejected_frame_fixture_is_the_export_of_the_replayed_lines() {
     let lines = replayed_lines();
@@ -489,7 +496,7 @@ fn the_rejected_frame_fixture_is_the_export_of_the_replayed_lines() {
     );
     let export = export_run(&dir).expect("the run exports");
     let path = repository_root().join("studio/fixtures/export-replayed-lines.json");
-    if std::env::var_os("PATCHBACK_STUDIO_BLESS").is_some() {
+    if blesses(std::env::var("PATCHBACK_STUDIO_BLESS").ok().as_deref()) {
         fs::write(&path, &export).expect("write the fixture");
     }
     let fixture = fs::read_to_string(&path).expect("the fixture");
@@ -622,4 +629,28 @@ fn the_bundled_sample_is_a_consistent_replay_of_a_real_fit() {
     }
     assert_eq!(document["trace"]["closed"]["ended"], "Completed");
     assert!(document["trace"]["closed"]["stop_reason"].is_string());
+}
+
+/// Whether `PATCHBACK_STUDIO_BLESS`, read as `value`, asks a fixture test to rewrite its
+/// fixture: only `1` does.
+fn blesses(value: Option<&str>) -> bool {
+    value == Some("1")
+}
+
+/// A fixture is rewritten only for `PATCHBACK_STUDIO_BLESS=1`; unset, empty or any other value
+/// compares, so a stray setting cannot turn the drift check into a write.
+#[test]
+fn only_patchback_studio_bless_1_rewrites_a_fixture() {
+    assert!(blesses(Some("1")));
+    for value in [
+        None,
+        Some(""),
+        Some("0"),
+        Some("true"),
+        Some("yes"),
+        Some(" 1"),
+        Some("1 "),
+    ] {
+        assert!(!blesses(value), "{value:?}");
+    }
 }

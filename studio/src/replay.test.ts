@@ -102,6 +102,21 @@ describe("patchback.studio.AppendFrame and CloseTrace refusals", () => {
     expect(refusal(() => check(fraction)).error).toBe("malformed");
   });
 
+  it("reads a loss only as an ESS Decimal and refuses any other form as malformed", () => {
+    for (const text of ["0", "0.645", "-0.5", "16000", "0.001"]) {
+      const trace = sampleTrace();
+      trace.frames[0].best_loss = text;
+      expect(replayOf(trace).frames[0]?.best_loss).toBe(text);
+    }
+    for (const text of ["1e-3", "6.45E-1", "01", "+1", ".5", "1.", "0x1", "NaN", "Infinity", " 1"]) {
+      const trace = sampleTrace();
+      trace.frames[0].best_loss = text;
+      const error = refusal(() => replayOf(trace));
+      expect(error.error, text).toBe("malformed");
+      expect(error.message, text).toContain("a decimal");
+    }
+  });
+
   it("refuses a graph node below a GraphNode invariant as invariant", () => {
     const text = JSON.parse(sampleText);
     text.graph.nodes[0].rank = -1;

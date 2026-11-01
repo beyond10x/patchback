@@ -54,10 +54,12 @@
 //! it is split; a header other than `patchback-fit-trace <version>`, or a version other than 1,
 //! is refused on line 1; an integer or real that does not read is a malformed number; a line out
 //! of order, with the wrong field count, an unknown keyword, outcome or stop reason, a repeated
-//! path, a sequence number out of order, an evaluation count of 0, a topology other than the
-//! run's, `-` where a loss belongs or a loss where `-` belongs, or any line after the closing
-//! line, is a malformed record. Five lines no run writes have their own reasons, each naming
-//! the values: an `<evaluations>` other than the line's `<sequence>` is
+//! path, a topology other than the run's, or any line after the closing line, is a malformed
+//! record; `-` where a loss belongs is a malformed number. Eight lines no run writes have their
+//! own reasons, each naming the values: a `<sequence>` other than one more than the line
+//! before's is [`TraceReason::SequenceOutOfOrder`]; an `<evaluations>` of 0 is
+//! [`TraceReason::EvaluationCountZero`]; a `rejected` line with a loss where `-` belongs is
+//! [`TraceReason::RejectedWithLoss`]; an `<evaluations>` other than the line's `<sequence>` is
 //! [`TraceReason::EvaluationCountNotSequence`]; a numeric `<best>` above the previous evaluation
 //! line's is [`TraceReason::BestLossRose`]; a `<best>` of `-` after a numeric one is
 //! [`TraceReason::BestLossLost`]; a `<best>` of `-` on a `first-retained`, `improved` or
@@ -88,10 +90,17 @@ pub const TRACE_FORMAT_VERSION: u32 = 1;
 /// `-1.2345678901234567e-308`) is about 440 bytes.
 pub const TRACE_MAX_LINE_BYTES: usize = 4_096;
 
-const TOPOLOGY: &str = "topology";
-const EVALUATION: &str = "evaluation";
+const TOPOLOGY: &str = TRACE_TOPOLOGY;
+const EVALUATION: &str = TRACE_EVALUATION;
 const COMPLETED: &str = "completed";
-const MARKER: &str = "-";
+const MARKER: &str = TRACE_MARKER;
+
+/// The first field of the `topology` line.
+pub const TRACE_TOPOLOGY: &str = "topology";
+/// The first field of an `evaluation` line.
+pub const TRACE_EVALUATION: &str = "evaluation";
+/// The marker for a loss or best loss a line does not have.
+pub const TRACE_MARKER: &str = "-";
 
 const OUTCOMES: [EvaluationOutcome; 4] = [
     EvaluationOutcome::FirstRetained,
@@ -143,6 +152,13 @@ pub enum TraceReason {
     UnknownFormatVersion { version: u32 },
     /// A line that is not the record its place calls for; `expected` says what was.
     MalformedRecord { expected: &'static str },
+    /// An `evaluation` line whose `<sequence>` is not one more than the line before's: `held`
+    /// is the number of `evaluation` lines before it, the highest sequence they hold.
+    SequenceOutOfOrder { sequence: u64, held: u64 },
+    /// An `evaluation` line whose `<evaluations>` is 0.
+    EvaluationCountZero { sequence: u64 },
+    /// A `rejected` line with a loss where its `-` belongs.
+    RejectedWithLoss { sequence: u64 },
     /// An `evaluation` line whose `<evaluations>` is not its `<sequence>`: no run writes it.
     EvaluationCountNotSequence { sequence: u64, evaluations: u64 },
     /// An `evaluation` line whose `<best>` is above the previous `evaluation` line's: the best
@@ -173,6 +189,16 @@ impl fmt::Display for TraceReason {
                 "unknown {TRACE_HEADER} version {version}; only {TRACE_FORMAT_VERSION} is read"
             ),
             Self::MalformedRecord { expected } => write!(f, "expected {expected}"),
+            Self::SequenceOutOfOrder { .. } => {
+                write!(f, "expected sequence numbers 1, 2, 3 and on, in order")
+            }
+            Self::EvaluationCountZero { .. } => {
+                write!(f, "expected an evaluation count of at least 1")
+            }
+            Self::RejectedWithLoss { .. } => write!(
+                f,
+                "expected `{MARKER}` for the losses of a rejected candidate"
+            ),
             Self::EvaluationCountNotSequence {
                 sequence,
                 evaluations,
@@ -376,10 +402,16 @@ fn evaluation(
     let evaluations: u64 = integer(line, fields[2])?;
     let restart: u32 = integer(line, fields[3])?;
     if usize::try_from(sequence).ok() != previous.len().checked_add(1) {
-        return Err(malformed(line, "sequence numbers 1, 2, 3 and on, in order"));
+        return Err(refused(
+            line,
+            TraceReason::SequenceOutOfOrder {
+                sequence,
+                held: previous.len() as u64,
+            },
+        ));
     }
     if evaluations == 0 {
-        return Err(malformed(line, "an evaluation count of at least 1"));
+        return Err(refused(line, TraceReason::EvaluationCountZero { sequence }));
     }
     if evaluations != sequence {
         return Err(refused(
@@ -395,10 +427,7 @@ fn evaluation(
     }
     let (components, total) = if outcome == EvaluationOutcome::Rejected {
         if fields[6] != MARKER {
-            return Err(malformed(
-                line,
-                "`-` for the losses of a rejected candidate",
-            ));
+            return Err(refused(line, TraceReason::RejectedWithLoss { sequence }));
         }
         (None, None)
     } else {
@@ -458,82 +487,119 @@ fn evaluation(
     })
 }
 
+/// One line of a `trace.events` text as [`parse_trace`] reads it: its 1-based number and its
+/// content without the terminator (`\n`, or `\r\n`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TraceLine<'a> {
+    /// The 1-based line number.
+    pub line: usize,
+    /// The line without its terminator.
+    pub content: &'a str,
+}
+
+impl<'a> TraceLine<'a> {
+    /// The line's fields, as [`parse_trace`] splits them: separated by any run of ASCII
+    /// whitespace.
+    pub fn fields(&self) -> Vec<&'a str> {
+        self.content.split_ascii_whitespace().collect()
+    }
+
+    /// Whether the line's first field is the `evaluation` keyword.
+    pub fn is_evaluation(&self) -> bool {
+        self.content.split_ascii_whitespace().next() == Some(TRACE_EVALUATION)
+    }
+}
+
+/// The lines of `text` as [`parse_trace`] reads them, in order: split at `\n`, a final `\n`
+/// ending the last line rather than opening an empty one, a `\r` before a `\n` dropped. The one
+/// tokenizer of the grammar; a reader of a trace that is not yet known to parse (the studio's
+/// exporter) reads it through this.
+pub fn trace_lines(text: &str) -> Vec<TraceLine<'_>> {
+    let body = text.strip_suffix('\n').unwrap_or(text);
+    if body.is_empty() && !text.ends_with('\n') {
+        return Vec::new();
+    }
+    body.split('\n')
+        .enumerate()
+        .map(|(index, raw)| TraceLine {
+            line: index + 1,
+            content: raw.strip_suffix('\r').unwrap_or(raw),
+        })
+        .collect()
+}
+
 /// Parses a `trace.events` text (module documentation).
 pub fn parse_trace(text: &str) -> Result<Trace, TraceError> {
-    let body = text.strip_suffix('\n').unwrap_or(text);
     let mut header: Option<(String, Vec<String>)> = None;
     let mut records = Vec::new();
     let mut end: Option<StopReason> = None;
-    if !body.is_empty() || text.ends_with('\n') {
-        for (index, raw) in body.split('\n').enumerate() {
-            let line = index + 1;
-            let content = raw.strip_suffix('\r').unwrap_or(raw);
-            if content.len() > TRACE_MAX_LINE_BYTES {
+    for trace_line in trace_lines(text) {
+        let TraceLine { line, content } = trace_line;
+        if content.len() > TRACE_MAX_LINE_BYTES {
+            return Err(TraceError {
+                line: Some(line),
+                reason: TraceReason::LineTooLong {
+                    bytes: content.len(),
+                },
+            });
+        }
+        let fields = trace_line.fields();
+        if end.is_some() {
+            return Err(malformed(line, "nothing after the closing line"));
+        }
+        if line == 1 {
+            let [name, version] = fields[..] else {
+                return Err(malformed(
+                    line,
+                    "the header `patchback-fit-trace <version>`",
+                ));
+            };
+            if name != TRACE_HEADER {
+                return Err(malformed(
+                    line,
+                    "the header `patchback-fit-trace <version>`",
+                ));
+            }
+            let version: u32 = integer(line, version)?;
+            if version != TRACE_FORMAT_VERSION {
                 return Err(TraceError {
                     line: Some(line),
-                    reason: TraceReason::LineTooLong {
-                        bytes: content.len(),
-                    },
+                    reason: TraceReason::UnknownFormatVersion { version },
                 });
             }
-            let fields: Vec<&str> = content.split_ascii_whitespace().collect();
-            if end.is_some() {
-                return Err(malformed(line, "nothing after the closing line"));
-            }
-            if line == 1 {
-                let [name, version] = fields[..] else {
-                    return Err(malformed(
-                        line,
-                        "the header `patchback-fit-trace <version>`",
-                    ));
-                };
-                if name != TRACE_HEADER {
-                    return Err(malformed(
-                        line,
-                        "the header `patchback-fit-trace <version>`",
-                    ));
-                }
-                let version: u32 = integer(line, version)?;
-                if version != TRACE_FORMAT_VERSION {
-                    return Err(TraceError {
-                        line: Some(line),
-                        reason: TraceReason::UnknownFormatVersion { version },
-                    });
-                }
-                continue;
-            }
-            let Some((topology, paths)) = &header else {
-                let [TOPOLOGY, name, paths @ ..] = &fields[..] else {
-                    return Err(malformed(line, "`topology <topology> <path>...`"));
-                };
-                let paths: Vec<String> = paths.iter().map(|path| (*path).to_owned()).collect();
-                for (at, path) in paths.iter().enumerate() {
-                    if paths[..at].contains(path) {
-                        return Err(malformed(line, "distinct parameter paths"));
-                    }
-                }
-                header = Some(((*name).to_owned(), paths));
-                continue;
+            continue;
+        }
+        let Some((topology, paths)) = &header else {
+            let [TOPOLOGY, name, paths @ ..] = &fields[..] else {
+                return Err(malformed(line, "`topology <topology> <path>...`"));
             };
-            match fields.first() {
-                Some(&EVALUATION) => {
-                    records.push(evaluation(line, &fields, topology, paths.len(), &records)?);
+            let paths: Vec<String> = paths.iter().map(|path| (*path).to_owned()).collect();
+            for (at, path) in paths.iter().enumerate() {
+                if paths[..at].contains(path) {
+                    return Err(malformed(line, "distinct parameter paths"));
                 }
-                Some(&COMPLETED) => {
-                    let reason = match &fields[..] {
-                        [_, reason] => StopReason::ALL.into_iter().find(|r| r.name() == *reason),
-                        _ => None,
-                    };
-                    end = Some(reason.ok_or_else(|| {
-                        malformed(line, "`completed <stop_reason>` naming a stop reason")
-                    })?);
-                }
-                _ => {
-                    return Err(malformed(
-                        line,
-                        "an `evaluation` line or the `completed` line",
-                    ));
-                }
+            }
+            header = Some(((*name).to_owned(), paths));
+            continue;
+        };
+        match fields.first() {
+            Some(&EVALUATION) => {
+                records.push(evaluation(line, &fields, topology, paths.len(), &records)?);
+            }
+            Some(&COMPLETED) => {
+                let reason = match &fields[..] {
+                    [_, reason] => StopReason::ALL.into_iter().find(|r| r.name() == *reason),
+                    _ => None,
+                };
+                end = Some(reason.ok_or_else(|| {
+                    malformed(line, "`completed <stop_reason>` naming a stop reason")
+                })?);
+            }
+            _ => {
+                return Err(malformed(
+                    line,
+                    "an `evaluation` line or the `completed` line",
+                ));
             }
         }
     }
