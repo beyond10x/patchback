@@ -15,6 +15,7 @@ timeline:
       fit_run_id: 5a0d0000-0000-4000-8000-000000000506
       source: Live
       topology_id: 5a0d0000-0000-4000-8000-000000000101
+      topology_name: subtractive-mono/1
       parameter_paths: [cutoff]
     outcome: opened
 
@@ -24,6 +25,7 @@ timeline:
     input:
       trace_id: 5a0d0000-0000-4000-8000-000000000406
       ended: Completed
+      stop_reason: RenderBudgetExhausted
     outcome: closed
 
   - at: 2026-10-22T14:10:02Z
@@ -32,10 +34,12 @@ timeline:
     input:
       frame_id: 5a0d0000-0000-4000-8000-000000000651
       trace_id: 5a0d0000-0000-4000-8000-000000000406
-      sequence: 0
+      sequence: 1
       evaluation: 1
+      restart: 0
       outcome: FirstRetained
       topology_id: 5a0d0000-0000-4000-8000-000000000101
+      topology_name: subtractive-mono/1
       total_loss: 0.645
       best_loss: 0.645
       parameters: [{path: cutoff, normalized_value: 0.5}]
@@ -50,6 +54,7 @@ timeline:
     input:
       trace_id: 5a0d0000-0000-4000-8000-000000000406
       ended: Completed
+      stop_reason: RenderBudgetExhausted
     outcome: already-closed
     error:
       name: patchback.studio.TraceStateConflict

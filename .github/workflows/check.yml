@@ -29,6 +29,27 @@ jobs:
         with:
           toolchain: stable
 
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: "22"
+
+      - name: Install pnpm
+        env:
+          PNPM_PINNED: "11.9.0"
+        run: |
+          set -euo pipefail
+          PNPM_VERSION=$(sed -n 's/^  "packageManager": "pnpm@\([^"+]*\)".*$/\1/p' studio/package.json)
+          if [ "$PNPM_VERSION" != "$PNPM_PINNED" ]; then
+            echo "studio/package.json names pnpm '$PNPM_VERSION'; this workflow pins $PNPM_PINNED" >&2
+            exit 1
+          fi
+          npm install --global --no-fund --no-audit "pnpm@$PNPM_PINNED"
+          REPORTED=$(pnpm --version)
+          if [ "$REPORTED" != "$PNPM_PINNED" ]; then
+            echo "the installed pnpm reports '$REPORTED'; this workflow pins $PNPM_PINNED" >&2
+            exit 1
+          fi
+
       - name: Install go-task
         env:
           TASK_VERSION: "3.52.0"

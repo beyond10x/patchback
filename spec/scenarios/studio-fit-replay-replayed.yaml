@@ -16,6 +16,7 @@ timeline:
       fit_run_id: 5a0d0000-0000-4000-8000-000000000501
       source: Replay
       topology_id: 5a0d0000-0000-4000-8000-000000000101
+      topology_name: subtractive-mono/1
       parameter_paths: [attack, cutoff]
     outcome: opened
 
@@ -25,10 +26,12 @@ timeline:
     input:
       frame_id: 5a0d0000-0000-4000-8000-000000000601
       trace_id: 5a0d0000-0000-4000-8000-000000000401
-      sequence: 0
+      sequence: 1
       evaluation: 1
+      restart: 0
       outcome: FirstRetained
       topology_id: 5a0d0000-0000-4000-8000-000000000101
+      topology_name: subtractive-mono/1
       patch_id: 5a0d0000-0000-4000-8000-000000000701
       total_loss: 0.645
       components: {log_spectral: 0.8, envelope: 0.6, transient: 0.4, band_energy: 0.5}
@@ -44,10 +47,12 @@ timeline:
     input:
       frame_id: 5a0d0000-0000-4000-8000-000000000602
       trace_id: 5a0d0000-0000-4000-8000-000000000401
-      sequence: 1
+      sequence: 2
       evaluation: 2
+      restart: 0
       outcome: Improved
       topology_id: 5a0d0000-0000-4000-8000-000000000101
+      topology_name: subtractive-mono/1
       patch_id: 5a0d0000-0000-4000-8000-000000000702
       total_loss: 0.43
       components: {log_spectral: 0.5, envelope: 0.4, transient: 0.3, band_energy: 0.3}
@@ -63,10 +68,12 @@ timeline:
     input:
       frame_id: 5a0d0000-0000-4000-8000-000000000603
       trace_id: 5a0d0000-0000-4000-8000-000000000401
-      sequence: 2
+      sequence: 3
       evaluation: 3
+      restart: 0
       outcome: NotImproved
       topology_id: 5a0d0000-0000-4000-8000-000000000101
+      topology_name: subtractive-mono/1
       patch_id: 5a0d0000-0000-4000-8000-000000000703
       total_loss: 0.745
       components: {log_spectral: 0.9, envelope: 0.7, transient: 0.5, band_energy: 0.6}
@@ -82,10 +89,12 @@ timeline:
     input:
       frame_id: 5a0d0000-0000-4000-8000-000000000604
       trace_id: 5a0d0000-0000-4000-8000-000000000401
-      sequence: 3
+      sequence: 4
       evaluation: 4
+      restart: 0
       outcome: Rejected
       topology_id: 5a0d0000-0000-4000-8000-000000000101
+      topology_name: subtractive-mono/1
       best_loss: 0.43
       parameters:
         - {path: attack, normalized_value: 0.25}
@@ -98,6 +107,7 @@ timeline:
     input:
       trace_id: 5a0d0000-0000-4000-8000-000000000401
       ended: Completed
+      stop_reason: RenderBudgetExhausted
     outcome: closed
 
 assert:
@@ -107,9 +117,10 @@ assert:
       state: Closed
       source: Replay
       ended: Completed
+      stop_reason: RenderBudgetExhausted
   - view: patchback.studio.TraceFrames
     contains:
       frame_id: 5a0d0000-0000-4000-8000-000000000604
-      sequence: 3
+      sequence: 4
       outcome: Rejected
       best_loss: 0.43

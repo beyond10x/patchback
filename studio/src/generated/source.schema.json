@@ -60,6 +60,18 @@
       "x-ess-kind": "struct",
       "x-ess-name": "patchback.fit.LossComponents"
     },
+    "patchback.fit.StopReason": {
+      "enum": [
+        "RenderBudgetExhausted",
+        "TimeBudgetExhausted",
+        "RestartsExhausted",
+        "ImprovementBelowThreshold"
+      ],
+      "title": "StopReason",
+      "type": "string",
+      "x-ess-kind": "enum",
+      "x-ess-name": "patchback.fit.StopReason"
+    },
     "patchback.patch.ClampPolicy": {
       "description": "What happens to a normalized value outside [0,1] (section 5.2 clamps p to [0,1]).",
       "enum": [
@@ -223,6 +235,13 @@
       "x-ess-kind": "newtype",
       "x-ess-name": "patchback.patch.TopologyId"
     },
+    "patchback.patch.TopologyName": {
+      "description": "A versioned topology name, such as subtractive-mono/1.",
+      "title": "TopologyName",
+      "type": "string",
+      "x-ess-kind": "newtype",
+      "x-ess-name": "patchback.patch.TopologyName"
+    },
     "patchback.studio.CatalogueId": {
       "format": "uuid",
       "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
@@ -286,11 +305,17 @@
         "patch_id": {
           "$ref": "#/$defs/patchback.patch.PatchId"
         },
+        "restart": {
+          "type": "integer"
+        },
         "sequence": {
           "type": "integer"
         },
         "topology_id": {
           "$ref": "#/$defs/patchback.patch.TopologyId"
+        },
+        "topology_name": {
+          "$ref": "#/$defs/patchback.patch.TopologyName"
         },
         "total_loss": {
           "format": "decimal",
@@ -307,7 +332,9 @@
         "sequence",
         "outcome",
         "evaluation",
+        "restart",
         "topology_id",
+        "topology_name",
         "parameters"
       ],
       "title": "FrameAppended",
@@ -612,6 +639,9 @@
         "ended": {
           "$ref": "#/$defs/patchback.studio.TraceEnd"
         },
+        "stop_reason": {
+          "$ref": "#/$defs/patchback.fit.StopReason"
+        },
         "trace_id": {
           "$ref": "#/$defs/patchback.studio.TraceId"
         }
@@ -670,6 +700,9 @@
         "topology_id": {
           "$ref": "#/$defs/patchback.patch.TopologyId"
         },
+        "topology_name": {
+          "$ref": "#/$defs/patchback.patch.TopologyName"
+        },
         "trace_id": {
           "$ref": "#/$defs/patchback.studio.TraceId"
         }
@@ -679,6 +712,7 @@
         "fit_run_id",
         "source",
         "topology_id",
+        "topology_name",
         "parameter_paths"
       ],
       "title": "TraceOpened",
@@ -700,8 +734,8 @@
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "x-ess-provenance": {
-    "contract_digest": "slice-sha256/2:bb2354e9aa24d23c2cfeef824b220609c2cac273710372efd73a85117506893d",
-    "source_digest": "dfed68c2b32d82d33aace116ff4c1b275e7bafd1959ccbb6011eb10a8efadb0a",
+    "contract_digest": "slice-sha256/2:8ee29f2b121e2d9df3dac9edd8d25a7c14cca5c3e6cb7ed0fb80ba632fff8855",
+    "source_digest": "be5e67b66c286afc07a12d4e42b1d3ab0db1a056fd72603858ef31af1e812ba9",
     "specification_version": "v1",
     "system": "patchback"
   }

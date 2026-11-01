@@ -15,6 +15,7 @@ timeline:
       fit_run_id: 5a0d0000-0000-4000-8000-000000000502
       source: Replay
       topology_id: 5a0d0000-0000-4000-8000-000000000101
+      topology_name: subtractive-mono/1
       parameter_paths: [cutoff]
     outcome: opened
 
@@ -24,10 +25,12 @@ timeline:
     input:
       frame_id: 5a0d0000-0000-4000-8000-000000000611
       trace_id: 5a0d0000-0000-4000-8000-000000000402
-      sequence: 0
+      sequence: 1
       evaluation: 1
+      restart: 0
       outcome: FirstRetained
       topology_id: 5a0d0000-0000-4000-8000-000000000101
+      topology_name: subtractive-mono/1
       total_loss: 0.43
       best_loss: 0.43
       parameters: [{path: cutoff, normalized_value: 0.5}]
@@ -39,10 +42,12 @@ timeline:
     input:
       frame_id: 5a0d0000-0000-4000-8000-000000000612
       trace_id: 5a0d0000-0000-4000-8000-000000000402
-      sequence: 1
+      sequence: 2
       evaluation: 2
+      restart: 0
       outcome: NotImproved
       topology_id: 5a0d0000-0000-4000-8000-000000000101
+      topology_name: subtractive-mono/1
       total_loss: 0.645
       best_loss: 0.645
       parameters: [{path: cutoff, normalized_value: 0.75}]

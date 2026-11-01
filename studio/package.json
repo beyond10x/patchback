@@ -3,10 +3,12 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "packageManager": "pnpm@11.9.0",
   "scripts": {
     "dev": "vite",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json",
     "build": "vue-tsc --noEmit -p tsconfig.json && vite build",
+    "test": "vitest run",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -14,8 +16,10 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "6.0.10",
+    "happy-dom": "21.0.4",
     "typescript": "5.9.3",
     "vite": "8.3.5",
+    "vitest": "5.0.5",
     "vue-tsc": "3.3.13"
   }
 }

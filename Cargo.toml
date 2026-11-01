@@ -9,6 +9,7 @@ members = [
     "crates/patchback-fit",
     "crates/patchback-cli",
     "crates/patchback-docs",
+    "crates/patchback-studio",
 ]
 resolver = "3"
 

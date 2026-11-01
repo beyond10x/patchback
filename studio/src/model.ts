@@ -1,31 +1,20 @@
 import type {
   CataloguePublished,
   FrameAppended,
-  GraphDrawn,
   ModuleSpec,
   NodeKind,
   ParameterContract,
   PortRate,
   ResultComposed,
-  TraceClosedEvent,
-  TraceOpened,
 } from "./generated/types";
 import catalogueJson from "../fixtures/catalogue.json";
-import voiceJson from "../fixtures/graph-subtractive-mono-1.json";
 import feedbackJson from "../fixtures/graph-delayed-feedback.json";
-import traceJson from "../fixtures/trace.json";
 import resultJson from "../fixtures/result.json";
+import { checkGraph, graphDrawn, moduleSpecs } from "./document";
 
 export interface Fixture<T> {
   note: string;
   event: T;
-}
-
-export interface TraceFixture {
-  note: string;
-  opened: TraceOpened;
-  frames: FrameAppended[];
-  closed: TraceClosedEvent;
 }
 
 export interface ResultFixture extends Fixture<ResultComposed> {
@@ -33,11 +22,13 @@ export interface ResultFixture extends Fixture<ResultComposed> {
 }
 
 export const catalogue = catalogueJson as unknown as Fixture<CataloguePublished>;
-export const graphs: { label: string; fixture: Fixture<GraphDrawn> }[] = [
-  { label: "subtractive-mono/1", fixture: voiceJson as unknown as Fixture<GraphDrawn> },
-  { label: "delayed feedback", fixture: feedbackJson as unknown as Fixture<GraphDrawn> },
-];
-export const trace = checkTrace(traceJson as unknown as TraceFixture);
+// DESIGN.md 5.4: no topology admits a Delay node yet, so no exported run shows delayed feedback; this
+// labelled illustrative graph does, checked like an export.
+export const feedbackExample = {
+  note: feedbackJson.note,
+  graph: checkGraph(graphDrawn(feedbackJson.graph)),
+  modules: moduleSpecs(feedbackJson.modules),
+};
 export const result = resultJson as unknown as ResultFixture;
 
 export function decimal(value: string | undefined): number | undefined {
@@ -114,29 +105,30 @@ export function retained(frame: FrameAppended): boolean {
   return frame.outcome === "FirstRetained" || frame.outcome === "Improved";
 }
 
-function checkTrace(t: TraceFixture): TraceFixture {
-  let best = Infinity;
-  t.frames.forEach((f, i) => {
-    if (f.sequence !== i) throw new Error(`trace frame ${i} has sequence ${f.sequence}`);
-    if (f.outcome === "Rejected" && f.total_loss !== undefined)
-      throw new Error(`trace frame ${i} is rejected and carries a loss`);
-    const b = decimal(f.best_loss);
-    if (b !== undefined) {
-      if (b > best) throw new Error(`trace frame ${i} raises the best loss`);
-      best = b;
-    }
-    if (retained(f) && f.total_loss !== f.best_loss)
-      throw new Error(`trace frame ${i} is retained but its loss is not the best`);
-  });
-  return t;
-}
-
 export function retainedAt(frames: FrameAppended[], index: number): FrameAppended | undefined {
   for (let i = index; i >= 0; i--) {
     const f = frames[i];
     if (f && retained(f)) return f;
   }
   return undefined;
+}
+
+/** For each frame, the index of the last retained frame at or before it, or -1: one pass. */
+export function retainedIndex(frames: FrameAppended[]): Int32Array {
+  const out = new Int32Array(frames.length);
+  let last = -1;
+  frames.forEach((f, i) => {
+    if (retained(f)) last = i;
+    out[i] = last;
+  });
+  return out;
+}
+
+/** min(n, count) evenly spaced frame indices from 0 to n - 1, both ends included. */
+export function ticks(n: number, count: number): number[] {
+  const k = Math.min(n, count);
+  if (k <= 1) return k === 1 ? [0] : [];
+  return Array.from({ length: k }, (_, j) => Math.round((j * (n - 1)) / (k - 1)));
 }
 
 export function changedPath(frames: FrameAppended[], index: number): string | undefined {

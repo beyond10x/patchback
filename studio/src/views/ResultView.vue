@@ -3,20 +3,25 @@ import { computed } from "vue";
 import PatchGraph from "../components/PatchGraph.vue";
 import RateLegend from "../components/RateLegend.vue";
 import SpectrumChart from "../components/SpectrumChart.vue";
-import { contractByPath, formatPhysical, graphs, result, retainedAt, samplesOf, saw, trace } from "../model";
+import { contractByPath, formatPhysical, result, retainedAt, samplesOf, saw } from "../model";
+import { loaded } from "../store";
 
-const frames = trace.frames;
-const best = retainedAt(frames, frames.length - 1);
-const recovered = best ? samplesOf(best) : {};
+// The recovered values are the last retained frame of the loaded export's trace; the reference
+// values and the spectra stay the illustrative fixture until story:studio-end-result.
+const trace = computed(() => loaded.value.document.trace);
+const frames = computed(() => trace.value.frames);
+const best = computed(() => retainedAt(frames.value, frames.value.length - 1));
+const recovered = computed(() => (best.value ? samplesOf(best.value) : {}));
 const reference = samplesOf({ parameters: result.reference_parameters });
-const graph = graphs[0]!.fixture.event;
+const graph = computed(() => loaded.value.document.graph);
+const modules = computed(() => loaded.value.document.modules);
 const fft = result.event.spectra.find((s) => s.source === "Render")?.fft_size ?? 8192;
 
 const rows = computed(() =>
-  trace.opened.parameter_paths.map((path) => {
+  trace.value.opened.parameter_paths.map((path) => {
     const c = contractByPath.get(path);
     const r = reference[path] ?? 0;
-    const v = recovered[path] ?? 0;
+    const v = recovered.value[path] ?? 0;
     return {
       path,
       ref: c ? formatPhysical(c, r) : r.toFixed(3),
@@ -26,7 +31,7 @@ const rows = computed(() =>
   }),
 );
 const refSpectrum = saw(reference);
-const renSpectrum = saw(recovered);
+const renSpectrum = computed(() => saw(recovered.value));
 </script>
 
 <template>
@@ -35,7 +40,7 @@ const renSpectrum = saw(recovered);
       <div>
         <h2>End result</h2>
         <p class="sub">
-          Retained patch <span class="mono">{{ result.event.best_patch_id?.slice(-4) ?? "none" }}</span>
+          Retained patch <span class="mono">{{ best?.patch_id?.slice(-4) ?? "none" }}</span>
           after {{ frames.length }} evaluations, best loss <span class="mono">{{ best?.best_loss ?? "none" }}</span>.
         </p>
       </div>
@@ -44,7 +49,7 @@ const renSpectrum = saw(recovered);
     <p class="fixture-note">{{ result.note }}</p>
     <div class="panel">
       <div class="panel-title">Recovered patch</div>
-      <PatchGraph :graph="graph" :values="recovered" />
+      <PatchGraph :graph="graph" :modules="modules" :values="recovered" />
     </div>
     <div class="cols">
         <div class="panel">

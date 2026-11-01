@@ -1,77 +1,62 @@
 {
-  "note": "illustrative fixture data: hand-built for the studio prototype, not the output of a Patchback fit; a Drive into a Delay with the Delay fed back, to show delayed feedback (DESIGN.md 5.4)",
-  "event": {
+  "note": "illustrative fixture, not a Patchback patch: no topology admits a Delay node yet, so no fit run can export one (DESIGN.md 5.4). A Drive into a Delay with the Delay fed back, to show how delayed feedback is drawn; the Delay's ports are proposals.",
+  "graph": {
     "graph_view_id": "5a0d0000-0000-4000-8000-000000000302",
     "patch_id": "5a0d0000-0000-4000-8000-000000000710",
     "topology_id": "5a0d0000-0000-4000-8000-000000000102",
     "nodes": [
-      {
-        "node_id": 1,
-        "kind": "NoteInput",
-        "rank": 0
-      },
-      {
-        "node_id": 2,
-        "kind": "SawOscillator",
-        "rank": 1
-      },
-      {
-        "node_id": 3,
-        "kind": "Drive",
-        "rank": 2
-      },
-      {
-        "node_id": 10,
-        "kind": "Delay",
-        "rank": 3
-      },
-      {
-        "node_id": 7,
-        "kind": "Output",
-        "rank": 4
-      }
+      { "node_id": 1, "kind": "NoteInput", "rank": 0 },
+      { "node_id": 2, "kind": "SawOscillator", "rank": 1 },
+      { "node_id": 3, "kind": "Drive", "rank": 2 },
+      { "node_id": 7, "kind": "Output", "rank": 4 },
+      { "node_id": 10, "kind": "Delay", "rank": 3 }
     ],
     "edges": [
-      {
-        "from_node": 1,
-        "from_port": "pitch",
-        "to_node": 2,
-        "to_port": "freq",
-        "rate": "Control",
-        "delayed_feedback": false
-      },
-      {
-        "from_node": 2,
-        "from_port": "out",
-        "to_node": 3,
-        "to_port": "in",
-        "rate": "Audio",
-        "delayed_feedback": false
-      },
-      {
-        "from_node": 3,
-        "from_port": "out",
-        "to_node": 10,
-        "to_port": "in",
-        "rate": "Audio",
-        "delayed_feedback": false
-      },
-      {
-        "from_node": 10,
-        "from_port": "out",
-        "to_node": 3,
-        "to_port": "in",
-        "rate": "Audio",
-        "delayed_feedback": true
-      },
-      {
-        "from_node": 10,
-        "from_port": "out",
-        "to_node": 7,
-        "to_port": "in",
-        "rate": "Audio",
-        "delayed_feedback": false
-      }
+      { "from_node": 1, "from_port": "pitch", "to_node": 2, "to_port": "pitch", "rate": "Control", "delayed_feedback": false },
+      { "from_node": 2, "from_port": "out", "to_node": 3, "to_port": "in", "rate": "Audio", "delayed_feedback": false },
+      { "from_node": 3, "from_port": "out", "to_node": 10, "to_port": "in", "rate": "Audio", "delayed_feedback": false },
+      { "from_node": 10, "from_port": "out", "to_node": 3, "to_port": "in", "rate": "Audio", "delayed_feedback": true },
+      { "from_node": 10, "from_port": "out", "to_node": 7, "to_port": "in", "rate": "Audio", "delayed_feedback": false }
     ]
-  }
+  },
+  "modules": [
+    {
+      "kind": "NoteInput",
+      "ports": [
+        { "name": "pitch", "direction": "Output", "rate": "Control", "meaning": "the held note's pitch" },
+        { "name": "gate", "direction": "Output", "rate": "Event", "meaning": "note-on and note-off" }
+      ],
+      "parameters": []
+    },
+    {
+      "kind": "SawOscillator",
+      "ports": [
+        { "name": "pitch", "direction": "Input", "rate": "Control", "meaning": "oscillator frequency follows the note" },
+        { "name": "out", "direction": "Output", "rate": "Audio", "meaning": "band-limited saw" }
+      ],
+      "parameters": []
+    },
+    {
+      "kind": "Drive",
+      "ports": [
+        { "name": "in", "direction": "Input", "rate": "Audio", "meaning": "oscillator signal and the delayed return" },
+        { "name": "out", "direction": "Output", "rate": "Audio", "meaning": "driven signal" }
+      ],
+      "parameters": []
+    },
+    {
+      "kind": "Output",
+      "ports": [{ "name": "in", "direction": "Input", "rate": "Audio", "meaning": "the voice's output" }],
+      "parameters": []
+    },
+    {
+      "kind": "Delay",
+      "family": "Delay",
+      "ports": [
+        { "name": "in", "direction": "Input", "rate": "Audio", "meaning": "signal to delay" },
+        { "name": "out", "direction": "Output", "rate": "Audio", "meaning": "the signal at least one sample later" }
+      ],
+      "parameters": []
+    }
+  ]
 }

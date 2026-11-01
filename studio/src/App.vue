@@ -5,6 +5,7 @@ import CatalogueView from "./views/CatalogueView.vue";
 import EvolutionView from "./views/EvolutionView.vue";
 import GraphView from "./views/GraphView.vue";
 import ResultView from "./views/ResultView.vue";
+import { loadError, loaded, open } from "./store";
 
 const tabs: { id: string; label: string; view: Component }[] = [
   { id: "catalogue", label: "Modules", view: CatalogueView },
@@ -22,6 +23,12 @@ onMounted(() => {
   fromHash();
   window.addEventListener("hashchange", fromHash);
 });
+async function pick(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (file) await open(file);
+  input.value = "";
+}
 function go(id: string) {
   active.value = id;
   window.location.hash = id;
@@ -35,7 +42,7 @@ function go(id: string) {
         <img :src="mark" alt="" width="34" height="34" class="mark" />
         <span class="wordmark">Patchback</span>
         <span class="product">/ studio</span>
-        <span class="badge"><span class="dot" />prototype · replay of fixture data · no server</span>
+        <span class="badge"><span class="dot" />prototype · replay of an exported fit run · no server</span>
       </div>
       <nav class="tabs" role="tablist">
         <button
@@ -48,6 +55,14 @@ function go(id: string) {
         >{{ t.label }}</button>
       </nav>
     </header>
+    <div class="source">
+      <label class="picker">
+        <input type="file" accept=".json,application/json" aria-label="Open an exported fit run" @change="pick" />
+        Open export…
+      </label>
+      <span class="mono">{{ loaded.label }}</span>
+      <span v-if="loadError" class="refused" role="alert">refused {{ loadError }}</span>
+    </div>
     <main>
       <component :is="tabs.find((t) => t.id === active)?.view" />
     </main>
@@ -121,6 +136,32 @@ function go(id: string) {
 @keyframes ping {
   0% { box-shadow: 0 0 0 0 rgb(255 210 63 / 55%); }
   80%, 100% { box-shadow: 0 0 0 8px rgb(255 210 63 / 0%); }
+}
+.source {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: -8px 0 18px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.picker {
+  position: relative;
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: #fff;
+  cursor: pointer;
+}
+.picker input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.refused {
+  color: var(--pb-amber);
 }
 .tabs {
   display: flex;

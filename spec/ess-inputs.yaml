@@ -110,6 +110,7 @@ scenarios:
   - scenarios/studio-fit-live-streamed.yaml
   - scenarios/studio-fit-live-unknown-trace.yaml
   - scenarios/studio-fit-replay-best-worsened.yaml
+  - scenarios/studio-fit-replay-inconsistent-end.yaml
   - scenarios/studio-fit-replay-inconsistent-frame.yaml
   - scenarios/studio-fit-replay-out-of-order.yaml
   - scenarios/studio-fit-replay-replayed.yaml

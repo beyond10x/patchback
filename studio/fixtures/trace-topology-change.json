@@ -1,0 +1,84 @@
+{
+  "note": "Illustrative, not a Patchback run: a fit keeps one topology today (DESIGN.md 9.2), so no export changes topology; this hand-built trace does at evaluation 4, to show the marker the loss chart draws where a frame's topology differs from the frame before it.",
+  "trace": {
+    "opened": {
+      "trace_id": "5a0d0000-0000-4000-8000-000000000409",
+      "fit_run_id": "5a0d0000-0000-4000-8000-000000000509",
+      "source": "Replay",
+      "topology_id": "5a0d0000-0000-4000-8000-000000000101",
+      "topology_name": "subtractive-mono/1",
+      "parameter_paths": ["attack", "filter_cutoff"]
+    },
+    "frames": [
+      {
+        "frame_id": "5a0d0000-0000-4000-8000-000000000691",
+        "trace_id": "5a0d0000-0000-4000-8000-000000000409",
+        "sequence": 1,
+        "evaluation": 1,
+        "restart": 0,
+        "outcome": "FirstRetained",
+        "topology_id": "5a0d0000-0000-4000-8000-000000000101",
+        "topology_name": "subtractive-mono/1",
+        "total_loss": "0.6",
+        "best_loss": "0.6",
+        "parameters": [{ "path": "attack", "normalized_value": "0.5" }, { "path": "filter_cutoff", "normalized_value": "0.5" }]
+      },
+      {
+        "frame_id": "5a0d0000-0000-4000-8000-000000000692",
+        "trace_id": "5a0d0000-0000-4000-8000-000000000409",
+        "sequence": 2,
+        "evaluation": 2,
+        "restart": 0,
+        "outcome": "Improved",
+        "topology_id": "5a0d0000-0000-4000-8000-000000000101",
+        "topology_name": "subtractive-mono/1",
+        "total_loss": "0.45",
+        "best_loss": "0.45",
+        "parameters": [{ "path": "attack", "normalized_value": "0.25" }, { "path": "filter_cutoff", "normalized_value": "0.5" }]
+      },
+      {
+        "frame_id": "5a0d0000-0000-4000-8000-000000000693",
+        "trace_id": "5a0d0000-0000-4000-8000-000000000409",
+        "sequence": 3,
+        "evaluation": 3,
+        "restart": 0,
+        "outcome": "Rejected",
+        "topology_id": "5a0d0000-0000-4000-8000-000000000101",
+        "topology_name": "subtractive-mono/1",
+        "best_loss": "0.45",
+        "parameters": [{ "path": "attack", "normalized_value": "0.25" }, { "path": "filter_cutoff", "normalized_value": "0.75" }]
+      },
+      {
+        "frame_id": "5a0d0000-0000-4000-8000-000000000694",
+        "trace_id": "5a0d0000-0000-4000-8000-000000000409",
+        "sequence": 4,
+        "evaluation": 4,
+        "restart": 1,
+        "outcome": "NotImproved",
+        "topology_id": "5a0d0000-0000-4000-8000-000000000102",
+        "topology_name": "illustrative-topology/2",
+        "total_loss": "0.5",
+        "best_loss": "0.45",
+        "parameters": [{ "path": "attack", "normalized_value": "0.25" }, { "path": "filter_cutoff", "normalized_value": "0.25" }]
+      },
+      {
+        "frame_id": "5a0d0000-0000-4000-8000-000000000695",
+        "trace_id": "5a0d0000-0000-4000-8000-000000000409",
+        "sequence": 5,
+        "evaluation": 5,
+        "restart": 1,
+        "outcome": "Improved",
+        "topology_id": "5a0d0000-0000-4000-8000-000000000102",
+        "topology_name": "illustrative-topology/2",
+        "total_loss": "0.3",
+        "best_loss": "0.3",
+        "parameters": [{ "path": "attack", "normalized_value": "0.125" }, { "path": "filter_cutoff", "normalized_value": "0.25" }]
+      }
+    ],
+    "closed": {
+      "trace_id": "5a0d0000-0000-4000-8000-000000000409",
+      "ended": "Completed",
+      "stop_reason": "ImprovementBelowThreshold"
+    }
+  }
+}
