@@ -35,8 +35,8 @@ jobs:
           toolchain: stable
       - name: Install ess
         env:
-          ESS_PINNED: "0.69.2"
-          ESS_SHA256: 8cc5a3a7ed7c27aacbff131ab1437e18e7d7d1878fee77542b3e0fff7157d414
+          ESS_PINNED: "0.80.0"
+          ESS_SHA256: af8eff703177209628a55188ba3e7c618eb12b805777864b96fd1488198905d4
         run: |
           set -euo pipefail
           ESS_VERSION=$(sed -n 's/^requires: ess //p' spec/ess-inputs.yaml)
