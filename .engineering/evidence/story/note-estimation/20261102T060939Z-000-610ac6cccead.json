@@ -1,0 +1,14 @@
+{
+  "at": "2026-11-02T06:09:39Z",
+  "actor": "human:timo",
+  "artifact": "story:note-estimation",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "629369b correction round 2",
+    "review": "review-result:note-estimation-adversary-2",
+    "outcome": "fixed"
+  }
+}
