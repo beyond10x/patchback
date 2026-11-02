@@ -8,7 +8,7 @@ relations:
 - decides: story:note-estimation
 - decides: story:studio-patch-graph
 - decides: story:studio-fit-replay
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-01T15:24:46Z", actor: "human:timo", revision: 2, executor: "agent:wave-c1-coordinator"}
 ---
@@ -241,6 +241,10 @@ results and highest engineering quality"), after the adversary passes.
 - Dc1-31a Amends Dc1-31 for note estimation only: its defect class is overfitting, which only
   unseen data can show, so a third adversary pass re-measures on unseen seeds after correction
   round 2.
+- Dc1-24 The analysis suite's wall time after correction round 2, 195 s under the wave's 8-core
+  cap (gate 6 on 629369b), is accepted against Dc1-19's "about 60 s": the 64 reference seeds and
+  twelve stress shapes are what make the bounds hold out of sample, and fewer seeds would
+  reintroduce the defect class of `review-result:note-estimation-adversary-1`.
 - Dc1-16 A lint-only patch to the adversary's `tests/adversary_1.rs` (a type alias, one hex
   literal regrouped to the same value) is applied, so clippy `-D warnings` passes on all targets;
   no assertion changes.
