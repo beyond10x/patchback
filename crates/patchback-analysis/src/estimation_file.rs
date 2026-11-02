@@ -15,7 +15,7 @@
 //! | `sample_rate_hz 48000` | the clip's rate |
 //! | `frame_count <n>` | the clip's samples |
 //! | `clip_sha256 <hex>` | the SHA-256 of the clip's samples ([`crate::clip_sha256`]), 64 lower-case hex digits |
-//! | `notes_sha256 <hex>` | the SHA-256 of the note lines, each with its `\n`, in file order (Dc1-14); of no bytes when there are no notes |
+//! | `notes_sha256 <hex>` | the SHA-256 of the `frame_count` line and the note lines, each with its `\n`, in file order (Dc1-14, Dc1-23) |
 //! | `config <name> <value>` | one per configuration entry, in order ([`crate::configuration`]): a name of `a-z`, `0-9` and `_`, a value of printable ASCII without spaces |
 //! | `note <start> <gate_end> <tail_end> <midi> <f0_hz> <velocity> <onset> <pitch> <gate> <tail>` | one per note in onset order: three sample positions, the MIDI number, f0 in Hz, the velocity and the four confidences |
 //!
@@ -25,9 +25,9 @@
 //! the nearest MIDI number to `f0_hz` and not 0, the velocity in `[0, 1]`, each confidence in
 //! `[0, 1]` and at or above its threshold ([`crate::ONSET_CONFIDENCE_THRESHOLD`] and the other
 //! three), and starts at or after the previous note's tail end: what an accepted estimation
-//! holds (Dc1-14). The note lines must hash to `notes_sha256`, so a note edited without its
-//! digest reads as refused. The id must be [`crate::note_estimation_id`] of the file's digest
-//! and configuration, so a file whose clip, configuration or id was changed reads as refused.
+//! holds (Dc1-14). The `frame_count` line and the note lines must hash to `notes_sha256`, so a
+//! frame count or a note edited without its digest reads as refused. The id must be
+//! [`crate::note_estimation_id`] of the file's clip digest and configuration, so a file whose clip, configuration or id was changed reads as refused.
 //! [`write_estimation`] writes the one text [`read_estimation`] reads back to the same value.
 
 use std::fmt;
@@ -83,7 +83,7 @@ pub enum EstimationReason {
     InvalidNote { why: &'static str },
     /// The id is not the one the digest and configuration give.
     IdentityMismatch,
-    /// The note lines are not the ones `notes_sha256` was computed over.
+    /// The `frame_count` line and the note lines are not the ones `notes_sha256` was computed over.
     NotesDigestMismatch,
     /// A line longer than [`ESTIMATION_MAX_LINE_BYTES`].
     LineTooLong,
@@ -121,7 +121,7 @@ impl fmt::Display for EstimationReason {
             ),
             Self::NotesDigestMismatch => write!(
                 f,
-                "the note lines are not the ones notes_sha256 was computed over"
+                "the frame count and note lines are not the ones notes_sha256 was computed over"
             ),
             Self::LineTooLong => write!(f, "line longer than {ESTIMATION_MAX_LINE_BYTES} bytes"),
             Self::FileTooLarge => write!(f, "file larger than {ESTIMATION_MAX_FILE_BYTES} bytes"),
@@ -178,7 +178,9 @@ pub fn write_estimation(estimation: &NoteEstimation) -> String {
         estimation.sample_rate_hz,
         estimation.frame_count,
         hex(&estimation.clip_sha256),
-        hex(&sha256(notes.as_bytes()))
+        hex(&sha256(
+            format!("frame_count {}\n{notes}", estimation.frame_count).as_bytes()
+        ))
     );
     for (name, value) in &estimation.configuration {
         text.push_str(&format!("config {name} {value}\n"));
@@ -271,7 +273,7 @@ pub fn read_estimation(text: &str) -> Result<NoteEstimation, EstimationFileError
     // 5: the digest.
     let digest = record(4, "clip_sha256")?;
     let clip_sha256 = parse_digest(digest).ok_or(at(5)(EstimationReason::MalformedDigest))?;
-    // 6: the digest of the note lines.
+    // 6: the digest of the frame count and the note lines.
     let notes_digest = record(5, "notes_sha256")?;
     let notes_sha256 =
         parse_digest(notes_digest).ok_or(at(6)(EstimationReason::MalformedDigest))?;
@@ -381,8 +383,8 @@ pub fn read_estimation(text: &str) -> Result<NoteEstimation, EstimationFileError
         });
         i += 1;
     }
-    let note_text: String = lines[first_note..]
-        .iter()
+    let note_text: String = std::iter::once(&lines[3])
+        .chain(&lines[first_note..])
         .map(|l| format!("{l}\n"))
         .collect();
     if sha256(note_text.as_bytes()) != notes_sha256 {

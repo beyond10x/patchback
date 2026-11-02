@@ -14,7 +14,7 @@ use patchback_analysis::{
     bind_note_sequence, clip_sha256, estimate_notes, read_estimation, write_estimation,
 };
 use patchback_core::digest::{hex, sha256};
-use voice::{Note, PLAIN, Voice, cents, render_notes, sequence, square};
+use voice::{Note, PLAIN, Voice, cents, pool_map, render_notes, sequence, square};
 
 const RATE: u32 = 48_000;
 
@@ -176,6 +176,74 @@ fn simultaneous_tones_a_minor_second_major_third_fifth_or_tritone_apart_are_refu
     assert_eq!(error.domain_error(), "patchback.analysis.PolyphonicInput");
 }
 
+/// A low note repeated without a gap is one tone whose envelope changes within the window that
+/// reads the two notes together: the change spreads the fundamental's skirt to both sides, one
+/// of them a shoulder of the main lobe and not a peak, and that is no second tone (reference
+/// seed 45, phrase 10).
+#[test]
+fn a_low_repeat_without_a_gap_read_as_one_run_is_not_polyphonic() {
+    let voice = Voice {
+        attack: 0.001_653_106_939_206_066_3,
+        decay: 0.042_926_076_128_352_8,
+        sustain: 0.408_532_492_833_360_13,
+        release: 0.070_785_532_510_690_36,
+        cutoff: 4_210.714_667_774_751,
+        q: 0.908_248_739_125_836,
+        drive: 10.398_655_225_994_965,
+        gain: -11.474_105_626_758_126,
+    };
+    let notes: [Note; 8] = [
+        (5_069, 17_090, 41, 0.587_359_85),
+        (17_090, 30_239, 41, 0.567_390_5),
+        (39_771, 55_078, 43, 0.683_819_53),
+        (59_565, 67_620, 43, 0.950_321_6),
+        (76_937, 84_055, 43, 0.983_824_43),
+        (93_349, 102_218, 83, 0.579_265),
+        (102_383, 118_169, 79, 0.596_159_9),
+        (118_169, 128_934, 57, 0.618_612_47),
+    ];
+    let outcome = estimate_notes(&render_notes(voice, &notes), RATE);
+    assert!(
+        !matches!(outcome, Err(EstimationError::PolyphonicInput)),
+        "{outcome:?}"
+    );
+}
+
+/// A short plucked minor second beats at the two tones' difference, the beats split it into notes
+/// each too short to resolve the two tones, and each reads the pitch between them, on either side
+/// of a MIDI number's boundary: the run is still one tone, read together, and refused.
+#[test]
+fn a_beating_minor_second_split_into_short_notes_is_refused_as_polyphonic() {
+    let voice = Voice {
+        attack: 0.018,
+        decay: 0.027,
+        sustain: 0.31,
+        release: 0.022,
+        cutoff: 7_400.0,
+        q: 1.18,
+        drive: 13.7,
+        gain: -9.0,
+    };
+    let mut failures = Vec::new();
+    for root in 44u8..=56 {
+        let low = render_notes(voice, &[(4_800, 23_227, root, 0.8)]);
+        let high = render_notes(voice, &[(4_800, 23_227, root + 1, 0.8)]);
+        let mix: Vec<f32> = low.iter().zip(&high).map(|(a, b)| 0.5 * (a + b)).collect();
+        match estimate_notes(&mix, RATE) {
+            Err(EstimationError::PolyphonicInput) => {}
+            Err(EstimationError::LowConfidenceNotes { notes }) => failures.push(format!(
+                "MIDI {root}: low confidence, pitches {:?}",
+                notes.iter().map(|n| n.f0_hz).collect::<Vec<_>>()
+            )),
+            other => failures.push(format!("MIDI {root}: {other:?}")),
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "not refused as polyphonic: {failures:#?}"
+    );
+}
+
 /// A single saw, a filtered and driven saw, and a square, each one note at every MIDI number
 /// from 36 to 84, are never refused as polyphonic (Dc1-3) and are estimated as that one note.
 #[test]
@@ -190,43 +258,39 @@ fn single_saw_filtered_saw_and_square_tones_from_midi_36_to_84_are_not_polyphoni
         drive: 0.0,
         gain: -6.0,
     };
-    let failures = std::sync::Mutex::new(Vec::new());
     let midis: Vec<u8> = (36u8..=84).collect();
-    std::thread::scope(|scope| {
-        for chunk in midis.chunks(5) {
-            let failures = &failures;
-            scope.spawn(move || {
-                for &midi in chunk {
-                    let filtered = Voice {
-                        cutoff: (2.0 * voice::midi_hz(midi)).max(300.0),
-                        q: 1.2,
-                        drive: 12.0,
-                        ..saw
-                    };
-                    for (name, samples) in [
-                        ("saw", render_notes(saw, &[(4_800, 24_000, midi, 0.8)])),
-                        (
-                            "filtered saw",
-                            render_notes(filtered, &[(4_800, 24_000, midi, 0.8)]),
-                        ),
-                        ("square", square(midi, 0.4, 0.3, 4_800)),
-                    ] {
-                        match estimate_notes(&samples, RATE) {
-                            Ok(e) if e.notes.len() == 1 && e.notes[0].midi_note == midi => {}
-                            other => failures.lock().unwrap().push(format!(
-                                "{name} at MIDI {midi}: {}",
-                                match other {
-                                    Ok(e) => format!("{:?}", e.notes),
-                                    Err(error) => error.to_string(),
-                                }
-                            )),
-                        }
+    let failures: Vec<String> = pool_map(&midis, |&midi| {
+        let filtered = Voice {
+            cutoff: (2.0 * voice::midi_hz(midi)).max(300.0),
+            q: 1.2,
+            drive: 12.0,
+            ..saw
+        };
+        let mut failures = Vec::new();
+        for (name, samples) in [
+            ("saw", render_notes(saw, &[(4_800, 24_000, midi, 0.8)])),
+            (
+                "filtered saw",
+                render_notes(filtered, &[(4_800, 24_000, midi, 0.8)]),
+            ),
+            ("square", square(midi, 0.4, 0.3, 4_800)),
+        ] {
+            match estimate_notes(&samples, RATE) {
+                Ok(e) if e.notes.len() == 1 && e.notes[0].midi_note == midi => {}
+                other => failures.push(format!(
+                    "{name} at MIDI {midi}: {}",
+                    match other {
+                        Ok(e) => format!("{:?}", e.notes),
+                        Err(error) => error.to_string(),
                     }
-                }
-            });
+                )),
+            }
         }
-    });
-    let failures = failures.into_inner().unwrap();
+        failures
+    })
+    .into_iter()
+    .flatten()
+    .collect();
     assert!(failures.is_empty(), "{failures:#?}");
 }
 
@@ -359,10 +423,11 @@ fn the_estimation_file_reads_back_to_the_estimation() {
         lines[4],
         format!("clip_sha256 {}", hex(&estimation.clip_sha256))
     );
-    // Dc1-14: the SHA-256 of the note lines as written, each with its newline.
+    // Dc1-14, Dc1-23: the SHA-256 of the frame_count line and the note lines as written, each
+    // with its newline.
     let note_text: String = text
         .lines()
-        .filter(|l| l.starts_with("note "))
+        .filter(|l| l.starts_with("frame_count ") || l.starts_with("note "))
         .map(|l| format!("{l}\n"))
         .collect();
     assert_eq!(
@@ -495,12 +560,12 @@ fn the_estimation_file_reader_refuses_what_the_writer_never_writes() {
     assert!(error.to_string().contains("line 3"), "{error}");
 }
 
-/// The file's lines with `notes_sha256` recomputed over its note lines, so that a refusal can
-/// only come from what a note says.
+/// The file's lines with `notes_sha256` recomputed over its frame-count and note lines
+/// (Dc1-23), so that a refusal can only come from what a note says.
 fn resealed(lines: &[String]) -> String {
     let note_text: String = lines
         .iter()
-        .filter(|l| l.starts_with("note "))
+        .filter(|l| l.starts_with("frame_count ") || l.starts_with("note "))
         .map(|l| format!("{l}\n"))
         .collect();
     let digest = format!("notes_sha256 {}", hex(&sha256(note_text.as_bytes())));

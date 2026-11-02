@@ -41,7 +41,8 @@
 //!    refused here with `patchback.score.NoteEstimationNotFound` following, after an unknown
 //!    patch (step 3) and before its rate is checked (step 1 reads only a found sequence), the
 //!    score domain's precedence. A given `--estimation` that cannot be read or is refused is
-//!    refused so even when the sequence records no estimation.
+//!    refused so even when the sequence records no estimation. `render` takes no `--input`
+//!    clip, so it does not check which clip an estimation was made from (Dc1-23).
 //! 5. `patchback.audio.PatchNotCompiled`: a patch that loaded and that `ValidatePatch` refuses;
 //!    it is in state `Loaded` and is never executed (its `patchback.patch` error follows).
 //! 6. `patchback.audio.InputTooLong`: a render longer than [`patchback_audio::MAX_FRAMES`]

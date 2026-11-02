@@ -1,10 +1,12 @@
 //! The numeric obligations of the note estimator (approval-record:wave-c1 Dc1-9) on the reference
-//! distribution of Dc1-12: 32 phrases from each of the seeds 1 to 16 and the seed 0x5eed_0c19,
+//! distribution of Dc1-12 and Dc1-19: 32 phrases from each of the seeds 1 to 64 and the seed 0x5eed_0c19,
 //! drawn by `reference::draw_phrase` (its module documentation states the generator, the truth
 //! and the matching).
 //!
 //! Every Dc1-9 rate holds on the pooled set, and the calibration rule ("no quantity outside its
-//! tolerance carries a confidence at or above its threshold") holds on every seed. The test
+//! tolerance carries a confidence at or above its threshold") holds on every seed. Pooled
+//! confident-inside is at least [`CONFIDENT_INSIDE_MARGIN`] (Dc1-19), above the 0.90 of Dc1-9, so
+//! that a fresh block of 16 seeds clears 0.90. The test
 //! prints the per-seed rates (`cargo test -- --nocapture` shows them); a bound is never relaxed.
 
 mod reference;
@@ -12,30 +14,18 @@ mod voice;
 
 use reference::{MS, REFERENCE, measure, print_table, rates_by_seed};
 
-/// Seeds 1 to 16, then the seed the set was first measured on.
-const SEEDS: [u64; 17] = [
-    1,
-    2,
-    3,
-    4,
-    5,
-    6,
-    7,
-    8,
-    9,
-    10,
-    11,
-    12,
-    13,
-    14,
-    15,
-    16,
-    0x5eed_0c19,
-];
+/// Pooled confident-inside on the reference set (Dc1-19).
+const CONFIDENT_INSIDE_MARGIN: f64 = 0.92;
+
+/// Seeds 1 to 64, then the seed the set was first measured on.
+fn seeds() -> Vec<u64> {
+    (1..=64).chain([0x5eed_0c19]).collect()
+}
 
 #[test]
 fn the_reference_distribution_meets_every_dc1_9_bound_pooled_and_calibration_on_every_seed() {
-    let measured = measure(REFERENCE, &SEEDS, reference::PHRASES);
+    let seeds = seeds();
+    let measured = measure(REFERENCE, &seeds, reference::PHRASES);
 
     // The generator draws what Dc1-9 names.
     let mut repeats = 0;
@@ -66,12 +56,18 @@ fn the_reference_distribution_meets_every_dc1_9_bound_pooled_and_calibration_on_
     );
     assert!(repeats > 0 && zero_gaps > 0 && zero_gap_repeats > 0);
 
-    let (by_seed, pooled) = rates_by_seed(&measured, &SEEDS);
+    let (by_seed, pooled) = rates_by_seed(&measured, &seeds);
     print_table("Dc1-9 rates by seed", &by_seed, &pooled);
     for violation in &pooled.violations {
         println!("  violation: {violation}");
     }
     let mut failures = pooled.bound_misses();
+    if pooled.confident_inside() < CONFIDENT_INSIDE_MARGIN {
+        failures.push(format!(
+            "confident inside < {CONFIDENT_INSIDE_MARGIN} (Dc1-19): {:.4}",
+            pooled.confident_inside()
+        ));
+    }
     for (seed, rates) in &by_seed {
         if !rates.violations.is_empty() {
             failures.push(format!(

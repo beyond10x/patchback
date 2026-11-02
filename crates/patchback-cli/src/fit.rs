@@ -89,10 +89,10 @@
 //!    Dc1-8, `crate::estimate::bind`): without `--estimation`, with another estimation's file, or
 //!    with one that cannot be read or is refused, it is refused here with
 //!    `patchback.score.NoteEstimationNotFound` following; a given `--estimation` that cannot be
-//!    read or is refused is refused so even when the sequence records no estimation. A
-//!    sequence bound to an estimation of another clip (its `clip_sha256` is not
-//!    `patchback_analysis::clip_sha256` of the `--input` samples) is refused here with
-//!    `patchback.score.EstimationClipMismatch` following (Dc1-14).
+//!    read or is refused is refused so even when the sequence records no estimation. An
+//!    estimation of another clip (its `clip_sha256` is not `patchback_analysis::clip_sha256` of
+//!    the `--input` samples), bound to the sequence or only given, is refused here with
+//!    `patchback.score.EstimationClipMismatch` following (Dc1-14, Dc1-23).
 //! 4. On a seeded run, the inputs as files (Da11-6): `patchback.model.UnknownWeightArtifact`
 //!    for a `--weights` path with no file or one that cannot be read;
 //!    `patchback.model.CorruptWeightArtifact` for a file `weights/1` refuses (its reason
@@ -437,8 +437,10 @@ fn read_notes(
             }
         })
     })?;
-    if let Some(bound) = crate::estimate::bind(&notes, path, estimation).map_err(refused)?
-        && let Err(mismatch) = check_estimation_clip(&bound, clip)
+    // Every estimation read is checked against the clip, bound to the sequence or not (Dc1-23).
+    let (bound, given) = crate::estimate::bind(&notes, path, estimation).map_err(refused)?;
+    if let Some(estimation) = bound.or(given)
+        && let Err(mismatch) = check_estimation_clip(&estimation, clip)
     {
         return Err(refused(format!(
             "{path:?}: {}: {mismatch}; --input {input:?} is not the clip it was estimated from",

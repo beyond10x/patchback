@@ -1,6 +1,6 @@
-//! Stress shapes of the note estimator (approval-record:wave-c1 Dc1-13): the reference generator
-//! of Dc1-12 with one range narrowed or a noise floor added, 32 phrases from each of the seeds 1
-//! to 4. On these shapes the rates are printed, not bounded; what holds is calibration and
+//! Stress shapes of the note estimator (approval-record:wave-c1 Dc1-13, Dc1-20): the reference
+//! generator of Dc1-12 with one range moved or a noise floor added, 32 phrases from each of the
+//! seeds 1 to 8. On these shapes the rates are printed, not bounded; what holds is calibration and
 //! polyphony: no quantity outside its tolerance carries a confidence at or above its threshold,
 //! and no phrase, every one monophonic, is refused as `PolyphonicInput`. Refusing a hard note as
 //! `LowConfidenceNotes` is allowed; a confident wrong answer is not.
@@ -10,7 +10,7 @@ mod voice;
 
 use reference::{measure, print_table, rates_by_seed, stress_shape};
 
-const SEEDS: [u64; 4] = [1, 2, 3, 4];
+const SEEDS: [u64; 8] = [1, 2, 3, 4, 5, 6, 7, 8];
 
 fn holds_calibration_and_polyphony(name: &str) {
     let shape = stress_shape(name);
@@ -71,4 +71,40 @@ fn zero_gap_same_pitch_repeats_hold_calibration_and_polyphony() {
 #[test]
 fn a_noise_floor_holds_calibration_and_polyphony() {
     holds_calibration_and_polyphony("noise-floor");
+}
+
+/// A Gaussian white noise floor at -70 dBFS RMS (Dc1-20).
+#[test]
+fn a_gaussian_noise_floor_holds_calibration_and_polyphony() {
+    holds_calibration_and_polyphony("gaussian-noise-floor");
+}
+
+/// Cutoffs of 100 to 800 Hz (Dc1-20).
+#[test]
+fn dark_cutoffs_hold_calibration_and_polyphony() {
+    holds_calibration_and_polyphony("dark-cutoff");
+}
+
+/// Sustains of 0 to 0.3 (Dc1-20): a note's level can reach silence before its gate ends.
+#[test]
+fn low_sustains_hold_calibration_and_polyphony() {
+    holds_calibration_and_polyphony("low-sustain");
+}
+
+/// Gaps of 0.5 to 10 ms, after attacks of up to 40 ms (Dc1-20).
+#[test]
+fn short_gaps_hold_calibration_and_polyphony() {
+    holds_calibration_and_polyphony("short-gap");
+}
+
+/// Drives of 18 to 24 dB (Dc1-20).
+#[test]
+fn high_drives_hold_calibration_and_polyphony() {
+    holds_calibration_and_polyphony("high-drive");
+}
+
+/// Decays of 300 ms to 2 s (Dc1-20).
+#[test]
+fn long_decays_hold_calibration_and_polyphony() {
+    holds_calibration_and_polyphony("long-decay");
 }

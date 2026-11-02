@@ -5,13 +5,15 @@
 //! with the ADSR, cutoff, resonance, drive and gain drawn per phrase. The gap between two notes
 //! is 0 to 200 ms: a zero gap, with probability 0.3, only in a phrase whose attack is 20 ms or
 //! less, whether or not the two notes share a pitch; otherwise uniform. A note repeats the
-//! previous pitch with probability 0.2. A [`Shape`] narrows one range for a stress shape, or adds
-//! a white noise floor.
+//! previous pitch with probability 0.2. A [`Shape`] moves one range for a stress shape (Dc1-13,
+//! Dc1-20), or adds a white noise floor, uniform or Gaussian.
 //!
-//! The truth of a note is its event: the onset is its start, the gate end its end. Its tail end is
-//! where the release falls below the silence threshold ([`SILENCE_THRESHOLD_DBFS`], the RMS of
-//! the 1,024 samples centred on a sample) in a render of the phrase up to and including that
-//! note, without noise, or the next note's start when that comes first.
+//! The truth of a note is its event: the onset is its start, the gate end its end. Its tail end
+//! (Dc1-21) is where its level falls below the silence threshold for good
+//! ([`SILENCE_THRESHOLD_DBFS`], the RMS of the 1,024 samples centred on a sample): one past the
+//! last sample at or above the threshold in a render of the phrase up to and including that note,
+//! without noise, even when that is before the gate end; or the next note's start when that comes
+//! first.
 //!
 //! An estimated note is matched to the true note whose onset is nearest, within
 //! [`MATCH_WINDOW`] samples, each true note matched at most once, in order of distance. Rates
@@ -21,16 +23,13 @@
 
 #![allow(dead_code)]
 
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicUsize, Ordering};
-
 use patchback_analysis::{
     EstimatedNote, EstimationError, GATE_CONFIDENCE_THRESHOLD, ONSET_CONFIDENCE_THRESHOLD,
     PITCH_CONFIDENCE_THRESHOLD, SILENCE_THRESHOLD_DBFS, TAIL_CONFIDENCE_THRESHOLD, estimate_notes,
 };
 use patchback_core::prng::Xoshiro256StarStar;
 
-use crate::voice::{Note, Voice, centred_rms, cents, render_notes};
+use crate::voice::{Note, Voice, centred_rms, cents, pool_map, render_notes};
 
 pub const PHRASES: usize = 32;
 pub const MS: f64 = 48.0;
@@ -62,76 +61,130 @@ impl Rng {
 pub struct Shape {
     pub name: &'static str,
     pub attack_ms: (f64, f64),
+    pub decay_ms: (f64, f64),
+    pub sustain: (f64, f64),
     pub release_ms: (f64, f64),
+    pub cutoff_hz: (f64, f64),
+    pub drive_db: (f64, f64),
     pub gate_ms: (f64, f64),
+    /// The gap when it is not a zero gap.
+    pub gap_ms: (f64, f64),
     pub velocity: (f64, f64),
     pub midi: (u64, u64),
     /// The probability that a note repeats the previous pitch.
     pub repeat: f64,
     /// The probability of a zero gap where the attack allows one.
     pub zero_gap: f64,
-    /// A white noise floor at this RMS in dBFS, if any.
+    /// A uniform white noise floor at this RMS in dBFS, if any.
     pub noise_dbfs: Option<f64>,
+    /// A Gaussian white noise floor at this RMS in dBFS, if any.
+    pub gaussian_dbfs: Option<f64>,
 }
 
 /// The reference distribution (Dc1-9, Dc1-12).
 pub const REFERENCE: Shape = Shape {
     name: "reference",
     attack_ms: (1.0, 40.0),
+    decay_ms: (20.0, 300.0),
+    sustain: (0.3, 1.0),
     release_ms: (10.0, 300.0),
+    cutoff_hz: (800.0, 8_000.0),
+    drive_db: (0.0, 18.0),
     gate_ms: (100.0, 400.0),
+    gap_ms: (0.0, 200.0),
     velocity: (0.5, 1.0),
     midi: (36, 84),
     repeat: 0.2,
     zero_gap: 0.3,
     noise_dbfs: None,
+    gaussian_dbfs: None,
 };
 
-/// The stress shapes of Dc1-13.
+/// The stress shapes of Dc1-13 and Dc1-20, by name.
+pub const STRESS_SHAPES: [&str; 12] = [
+    "long-release",
+    "short-gate",
+    "low",
+    "quiet",
+    "zero-gap-repeat",
+    "noise-floor",
+    "gaussian-noise-floor",
+    "dark-cutoff",
+    "low-sustain",
+    "short-gap",
+    "high-drive",
+    "long-decay",
+];
+
+/// The stress shape `name` (one of [`STRESS_SHAPES`]).
 pub fn stress_shape(name: &str) -> Shape {
-    let shape = match name {
+    match name {
+        // Dc1-13.
         "long-release" => Shape {
+            name: "long-release",
             release_ms: (300.0, 1_500.0),
             ..REFERENCE
         },
         "short-gate" => Shape {
+            name: "short-gate",
             gate_ms: (45.0, 100.0),
             ..REFERENCE
         },
         "low" => Shape {
+            name: "low",
             midi: (36, 43),
             ..REFERENCE
         },
         "quiet" => Shape {
+            name: "quiet",
             velocity: (0.1, 1.0),
             ..REFERENCE
         },
         "zero-gap-repeat" => Shape {
+            name: "zero-gap-repeat",
             attack_ms: (1.0, 20.0),
             repeat: 0.5,
             zero_gap: 0.5,
             ..REFERENCE
         },
         "noise-floor" => Shape {
+            name: "noise-floor",
             noise_dbfs: Some(-70.0),
             ..REFERENCE
         },
+        // Dc1-20.
+        "gaussian-noise-floor" => Shape {
+            name: "gaussian-noise-floor",
+            gaussian_dbfs: Some(-70.0),
+            ..REFERENCE
+        },
+        "dark-cutoff" => Shape {
+            name: "dark-cutoff",
+            cutoff_hz: (100.0, 800.0),
+            ..REFERENCE
+        },
+        "low-sustain" => Shape {
+            name: "low-sustain",
+            sustain: (0.0, 0.3),
+            ..REFERENCE
+        },
+        "short-gap" => Shape {
+            name: "short-gap",
+            gap_ms: (0.5, 10.0),
+            zero_gap: 0.0,
+            ..REFERENCE
+        },
+        "high-drive" => Shape {
+            name: "high-drive",
+            drive_db: (18.0, 24.0),
+            ..REFERENCE
+        },
+        "long-decay" => Shape {
+            name: "long-decay",
+            decay_ms: (300.0, 2_000.0),
+            ..REFERENCE
+        },
         other => panic!("unknown shape {other}"),
-    };
-    Shape {
-        name: stress_name(name),
-        ..shape
-    }
-}
-
-fn stress_name(name: &str) -> &'static str {
-    match name {
-        "long-release" => "long-release",
-        "short-gate" => "short-gate",
-        "low" => "low",
-        "quiet" => "quiet",
-        "zero-gap-repeat" => "zero-gap-repeat",
-        _ => "noise-floor",
     }
 }
 
@@ -140,12 +193,12 @@ pub fn draw_phrase(rng: &mut Rng, shape: &Shape) -> (Voice, Vec<Note>) {
     let attack = rng.log_uniform(shape.attack_ms.0, shape.attack_ms.1) / 1_000.0;
     let voice = Voice {
         attack,
-        decay: rng.log_uniform(20.0, 300.0) / 1_000.0,
-        sustain: rng.uniform(0.3, 1.0),
+        decay: rng.log_uniform(shape.decay_ms.0, shape.decay_ms.1) / 1_000.0,
+        sustain: rng.uniform(shape.sustain.0, shape.sustain.1),
         release: rng.log_uniform(shape.release_ms.0, shape.release_ms.1) / 1_000.0,
-        cutoff: rng.log_uniform(800.0, 8_000.0),
+        cutoff: rng.log_uniform(shape.cutoff_hz.0, shape.cutoff_hz.1),
         q: rng.uniform(0.5, 1.5),
-        drive: rng.uniform(0.0, 18.0),
+        drive: rng.uniform(shape.drive_db.0, shape.drive_db.1),
         gain: rng.uniform(-12.0, -3.0),
     };
     let count = rng.int(2, 8) as usize;
@@ -167,7 +220,7 @@ pub fn draw_phrase(rng: &mut Rng, shape: &Shape) -> (Voice, Vec<Note>) {
             let gap_ms = if attack <= 0.020 && rng.unit() < shape.zero_gap {
                 0.0
             } else {
-                rng.uniform(0.0, 200.0)
+                rng.uniform(shape.gap_ms.0, shape.gap_ms.1)
             };
             start = end + (gap_ms * MS) as u64;
         }
@@ -187,35 +240,54 @@ pub fn silence_crossing(samples: &[f32], from: usize) -> usize {
         .unwrap_or(samples.len())
 }
 
-/// The true tail ends of a phrase's notes.
+/// One past the last sample from `from` whose centred RMS is at or above the silence threshold
+/// (Dc1-21), or `from` when there is none.
+pub fn last_above(samples: &[f32], from: usize) -> usize {
+    let threshold = 10f64.powf(SILENCE_THRESHOLD_DBFS / 20.0);
+    (from..samples.len())
+        .rev()
+        .find(|&t| centred_rms(samples, t) >= threshold)
+        .map_or(from, |t| t + 1)
+}
+
+/// The true tail ends of a phrase's notes (Dc1-21): where the note's level falls below the
+/// silence threshold for good, even before its gate end, or the next note's start when that
+/// comes first.
 pub fn tails(voice: Voice, notes: &[Note]) -> Vec<u64> {
     (0..notes.len())
-        .map(|i| match notes.get(i + 1) {
-            // The release has not begun when the next note starts.
-            Some(next) if next.0 <= notes[i].1 => next.0,
-            next => {
-                let prefix = render_notes(voice, &notes[..=i]);
-                let crossing = silence_crossing(&prefix, notes[i].1 as usize) as u64;
-                next.map_or(crossing, |n| crossing.min(n.0))
-            }
+        .map(|i| {
+            let prefix = render_notes(voice, &notes[..=i]);
+            let end = last_above(&prefix, notes[i].0 as usize) as u64;
+            notes.get(i + 1).map_or(end, |next| end.min(next.0))
         })
         .collect()
 }
 
-/// The phrase's samples, with the shape's noise floor added (its own seeded noise).
+/// The phrase's samples, with the shape's noise floor added (its own seeded noise): uniform, or
+/// Gaussian (Box-Muller).
 pub fn samples(voice: Voice, notes: &[Note], shape: &Shape, noise_seed: u64) -> Vec<f32> {
     let clean = render_notes(voice, notes);
-    match shape.noise_dbfs {
-        None => clean,
-        Some(dbfs) => {
-            let mut rng = Xoshiro256StarStar::new(noise_seed);
-            let amplitude = 10f64.powf(dbfs / 20.0) * 3f64.sqrt();
-            clean
-                .iter()
-                .map(|s| s + ((rng.next_f64() * 2.0 - 1.0) * amplitude) as f32)
-                .collect()
-        }
+    let mut rng = Xoshiro256StarStar::new(noise_seed);
+    if let Some(dbfs) = shape.noise_dbfs {
+        let amplitude = 10f64.powf(dbfs / 20.0) * 3f64.sqrt();
+        return clean
+            .iter()
+            .map(|s| s + ((rng.next_f64() * 2.0 - 1.0) * amplitude) as f32)
+            .collect();
     }
+    if let Some(dbfs) = shape.gaussian_dbfs {
+        let sigma = 10f64.powf(dbfs / 20.0);
+        return clean
+            .iter()
+            .map(|s| {
+                let u1 = rng.next_f64().max(1e-300);
+                let u2 = rng.next_f64();
+                let g = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
+                s + (sigma * g) as f32
+            })
+            .collect();
+    }
+    clean
 }
 
 /// What the estimator returned for a phrase.
@@ -246,7 +318,7 @@ pub struct Measured {
 }
 
 /// Draws `phrases` phrases of `shape` from each seed and estimates them, spread over the
-/// machine's threads. In seed order, then phrase order.
+/// process's worker pool ([`pool_map`]). In seed order, then phrase order.
 pub fn measure(shape: Shape, seeds: &[u64], phrases: usize) -> Vec<Measured> {
     let mut jobs = Vec::new();
     for &seed in seeds {
@@ -256,36 +328,18 @@ pub fn measure(shape: Shape, seeds: &[u64], phrases: usize) -> Vec<Measured> {
             jobs.push((seed, index, voice, notes));
         }
     }
-    let results: Vec<Mutex<Option<Measured>>> = jobs.iter().map(|_| Mutex::new(None)).collect();
-    let next = AtomicUsize::new(0);
-    let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
-    std::thread::scope(|scope| {
-        for _ in 0..threads {
-            scope.spawn(|| {
-                loop {
-                    let k = next.fetch_add(1, Ordering::Relaxed);
-                    let Some((seed, index, voice, notes)) = jobs.get(k) else {
-                        break;
-                    };
-                    let noise_seed = seed.wrapping_mul(1_000).wrapping_add(*index as u64);
-                    let outcome = estimate(&samples(*voice, notes, &shape, noise_seed));
-                    let measured = Measured {
-                        seed: *seed,
-                        index: *index,
-                        voice: *voice,
-                        notes: notes.clone(),
-                        tails: tails(*voice, notes),
-                        outcome,
-                    };
-                    *results[k].lock().unwrap() = Some(measured);
-                }
-            });
+    pool_map(&jobs, |(seed, index, voice, notes)| {
+        let noise_seed = seed.wrapping_mul(1_000).wrapping_add(*index as u64);
+        let outcome = estimate(&samples(*voice, notes, &shape, noise_seed));
+        Measured {
+            seed: *seed,
+            index: *index,
+            voice: *voice,
+            notes: notes.clone(),
+            tails: tails(*voice, notes),
+            outcome,
         }
-    });
-    results
-        .into_iter()
-        .map(|slot| slot.into_inner().unwrap().unwrap())
-        .collect()
+    })
 }
 
 pub fn pitch_inside(truth: &Note, note: &EstimatedNote) -> bool {

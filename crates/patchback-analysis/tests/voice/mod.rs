@@ -4,6 +4,9 @@
 
 #![allow(dead_code)]
 
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Condvar, Mutex};
+
 use patchback_core::patch::{compile, parse_patch, validate};
 use patchback_core::score::{NoteEvent, NoteSequence};
 use patchback_dsp::{RenderConfig, render};
@@ -128,4 +131,50 @@ pub fn centred_rms(samples: &[f32], t: usize) -> f64 {
         .map(|s| f64::from(*s) * f64::from(*s))
         .sum();
     (sum / 1_024.0).sqrt()
+}
+
+/// The workers running in this test process, and the signal that one has finished.
+static WORKERS: (Mutex<usize>, Condvar) = (Mutex::new(0), Condvar::new());
+
+/// `f` of every job, in job order, computed by a pool of workers. However many tests call it at
+/// once, the process runs at most [`std::thread::available_parallelism`] workers (which follows
+/// the affinity mask on Linux): a call waits for one free worker slot and takes the free ones up
+/// to its number of jobs. Each job is computed on its own, so the results do not depend on the
+/// number of workers.
+pub fn pool_map<T: Sync, R: Send>(jobs: &[T], f: impl Fn(&T) -> R + Sync) -> Vec<R> {
+    if jobs.is_empty() {
+        return Vec::new();
+    }
+    let capacity = std::thread::available_parallelism().map_or(1, |n| n.get());
+    let (lock, freed) = &WORKERS;
+    let taken = {
+        let mut running = lock.lock().unwrap();
+        while *running >= capacity {
+            running = freed.wait(running).unwrap();
+        }
+        let taken = (capacity - *running).min(jobs.len());
+        *running += taken;
+        taken
+    };
+    let results: Vec<Mutex<Option<R>>> = jobs.iter().map(|_| Mutex::new(None)).collect();
+    let next = AtomicUsize::new(0);
+    std::thread::scope(|scope| {
+        for _ in 0..taken {
+            scope.spawn(|| {
+                loop {
+                    let k = next.fetch_add(1, Ordering::Relaxed);
+                    let Some(job) = jobs.get(k) else {
+                        break;
+                    };
+                    *results[k].lock().unwrap() = Some(f(job));
+                }
+            });
+        }
+    });
+    *lock.lock().unwrap() -= taken;
+    freed.notify_all();
+    results
+        .into_iter()
+        .map(|slot| slot.into_inner().unwrap().unwrap())
+        .collect()
 }
